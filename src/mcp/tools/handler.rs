@@ -143,9 +143,11 @@ impl ToolHandler {
         tool_name: &str,
         args: &serde_json::Map<String, Value>,
     ) -> ToolResult {
-        // catch-up gate 在首个工具调用前执行一次，用于测试/运行时等待 watcher
-        // 把刚写入的索引状态追上。
-        self.await_catch_up_gate();
+        // catch-up gate 在首个上下文工具调用前执行一次，用于测试/运行时等待 watcher
+        // 把刚写入的索引状态追上。status 是诊断工具，必须保持只读、低成本。
+        if should_catch_up_before_tool(tool_name) {
+            self.await_catch_up_gate();
+        }
 
         if !is_tool_allowed(tool_name) {
             return error_result(&format!(
@@ -351,5 +353,21 @@ impl ToolHandler {
         });
         content.extend(rest.iter().cloned());
         ToolResult { content, ..result }
+    }
+}
+
+fn should_catch_up_before_tool(tool_name: &str) -> bool {
+    !matches!(tool_name, "rustcodegraph_status")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_catch_up_before_tool;
+
+    #[test]
+    fn status_is_diagnostic_and_does_not_trigger_catch_up() {
+        assert!(!should_catch_up_before_tool("rustcodegraph_status"));
+        assert!(should_catch_up_before_tool("rustcodegraph_search"));
+        assert!(should_catch_up_before_tool("rustcodegraph_explore"));
     }
 }

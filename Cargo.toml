@@ -1,6 +1,6 @@
 [package]
 name = "rustcodegraph"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 description = "Local-first code intelligence graph and CLI for AI agents"
 license = "MIT"

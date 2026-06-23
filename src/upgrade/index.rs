@@ -147,9 +147,8 @@ fn is_rustcodegraph_npm_binary(filename: &str) -> bool {
         || filename.ends_with("/bin/rustcodegraph.cmd");
     let cargo_dist_binary_path = filename
         .contains("/node_modules/rustcodegraph/node_modules/.bin_real/rustcodegraph")
-        || filename.contains(
-            "/node_modules/rustcodegraph/node_modules/.bin_real/rustcodegraph.exe",
-        );
+        || filename
+            .contains("/node_modules/rustcodegraph/node_modules/.bin_real/rustcodegraph.exe");
     (legacy_package_path && legacy_binary_path) || cargo_dist_binary_path
 }
 

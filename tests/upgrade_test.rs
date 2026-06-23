@@ -100,8 +100,7 @@ mod detect_install_method {
 
     #[test]
     fn detects_a_global_npm_install() {
-        let filename =
-            "/usr/local/lib/node_modules/rustcodegraph-linux-x64/bin/rustcodegraph";
+        let filename = "/usr/local/lib/node_modules/rustcodegraph-linux-x64/bin/rustcodegraph";
         let method = detect_install_method(DetectInput {
             filename,
             platform: "linux",
@@ -118,7 +117,8 @@ mod detect_install_method {
 
     #[test]
     fn detects_a_global_cargo_dist_npm_install() {
-        let filename = "/usr/local/lib/node_modules/rustcodegraph/node_modules/.bin_real/rustcodegraph";
+        let filename =
+            "/usr/local/lib/node_modules/rustcodegraph/node_modules/.bin_real/rustcodegraph";
         let method = detect_install_method(DetectInput {
             filename,
             platform: "linux",
@@ -136,8 +136,7 @@ mod detect_install_method {
     #[test]
     fn detects_a_local_project_npm_install_as_local() {
         let cwd = "/home/u/project";
-        let filename =
-            format!("{cwd}/node_modules/rustcodegraph-linux-x64/bin/rustcodegraph");
+        let filename = format!("{cwd}/node_modules/rustcodegraph-linux-x64/bin/rustcodegraph");
         let method = detect_install_method(DetectInput {
             filename: &filename,
             platform: "linux",
@@ -155,9 +154,8 @@ mod detect_install_method {
     #[test]
     fn detects_a_local_cargo_dist_npm_install_as_local() {
         let cwd = "/home/u/project";
-        let filename = format!(
-            "{cwd}/node_modules/rustcodegraph/node_modules/.bin_real/rustcodegraph"
-        );
+        let filename =
+            format!("{cwd}/node_modules/rustcodegraph/node_modules/.bin_real/rustcodegraph");
         let method = detect_install_method(DetectInput {
             filename: &filename,
             platform: "linux",
@@ -174,7 +172,8 @@ mod detect_install_method {
 
     #[test]
     fn detects_an_npx_run_from_the_npx_cache() {
-        let filename = "/home/u/.npm/_npx/abc123/node_modules/rustcodegraph-linux-x64/bin/rustcodegraph";
+        let filename =
+            "/home/u/.npm/_npx/abc123/node_modules/rustcodegraph-linux-x64/bin/rustcodegraph";
         let method = detect_install_method(DetectInput {
             filename,
             platform: "linux",
@@ -198,8 +197,7 @@ mod detect_install_method {
 
     #[test]
     fn does_not_detect_the_old_codegraph_npm_package() {
-        let filename =
-            "/usr/local/lib/node_modules/rustcodegraph-linux-x64/bin/codegraph";
+        let filename = "/usr/local/lib/node_modules/rustcodegraph-linux-x64/bin/codegraph";
         let method = detect_install_method(DetectInput {
             filename,
             platform: "linux",

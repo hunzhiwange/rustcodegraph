@@ -80,7 +80,9 @@ pub(crate) fn handle_mcp_message<R: BufRead, W: Write>(
             }
             let tool_project_root = mcp_project_root(&session.project_root, &arguments);
             // 每个 projectRoot 只 catch up 一次，平衡首次准确性和每次工具调用的延迟。
-            session.catch_up_once(&tool_project_root);
+            if should_catch_up_before_tool(&name) {
+                session.catch_up_once(&tool_project_root);
+            }
             let result = if !has_mcp_project_path(&arguments)
                 && !is_sqlite_initialized(&session.project_root)
             {
@@ -394,6 +396,13 @@ fn execute_mcp_tool(
     Ok(with_mcp_index_state_notice(text, &project_root))
 }
 
+fn should_catch_up_before_tool(tool_name: &str) -> bool {
+    let short = tool_name
+        .strip_prefix("rustcodegraph_")
+        .unwrap_or(tool_name);
+    !matches!(short, "status")
+}
+
 fn with_mcp_index_state_notice(text: String, project_root: &Path) -> String {
     // 工具结果前置 stale/degraded 提醒，但保持 isError=false；这是“内容可能旧”的提示，
     // 不是协议或工具执行失败。
@@ -427,6 +436,19 @@ fn with_mcp_index_state_notice(text: String, project_root: &Path) -> String {
     format!(
         "⚠️ Some files were edited since the last index sync and may be stale in this response:\n{files}{suffix}\nFor accurate content of those files, read them directly; the watcher will sync after its debounce window.\n\n{text}"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_catch_up_before_tool;
+
+    #[test]
+    fn status_is_diagnostic_and_does_not_trigger_catch_up() {
+        assert!(!should_catch_up_before_tool("rustcodegraph_status"));
+        assert!(!should_catch_up_before_tool("status"));
+        assert!(should_catch_up_before_tool("rustcodegraph_search"));
+        assert!(should_catch_up_before_tool("rustcodegraph_explore"));
+    }
 }
 
 fn mcp_project_root(default_root: &Path, arguments: &Value) -> PathBuf {
