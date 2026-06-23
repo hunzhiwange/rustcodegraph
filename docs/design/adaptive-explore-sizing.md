@@ -1,10 +1,10 @@
-# Design + status: adaptive `codegraph_explore` sizing (sibling skeletonization)
+# Design + status: adaptive `rustcodegraph_explore` sizing (sibling skeletonization)
 
 **Status:** Implemented & validated, **default-on**, on branch
 `feat/adaptive-explore-sizing` (initial commit `d6d059f`; **refined 2026-05-29**
 after a real-agent A/B exposed a read-back regression — see
-"Refinement" below). Escape hatch: `CODEGRAPH_ADAPTIVE_EXPLORE=0`.
-**Motivation:** make `codegraph_explore` size its output to the *answer* rather
+"Refinement" below). Escape hatch: `RUSTCODEGRAPH_ADAPTIVE_EXPLORE=0`.
+**Motivation:** make `rustcodegraph_explore` size its output to the *answer* rather
 than always filling the budget cap — so a "sibling-heavy" flow (many
 interchangeable implementations of one interface) stops costing *more* than
 plain grep/read, without starving "diffuse" flows that genuinely need broad
@@ -60,12 +60,12 @@ source.
 
 ## TL;DR
 
-`codegraph_explore` returned full source for **every** relevant file up to its
+`rustcodegraph_explore` returned full source for **every** relevant file up to its
 char budget. On a question whose answer spans many *same-shaped* classes — e.g.
 "how does OkHttp process a request through its interceptor chain?", which touches
 ~14 `class … : Interceptor` implementations — that meant ~28 KB of mostly
 **redundant full bodies**. Because those bodies ride in the context window for
-the rest of the session, the WITH-CodeGraph arm cost *more* than the WITHOUT arm
+the rest of the session, the WITH-RustCodeGraph arm cost *more* than the WITHOUT arm
 (which answers the well-named interceptor question in ~10 cheap greps). OkHttp
 was the benchmark's cost outlier (−3% — i.e. *costlier* than native search).
 
@@ -94,7 +94,7 @@ mechanism in full.
 
 ## The problem in one picture
 
-`handleExplore` gathers relevant files, sorts by relevance, and fills up to
+`format_explore_file_result` gathers relevant files, sorts by relevance, and fills up to
 `maxOutputChars` (the "whole-small-file rule" dumps any relevant file ≤220 lines
 in full). The budget is a **target**, not a ceiling:
 
@@ -118,11 +118,12 @@ step," cheaply.**
 
 ## The gate (refined)
 
-A file is skeletonized iff **all** hold (and `CODEGRAPH_ADAPTIVE_EXPLORE != 0`):
+A file is skeletonized iff **all** hold (and `RUSTCODEGRAPH_ADAPTIVE_EXPLORE != 0`):
 
-1. **A spine exists.** `buildFlowFromNamedSymbols` returns its path node set
-   (`pathNodeIds`) and the full set of agent-named callables (`namedNodeIds`). If
-   no spine forms, nothing skeletonizes.
+1. **A named flow query exists.** `format_flow_section` / `find_named_flow_path`
+   render the call path among named query symbols, while `exact_named_query_nodes`
+   and `unique_named_callable_files` keep named callables useful. If the query
+   doesn't involve a polymorphic family, nothing skeletonizes.
 
 2. **Off the flow spine.** No symbol in the file is on the traced chain — that
    chain is the mechanism the agent is walking, always kept full.
@@ -198,7 +199,7 @@ agent can pull one specific implementation if it truly needs it.
 
 ## Validation (refined gate)
 
-Headless `claude -p`, Opus 4.8, **WITH vs WITHOUT** CodeGraph (the real benchmark
+Headless `claude -p`, Opus 4.8, **WITH vs WITHOUT** RustCodeGraph (the real benchmark
 arm, not the on/off probe the first cut used). Cost = median `total_cost_usd`.
 
 | Repo | WITH→WITHOUT cost | WITH reads | WITHOUT reads | RealCall/compiler read-back |
@@ -242,7 +243,7 @@ the agent's real query — that mismatch is what this refinement corrects.)
    regressed Django to **9% costlier** ($0.71). Defining a supertype is instead
    an **override** that lets a named family file skeletonize anyway.
 6. **Validating skeletonization with the deterministic probe query only.** The
-   probe (`probe-explore.mjs "<symbol bag>"`) and the *agent's* real explore
+   probe (`rustcodegraph agent-eval probe-explore <repo> "<symbol bag>"`) and the *agent's* real explore
    query name symbols differently, so they form different spines and skeletonize
    different files. The probe said "Django: 0 skeletons / reads flat"; the real
    agent query skeletonized `compiler.py` and Read it back. **Always confirm with
@@ -250,17 +251,15 @@ the agent's real query — that mismatch is what this refinement corrects.)
 
 ## Code
 
-- `src/mcp/tools.ts`
-  - `adaptiveExploreEnabled()` — the flag (default on).
-  - `buildFlowFromNamedSymbols()` — returns `{ text, pathNodeIds, namedNodeIds }`.
-    `namedNodeIds` is every callable the agent named (a superset of the spine) —
-    the named-callable spare reads it.
-  - `handleExplore()` — two cached helpers: `isPolymorphicSibling()` (a node has
-    an outgoing `implements`/`extends` to a ≥3-impl supertype) and
-    `definesPolymorphicSupertype()` (a node HAS ≥3 incoming `implements`/`extends`
-    — i.e. the file is the family base). The skeleton branch:
-    `off-spine && isPolymorphicSibling && !(namedInFile && !definesSupertype)`.
-- `__tests__/adaptive-explore-sizing.test.ts` — 7 cases incl. the named-callable
+- `src/mcp/tools.rs`
+  - `adaptive_explore_enabled()` — the flag (default on).
+  - `format_explore_file_result()` — gathers relevant files, renders the named-symbol
+    flow, and applies adaptive file rendering.
+  - `format_flow_section()` / `find_named_flow_path()` — render the call path among
+    the named query symbols.
+  - `explore_family_context()` / `explore_file_mode()` — skeletonize off-spine
+    polymorphic siblings while keeping named or on-flow files useful.
+- `tests/adaptive_explore_sizing_test.rs` — 7 cases incl. the named-callable
   spare (RealCall) and the supertype-family override (compiler.py).
 
 ## Frontier / future work

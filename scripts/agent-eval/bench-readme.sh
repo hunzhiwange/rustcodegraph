@@ -2,7 +2,7 @@
 # Re-run the README "Benchmark Results" A/B (with vs without codegraph) on the
 # current build: the 7 README repos, same queries, RUNS per arm (default 4).
 # Output → /tmp/ab-readme/<repo>/run<n>/run-headless-{with,without}.jsonl
-# Aggregate with parse-bench-readme.mjs. Repos must be cloned + indexed under
+# Aggregate with `rustcodegraph agent-eval parse-bench-readme`. Repos must be cloned + indexed under
 # $CORPUS (default /tmp/codegraph-corpus) by the build under test.
 set -uo pipefail
 H="$(cd "$(dirname "$0")" && pwd)"

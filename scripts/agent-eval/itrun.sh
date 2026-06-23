@@ -4,19 +4,20 @@
 #
 # Why interactive (not `claude -p`): headless print-mode picks the
 # general-purpose subagent, while real interactive sessions delegate to the
-# Explore subagent (or drive codegraph from the main thread). Only the
+# Explore subagent (or drive rustcodegraph from the main thread). Only the
 # interactive TUI reproduces the behavior users actually see. (Idle-detection
 # technique borrowed from devpit's WaitForIdle.)
 #
 # Usage: itrun.sh <repo-path> <label> "<prompt>"
 # Output dir: $AGENT_EVAL_OUT (default /tmp/agent-eval)
-# Requires: tmux 3.0+, a logged-in `claude` CLI, codegraph MCP configured.
+# Requires: tmux 3.0+, a logged-in `claude` CLI, rustcodegraph MCP configured.
 set -uo pipefail
 REPO="$1"; LABEL="$2"; PROMPT="$3"
 SESSION="cgt_${LABEL}"
 OUT_DIR="${AGENT_EVAL_OUT:-/tmp/agent-eval}"; mkdir -p "$OUT_DIR"
 OUT="$OUT_DIR/itrun-${LABEL}.txt"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+CG_BIN="${RUSTCODEGRAPH_BIN:-$(command -v rustcodegraph || true)}"
 
 cap() { tmux capture-pane -p -t "$SESSION" -S -40; }
 
@@ -117,4 +118,4 @@ grep -oE "[0-9.]+k?/[0-9.]+M" "$OUT" | tail -1 | sed 's/^/Context /'
 tmux kill-session -t "$SESSION" 2>/dev/null
 
 # Clean tool breakdown from the session logs (main + subagents).
-node "$HERE/parse-session.mjs" "$REPO" 2>/dev/null || true
+[ -n "$CG_BIN" ] && "$CG_BIN" agent-eval parse-session "$REPO" 2>/dev/null || true

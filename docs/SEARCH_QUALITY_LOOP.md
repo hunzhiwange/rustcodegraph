@@ -1,8 +1,8 @@
-# CodeGraph Language Verification Guide
+# RustCodeGraph Language Verification Guide
 
-You are verifying that CodeGraph fully supports a specific programming language. The user will give you a path to a real-world, popular open-source codebase cloned locally. Your job is to run a battery of realistic prompts against it using CodeGraph's API and verify the results are good enough to say that language is **covered and supported**.
+You are verifying that RustCodeGraph fully supports a specific programming language. The user will give you a path to a real-world, popular open-source codebase cloned locally. Your job is to run a battery of realistic prompts against it using RustCodeGraph's API and verify the results are good enough to say that language is **covered and supported**.
 
-A language is NOT verified until an LLM can reliably use CodeGraph's MCP tools to navigate that codebase — finding the right symbols, understanding call chains, exploring subsystems, and getting useful context for real tasks.
+A language is NOT verified until an LLM can reliably use RustCodeGraph's MCP tools to navigate that codebase — finding the right symbols, understanding call chains, exploring subsystems, and getting useful context for real tasks.
 
 ## Setup
 
@@ -10,8 +10,8 @@ A language is NOT verified until an LLM can reliably use CodeGraph's MCP tools t
 
 ```bash
 npm run build
-rm -rf <codebase_path>/.codegraph
-node dist/bin/codegraph.js init -iv <codebase_path>
+rm -rf <codebase_path>/.rustcodegraph
+target/release/rustcodegraph init -iv <codebase_path>
 ```
 
 The `-iv` flag gives verbose output showing extraction progress, node/edge counts, and timing.
@@ -20,18 +20,18 @@ The `-iv` flag gives verbose output showing extraction progress, node/edge count
 
 ```bash
 # Verify nodes were extracted with proper qualified names
-sqlite3 <codebase_path>/.codegraph/codegraph.db \
+sqlite3 <codebase_path>/.rustcodegraph/rustcodegraph.db \
   "SELECT name, kind, qualified_name FROM nodes WHERE kind = 'method' LIMIT 10;"
 
 # GOOD: file.go::StructName::method_name  (owner type present)
 # BAD:  file.go::file.go::method_name     (owner type missing — needs getReceiverType)
 
 # Check edge counts
-sqlite3 <codebase_path>/.codegraph/codegraph.db \
+sqlite3 <codebase_path>/.rustcodegraph/rustcodegraph.db \
   "SELECT kind, COUNT(*) FROM edges GROUP BY kind ORDER BY COUNT(*) DESC;"
 
 # Check node kind distribution
-sqlite3 <codebase_path>/.codegraph/codegraph.db \
+sqlite3 <codebase_path>/.rustcodegraph/rustcodegraph.db \
   "SELECT kind, COUNT(*) FROM nodes GROUP BY kind ORDER BY COUNT(*) DESC;"
 ```
 
@@ -39,21 +39,21 @@ If methods are missing their owner type in `qualified_name`, fix that first (see
 
 ## The Test Battery
 
-Run **all** of the following test categories against the codebase. Use the Node.js API directly — the test scripts below are templates. Adapt the queries to match real types, methods, and subsystems in the codebase you're testing.
+Run **all** of the following test categories against the codebase. Use the Rust CLI/MCP surface directly; the older JS-shaped snippets below are templates only and should be translated to `rustcodegraph` commands or MCP probes. Adapt the queries to match real types, methods, and subsystems in the codebase you're testing.
 
 **Pass criteria for each test:** Does the result give an LLM enough correct information to answer the question or complete the task? Would you trust these results if you were the LLM?
 
 ---
 
-### Test 1: `codegraph_explore` — Deep Exploration (MOST IMPORTANT)
+### Test 1: `rustcodegraph_explore` — Deep Exploration (MOST IMPORTANT)
 
 This is the primary tool LLMs use. It must return relevant source code grouped by file, with correct relationships, for a natural language query. Test it with **at least 5 different query types**:
 
 ```bash
 node -e "
-const { CodeGraph } = require('./dist/index.js');
+// TypeScript dist runtime is retired; adapt this check to the Rust CLI/MCP surface.
 async function test() {
-  const cg = await CodeGraph.open('<codebase_path>');
+  const cg = await RustCodeGraph.open('<codebase_path>');
 
   const queries = [
     // A. Subsystem exploration — broad topic, should find the right files and key classes
@@ -126,15 +126,15 @@ test().catch(console.error);
 
 ---
 
-### Test 2: `codegraph_search` — Symbol Lookup
+### Test 2: `rustcodegraph_search` — Symbol Lookup
 
 Test that searching for specific symbols returns the right results ranked correctly.
 
 ```bash
 node -e "
-const { CodeGraph } = require('./dist/index.js');
+// TypeScript dist runtime is retired; adapt this check to the Rust CLI/MCP surface.
 async function test() {
-  const cg = await CodeGraph.open('<codebase_path>');
+  const cg = await RustCodeGraph.open('<codebase_path>');
 
   const searches = [
     // A. Class by name
@@ -175,15 +175,15 @@ test().catch(console.error);
 
 ---
 
-### Test 3: `codegraph_callers` / `codegraph_callees` — Call Chain Tracing
+### Test 3: `rustcodegraph_callers` / `rustcodegraph_callees` — Call Chain Tracing
 
 Test that call relationships were extracted correctly.
 
 ```bash
 node -e "
-const { CodeGraph } = require('./dist/index.js');
+// TypeScript dist runtime is retired; adapt this check to the Rust CLI/MCP surface.
 async function test() {
-  const cg = await CodeGraph.open('<codebase_path>');
+  const cg = await RustCodeGraph.open('<codebase_path>');
 
   // Pick 3-4 important methods and check their call graphs
   const symbols = ['build', 'get', 'put', 'invalidate'];
@@ -218,15 +218,15 @@ test().catch(console.error);
 
 ---
 
-### Test 4: `codegraph_impact` — Change Impact Analysis
+### Test 4: `rustcodegraph_impact` — Change Impact Analysis
 
 Test that the impact radius correctly identifies affected code.
 
 ```bash
 node -e "
-const { CodeGraph } = require('./dist/index.js');
+// TypeScript dist runtime is retired; adapt this check to the Rust CLI/MCP surface.
 async function test() {
-  const cg = await CodeGraph.open('<codebase_path>');
+  const cg = await RustCodeGraph.open('<codebase_path>');
 
   // Pick a core class or interface that many things depend on
   const results = cg.searchNodes('<CoreClass>', { limit: 1, kinds: ['class', 'interface'] });
@@ -269,9 +269,9 @@ Directly verify that the major edge types are being extracted for this language.
 
 ```bash
 node -e "
-const { CodeGraph } = require('./dist/index.js');
+// TypeScript dist runtime is retired; adapt this check to the Rust CLI/MCP surface.
 async function test() {
-  const cg = await CodeGraph.open('<codebase_path>');
+  const cg = await RustCodeGraph.open('<codebase_path>');
 
   // Check overall edge distribution
   console.log('=== Edge distribution ===');
@@ -303,7 +303,7 @@ test().catch(console.error);
 ```
 
 ```bash
-sqlite3 <codebase_path>/.codegraph/codegraph.db "
+sqlite3 <codebase_path>/.rustcodegraph/rustcodegraph.db "
   SELECT kind, COUNT(*) as cnt FROM edges GROUP BY kind ORDER BY cnt DESC;
 "
 ```
@@ -321,7 +321,7 @@ sqlite3 <codebase_path>/.codegraph/codegraph.db "
 Verify all expected node kinds are being extracted.
 
 ```bash
-sqlite3 <codebase_path>/.codegraph/codegraph.db "
+sqlite3 <codebase_path>/.rustcodegraph/rustcodegraph.db "
   SELECT kind, COUNT(*) as cnt FROM nodes GROUP BY kind ORDER BY cnt DESC;
 "
 ```
@@ -348,15 +348,15 @@ If an expected node kind has 0 count, the language extractor is missing that AST
 
 ### Test 7: Real-World LLM Prompts
 
-This is the final and most important test. Simulate the kinds of questions a developer would actually ask an LLM that's using CodeGraph. For each prompt, run `findRelevantContext` (which powers `codegraph_explore`) and evaluate whether the returned context would let an LLM give a correct, complete answer.
+This is the final and most important test. Simulate the kinds of questions a developer would actually ask an LLM that's using RustCodeGraph. For each prompt, run `findRelevantContext` (which powers `rustcodegraph_explore`) and evaluate whether the returned context would let an LLM give a correct, complete answer.
 
 **Run at least 5 of these prompt styles, adapted to the actual codebase:**
 
 ```bash
 node -e "
-const { CodeGraph } = require('./dist/index.js');
+// TypeScript dist runtime is retired; adapt this check to the Rust CLI/MCP surface.
 async function test() {
-  const cg = await CodeGraph.open('<codebase_path>');
+  const cg = await RustCodeGraph.open('<codebase_path>');
 
   const prompts = [
     // 1. \"How does X work?\" — subsystem understanding
@@ -437,40 +437,40 @@ test().catch(console.error);
 
 | Symptom | Likely Cause | Where to Fix |
 |---------|-------------|--------------|
-| Method missing owner type in `qualified_name` | Language needs `getReceiverType` | `src/extraction/languages/<lang>.ts` |
-| `codegraph_explore` returns irrelevant files | Common names flooding FTS; co-location boost not helping | `src/db/queries.ts: findNodesByExactName`, `src/context/index.ts` |
-| Zero `calls` edges | `callTypes` missing or wrong AST node type | `src/extraction/languages/<lang>.ts: callTypes` |
-| Zero `extends`/`implements` edges | `extractInheritance()` doesn't handle this language's AST | `src/extraction/tree-sitter.ts: extractInheritance()` |
-| Missing node kinds (no enums, no interfaces) | AST type not listed in extractor | `src/extraction/languages/<lang>.ts: enumTypes`, `interfaceTypes`, etc. |
-| Search term dropped from query | Term is in the stop words list | `src/search/query-utils.ts: STOP_WORDS` |
-| `qualified_name` missing class for nested methods | Extraction not walking parent stack correctly | `src/extraction/tree-sitter.ts: visitNode()` |
-| Import edges missing | `extractImport` returns null for this syntax | `src/extraction/languages/<lang>.ts: extractImport` |
-| C++ classes/structs/enums missing from macro namespaces | Macros like `NLOHMANN_JSON_NAMESPACE_BEGIN` cause tree-sitter to misparse namespace blocks as `function_definition` | `src/extraction/languages/c-cpp.ts: isMisparsedFunction` filters bad names; `src/extraction/tree-sitter.ts: visitFunctionBody` extracts structural nodes |
-| C++ classes missing from `.h` headers | `.h` files default to `c` language which has `classTypes: []` | `src/extraction/grammars.ts: looksLikeCpp()` — content-based heuristic promotes `.h` files to `cpp` when C++ patterns detected |
-| Ruby methods inside modules missing owner in `qualified_name` | Ruby `module` AST nodes not being extracted | `src/extraction/languages/ruby.ts: visitNode` hook extracts modules; `src/extraction/tree-sitter.ts: isInsideClassLikeNode` includes `module` kind |
-| TypeScript abstract classes missing | `abstract_class_declaration` not in `classTypes` | `src/extraction/languages/typescript.ts: classTypes` — add `abstract_class_declaration` |
-| Single-expression arrow functions silently dropped | `extractName` finds identifier in expression body instead of returning `<anonymous>` | `src/extraction/tree-sitter.ts: extractName` — skip identifier search for `arrow_function`/`function_expression` nodes |
-| Kotlin interfaces/enums extracted as classes | `class_declaration` matches `classTypes` first; `interfaceTypes`/`enumTypes` never fire | `src/extraction/languages/kotlin.ts: classifyClassNode` detects `interface`/`enum` keywords in AST children |
-| Kotlin functions have zero calls extracted | Tree-sitter grammar doesn't use field names, so `getChildByField(node, 'function_body')` returns null | `src/extraction/languages/kotlin.ts: resolveBody` finds body by type (`function_body`, `class_body`, `enum_class_body`) |
-| Kotlin `navigation_expression` calls not resolved cleanly | `navigation_expression` fell through to `getNodeText` producing messy names with parentheses | `src/extraction/tree-sitter.ts: extractCall` — handle `navigation_expression` by extracting method name from `navigation_suffix > simple_identifier` |
-| Kotlin `fun interface` declarations invisible | Tree-sitter-kotlin doesn't support `fun interface` syntax (Kotlin 1.4+), producing ERROR or misparse as `function_declaration` | `src/extraction/languages/kotlin.ts: visitNode` detects three misparse patterns: (1) ERROR node + lambda body, (2) function_declaration with `user_type("interface")` direct child + name in ERROR child, (3) function_declaration with ERROR child containing `user_type("interface")` + name. `isFunInterfaceNode` checks both direct and ERROR-nested `user_type` children |
-| Kotlin class/interface methods missing when nested `fun interface` present | Tree-sitter misparsed parent body as ERROR (starting with `{`) + class_body (nested interface body); `resolveBody` found wrong body | `src/extraction/languages/kotlin.ts: resolveBody` prefers ERROR bodies starting with `{`; `visitNode` excludes body-like ERROR from `fun interface` detection |
-| Svelte `$props()` destructuring produces ugly variable names | `let { x, y } = $props()` has `object_pattern` as variable name node; `getNodeText` returns full pattern | `src/extraction/tree-sitter.ts: extractVariable` skips `object_pattern`/`array_pattern` named declarators |
-| Svelte template function calls invisible (e.g. `class={cn(...)}`) | SvelteExtractor only parsed `<script>` blocks, missing calls in template markup | `src/extraction/svelte-extractor.ts: extractTemplateCalls` scans `{expression}` blocks in template for call patterns |
-| Svelte `$state`/`$derived` rune calls creating noise | Runes are compiler builtins, not real function calls | `src/extraction/svelte-extractor.ts` filters `SVELTE_RUNES` set from unresolved references |
-| Object literal getters/setters extracted as standalone functions | `method_definition` inside `object` literals treated same as class methods | `src/extraction/tree-sitter.ts: extractMethod` skips `method_definition` nodes whose parent is `object`/`object_expression` |
-| JavaScript `class extends` produces zero inheritance edges | JS tree-sitter uses `class_heritage → identifier` (bare), not `class_heritage → extends_clause → identifier` like TypeScript | `src/extraction/tree-sitter.ts: extractInheritance` — handle bare `identifier`/`type_identifier` children when parent is `class_heritage` |
-| PHP traits extracted as classes | `trait_declaration` in `classTypes` but `extractClass` hardcodes `class` kind | `src/extraction/languages/php.ts: classifyClassNode` returns `'trait'` for `trait_declaration`; `src/extraction/tree-sitter-types.ts` adds `'trait'` to return type |
-| PHP class properties missing (0 field nodes) | `extractField` looks for `variable_declarator` children; PHP uses `property_element > variable_name > name` | `src/extraction/tree-sitter.ts: extractField` — handle `property_element` children with `variable_name > name` path |
-| PHP class constants skipped inside classes | `variableTypes` check has `!isInsideClassLikeNode()` guard, so `const_declaration` inside classes falls through | `src/extraction/languages/php.ts: visitNode` hook catches `const_declaration`, extracts `const_element > name` as `constant` kind |
-| PHP `use TraitName` inside classes invisible | `use_declaration` nodes in class body not processed for edges | `src/extraction/languages/php.ts: visitNode` hook extracts trait names from `use_declaration` and creates `implements` unresolved references |
+| Method missing owner type in `qualified_name` | Language needs `getReceiverType` | `src/extraction/languages/<lang>.rs` |
+| `rustcodegraph_explore` returns irrelevant files | Common names flooding FTS; co-location boost not helping | `src/db/queries.rs`, `src/context/index.rs` |
+| Zero `calls` edges | `callTypes` missing or wrong AST node type | `src/extraction/languages/<lang>.rs: callTypes` |
+| Zero `extends`/`implements` edges | `extractInheritance()` doesn't handle this language's AST | `src/extraction/tree_sitter.rs: extractInheritance()` |
+| Missing node kinds (no enums, no interfaces) | AST type not listed in extractor | `src/extraction/languages/<lang>.rs: enumTypes`, `interfaceTypes`, etc. |
+| Search term dropped from query | Term is in the stop words list | `src/search/query_utils.rs: STOP_WORDS` |
+| `qualified_name` missing class for nested methods | Extraction not walking parent stack correctly | `src/extraction/tree_sitter.rs: visitNode()` |
+| Import edges missing | `extractImport` returns null for this syntax | `src/extraction/languages/<lang>.rs: extractImport` |
+| C++ classes/structs/enums missing from macro namespaces | Macros like `NLOHMANN_JSON_NAMESPACE_BEGIN` cause tree-sitter to misparse namespace blocks as `function_definition` | `src/extraction/languages/c_cpp.rs: isMisparsedFunction` filters bad names; `src/extraction/tree_sitter.rs: visitFunctionBody` extracts structural nodes |
+| C++ classes missing from `.h` headers | `.h` files default to `c` language which has `classTypes: []` | `src/extraction/grammars.rs: looksLikeCpp()` — content-based heuristic promotes `.h` files to `cpp` when C++ patterns detected |
+| Ruby methods inside modules missing owner in `qualified_name` | Ruby `module` AST nodes not being extracted | `src/extraction/languages/ruby.rs: visitNode` hook extracts modules; `src/extraction/tree_sitter.rs: isInsideClassLikeNode` includes `module` kind |
+| TypeScript abstract classes missing | `abstract_class_declaration` not in `classTypes` | `src/extraction/languages/typescript.rs: classTypes` — add `abstract_class_declaration` |
+| Single-expression arrow functions silently dropped | `extractName` finds identifier in expression body instead of returning `<anonymous>` | `src/extraction/tree_sitter.rs: extractName` — skip identifier search for `arrow_function`/`function_expression` nodes |
+| Kotlin interfaces/enums extracted as classes | `class_declaration` matches `classTypes` first; `interfaceTypes`/`enumTypes` never fire | `src/extraction/languages/kotlin.rs: classifyClassNode` detects `interface`/`enum` keywords in AST children |
+| Kotlin functions have zero calls extracted | Tree-sitter grammar doesn't use field names, so `getChildByField(node, 'function_body')` returns null | `src/extraction/languages/kotlin.rs: resolveBody` finds body by type (`function_body`, `class_body`, `enum_class_body`) |
+| Kotlin `navigation_expression` calls not resolved cleanly | `navigation_expression` fell through to `getNodeText` producing messy names with parentheses | `src/extraction/tree_sitter.rs: extractCall` — handle `navigation_expression` by extracting method name from `navigation_suffix > simple_identifier` |
+| Kotlin `fun interface` declarations invisible | Tree-sitter-kotlin doesn't support `fun interface` syntax (Kotlin 1.4+), producing ERROR or misparse as `function_declaration` | `src/extraction/languages/kotlin.rs: visitNode` detects three misparse patterns: (1) ERROR node + lambda body, (2) function_declaration with `user_type("interface")` direct child + name in ERROR child, (3) function_declaration with ERROR child containing `user_type("interface")` + name. `isFunInterfaceNode` checks both direct and ERROR-nested `user_type` children |
+| Kotlin class/interface methods missing when nested `fun interface` present | Tree-sitter misparsed parent body as ERROR (starting with `{`) + class_body (nested interface body); `resolveBody` found wrong body | `src/extraction/languages/kotlin.rs: resolveBody` prefers ERROR bodies starting with `{`; `visitNode` excludes body-like ERROR from `fun interface` detection |
+| Svelte `$props()` destructuring produces ugly variable names | `let { x, y } = $props()` has `object_pattern` as variable name node; `getNodeText` returns full pattern | `src/extraction/tree_sitter.rs: extractVariable` skips `object_pattern`/`array_pattern` named declarators |
+| Svelte template function calls invisible (e.g. `class={cn(...)}`) | SvelteExtractor only parsed `<script>` blocks, missing calls in template markup | `src/extraction/svelte_extractor.rs: extractTemplateCalls` scans `{expression}` blocks in template for call patterns |
+| Svelte `$state`/`$derived` rune calls creating noise | Runes are compiler builtins, not real function calls | `src/extraction/svelte_extractor.rs` filters `SVELTE_RUNES` set from unresolved references |
+| Object literal getters/setters extracted as standalone functions | `method_definition` inside `object` literals treated same as class methods | `src/extraction/tree_sitter.rs: extractMethod` skips `method_definition` nodes whose parent is `object`/`object_expression` |
+| JavaScript `class extends` produces zero inheritance edges | JS tree-sitter uses `class_heritage → identifier` (bare), not `class_heritage → extends_clause → identifier` like TypeScript | `src/extraction/tree_sitter.rs: extractInheritance` — handle bare `identifier`/`type_identifier` children when parent is `class_heritage` |
+| PHP traits extracted as classes | `trait_declaration` in `classTypes` but `extractClass` hardcodes `class` kind | `src/extraction/languages/php.rs: classifyClassNode` returns `'trait'` for `trait_declaration`; `src/extraction/tree_sitter_types.rs` adds `'trait'` to return type |
+| PHP class properties missing (0 field nodes) | `extractField` looks for `variable_declarator` children; PHP uses `property_element > variable_name > name` | `src/extraction/tree_sitter.rs: extractField` — handle `property_element` children with `variable_name > name` path |
+| PHP class constants skipped inside classes | `variableTypes` check has `!isInsideClassLikeNode()` guard, so `const_declaration` inside classes falls through | `src/extraction/languages/php.rs: visitNode` hook catches `const_declaration`, extracts `const_element > name` as `constant` kind |
+| PHP `use TraitName` inside classes invisible | `use_declaration` nodes in class body not processed for edges | `src/extraction/languages/php.rs: visitNode` hook extracts trait names from `use_declaration` and creates `implements` unresolved references |
 
 ## After Fixing Issues
 
 ```bash
 npm run build
-rm -rf <codebase_path>/.codegraph
-node dist/bin/codegraph.js init -iv <codebase_path>
+rm -rf <codebase_path>/.rustcodegraph
+target/release/rustcodegraph init -iv <codebase_path>
 # Re-run the failing tests from above
 ```
 
@@ -486,14 +486,14 @@ npm test
 
 ### 1. Add the hook to the language extractor
 
-In `src/extraction/languages/<lang>.ts`, add `getReceiverType` to the extractor object:
+In `src/extraction/languages/<lang>.rs`, add `getReceiverType` to the extractor object:
 
 ```typescript
 getReceiverType: (node, source) => {
   // Extract the owner type name from the method's AST node.
   // Return the type name string, or undefined if not applicable.
   //
-  // The core extractMethod() in tree-sitter.ts will use this to set:
+  // The core extractMethod() in tree_sitter.rs will use this to set:
   //   qualifiedName = `${filePath}::${receiverType}::${methodName}`
 },
 ```
@@ -501,7 +501,7 @@ getReceiverType: (node, source) => {
 ### 2. Reference: Go implementation
 
 ```typescript
-// src/extraction/languages/go.ts
+// src/extraction/languages/go.rs
 getReceiverType: (node, source) => {
   const receiver = getChildByField(node, 'receiver');
   if (!receiver) return undefined;
@@ -513,7 +513,7 @@ getReceiverType: (node, source) => {
 
 ### 3. Where it's consumed
 
-`src/extraction/tree-sitter.ts` in `extractMethod()`:
+`src/extraction/tree_sitter.rs` in `extractMethod()`:
 
 ```typescript
 const receiverType = this.extractor.getReceiverType?.(node, this.source);
@@ -526,13 +526,13 @@ if (receiverType) {
 
 | File | Role |
 |------|------|
-| `src/extraction/languages/<lang>.ts` | Language extractor — node types, call types, `getReceiverType` |
-| `src/extraction/tree-sitter.ts` | Core extraction — `extractMethod()`, `extractCall()`, `extractInheritance()` |
-| `src/extraction/tree-sitter-types.ts` | `LanguageExtractor` interface definition |
-| `src/search/query-utils.ts` | `STOP_WORDS`, `extractSearchTerms`, `scorePathRelevance` |
-| `src/db/queries.ts` | `searchNodesFTS` (BM25), `findNodesByExactName` (co-location boost) |
-| `src/context/index.ts` | `findRelevantContext` — hybrid search + graph traversal |
-| `src/mcp/tools.ts` | MCP tool handlers — `codegraph_explore` implementation |
+| `src/extraction/languages/<lang>.rs` | Language extractor — node types, call types, `getReceiverType` |
+| `src/extraction/tree_sitter.rs` | Core extraction — `extractMethod()`, `extractCall()`, `extractInheritance()` |
+| `src/extraction/tree_sitter_types.rs` | `LanguageExtractor` interface definition |
+| `src/search/query_utils.rs` | `STOP_WORDS`, `extractSearchTerms`, `scorePathRelevance` |
+| `src/db/queries.rs` | `searchNodesFTS` (BM25), `findNodesByExactName` (co-location boost) |
+| `src/context/index.rs` | `findRelevantContext` — hybrid search + graph traversal |
+| `src/mcp/tools.rs` | MCP tool handlers — `rustcodegraph_explore` implementation |
 
 ## Language Status
 
@@ -544,14 +544,14 @@ if (receiverType) {
 - [x] **Python** — NOT needed. Methods nested in class body. Verified against Flask
 - [x] **Rust** — `getReceiverType` walks up to parent `impl_item` to extract type name. Also adds `contains` edges from struct to impl methods. Verified against Deno
 - [x] **C** — NOT needed. No methods in C. Strong function/struct/enum extraction with excellent call edge density. Verified against Redis
-- [x] **C++** — NOT needed for header-only libs. `isMisparsedFunction` hook filters macro-caused misparse artifacts (e.g. `NLOHMANN_JSON_NAMESPACE_BEGIN`). `visitFunctionBody` now extracts structural nodes (classes/structs/enums) inside macro-confused "function" bodies. Content-based `.h` detection (`looksLikeCpp` in `grammars.ts`) promotes C++ headers to `cpp` language so classes in `.h` files are extracted. Verified against nlohmann/json and gRPC. Note: out-of-class `Type::method()` definitions would need `getReceiverType` but are uncommon in header-only codebases.
+- [x] **C++** — NOT needed for header-only libs. `isMisparsedFunction` hook filters macro-caused misparse artifacts (e.g. `NLOHMANN_JSON_NAMESPACE_BEGIN`). `visitFunctionBody` now extracts structural nodes (classes/structs/enums) inside macro-confused "function" bodies. Content-based `.h` detection (`looksLikeCpp` in `grammars.rs`) promotes C++ headers to `cpp` language so classes in `.h` files are extracted. Verified against nlohmann/json and gRPC. Note: out-of-class `Type::method()` definitions would need `getReceiverType` but are uncommon in header-only codebases.
 - [x] **C#** — NOT needed. Methods nested in class body. Added `base_list` handling in `extractInheritance` for C#'s `: Parent, IInterface` syntax. Added `propertyTypes` support for C# `property_declaration` nodes. Fixed `extractField` to handle C#'s nested `variable_declaration > variable_declarator` structure. Verified against Jellyfin
 - [x] **Ruby** — NOT needed for `getReceiverType`. Methods nested in class body. Added `visitNode` hook to extract Ruby `module` nodes (concerns, namespaces) with proper containment and qualified names. Methods inside modules get `Module::method` qualified names. Also wired up the `ExtractorContext` with `pushScope`/`popScope` for language hooks. Verified against Discourse
 - [x] **TypeScript** — NOT needed for `getReceiverType`. Methods nested in class body. Added `abstract_class_declaration` to `classTypes` so abstract classes are properly extracted. Fixed single-expression arrow function extraction (`const fn = () => expr` was silently dropped because `extractName` picked up the body identifier instead of returning `<anonymous>` for parent name resolution). Verified against Grafana
 - [x] **Dart** — NOT needed for `getReceiverType`. Methods nested in class body. Added bare call extraction for selector-based method calls (e.g. `object.method()`). Verified against Flutter
 - [x] **Kotlin** — `getReceiverType` extracts receiver from extension functions `fun Type.method()`. Added `classifyClassNode` to distinguish interfaces/enums from classes (all use `class_declaration` AST node). Added `resolveBody` hook since Kotlin's tree-sitter grammar doesn't use field names. Added `navigation_expression` handling for method call extraction. Added `object_declaration` via `extraClassNodeTypes`. Added `delegation_specifier` handling in `extractInheritance` for Kotlin's `: Parent, Interface` syntax. Also fixed `extractInterface` to visit body children (interface methods were not being extracted). Added `visitNode` hook to handle `fun interface` (SAM) declarations — tree-sitter-kotlin doesn't support this Kotlin 1.4+ syntax, producing ERROR or function_declaration misparse; the hook detects both patterns and extracts the interface. Verified against Koin, LeakCanary
 - [x] **Svelte** — Custom `SvelteExtractor` delegates `<script>` blocks to TS/JS parser; creates `component` nodes for each `.svelte` file. Added template expression call extraction: scans `{expression}` blocks in markup for function calls (e.g. `class={cn(...)}`), creating call edges from component to callees — increased Svelte call edges from 29 to 387. Filtered Svelte 5 rune calls (`$state`, `$props`, `$derived`, `$effect`, `$bindable`). Also fixed: destructured `$props()` patterns (e.g. `let { x, y } = $props()`) no longer extracted as ugly multi-line variable names (skip `object_pattern`/`array_pattern` in `extractVariable`). Object literal getter/setter methods no longer extracted as standalone functions. Verified against shadcn-svelte
-- [x] **PHP** — NOT needed for `getReceiverType`. Methods nested in class body. Added `classifyClassNode` to distinguish traits from classes (`trait_declaration` → `trait` kind). Added `'trait'` to `classifyClassNode` return type in `tree-sitter-types.ts` and handling in visitor. Fixed PHP property extraction: `extractField` now handles `property_element > variable_name > name` AST structure (added 4,366 field nodes). Added `visitNode` hook for class constants (`const_declaration` inside classes was skipped by `variableTypes` guard) and trait `use` declarations (`use HasFactory, SoftDeletes;` creates `implements` edges — increased from 636 to 1,514). Verified against Laravel
+- [x] **PHP** — NOT needed for `getReceiverType`. Methods nested in class body. Added `classifyClassNode` to distinguish traits from classes (`trait_declaration` → `trait` kind). Added `'trait'` to `classifyClassNode` return type in `tree_sitter_types.rs` and handling in visitor. Fixed PHP property extraction: `extractField` now handles `property_element > variable_name > name` AST structure (added 4,366 field nodes). Added `visitNode` hook for class constants (`const_declaration` inside classes was skipped by `variableTypes` guard) and trait `use` declarations (`use HasFactory, SoftDeletes;` creates `implements` edges — increased from 636 to 1,514). Verified against Laravel
 
 ### Needs Verification
 

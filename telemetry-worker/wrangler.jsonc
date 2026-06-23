@@ -1,11 +1,9 @@
 // codegraph telemetry ingest — see README.md and docs/design/telemetry.md.
 // Secrets are NOT configured here: POSTHOG_KEY is set via `wrangler secret put POSTHOG_KEY`.
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "codegraph-telemetry",
-  "main": "src/index.ts",
+  "main": "build/worker/shim.mjs",
   "compatibility_date": "2026-06-12",
-  "compatibility_flags": ["nodejs_compat"],
 
   // First-party endpoint. The custom domain auto-provisions DNS + cert when the
   // getcodegraph.com zone is on the deploying account. workers.dev stays off so
@@ -14,6 +12,8 @@
   "workers_dev": false,
 
   "observability": { "enabled": true, "head_sampling_rate": 1 },
+
+  "build": { "command": "worker-build --release" },
 
   // Non-secret config. Swap host here if the backend ever moves (EU, self-hosted…).
   "vars": { "POSTHOG_HOST": "https://us.i.posthog.com" },

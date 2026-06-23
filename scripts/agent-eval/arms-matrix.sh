@@ -2,7 +2,8 @@
 # Drive the tool-surface ablation across the chosen repos × arms (A–E).
 # Arms A–D ask the canonical FLOW question; arm E asks a NON-flow survey
 # question (the control probe — should degrade without explore+context).
-# Output: /tmp/arms/<repo>/<arm>-r<n>.jsonl  (parse with parse-arms.mjs).
+# Output: /tmp/arms/<repo>/<arm>-r<n>.jsonl
+# Parse with: rustcodegraph agent-eval parse-arms /tmp/arms
 set -uo pipefail
 HARNESS="$(cd "$(dirname "$0")" && pwd)"
 RUNS="${RUNS:-2}"

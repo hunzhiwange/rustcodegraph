@@ -1,119 +1,168 @@
 #!/usr/bin/env bash
 #
-# Assemble the npm thin-installer packages from built bundles (esbuild pattern).
+# Assemble npm packages from Rust release archives.
 #
 # Produces, under release/npm/:
-#   codegraph-<target>/   one per built bundle — the vendored Node + app, tagged
-#                         with os/cpu so npm installs only the matching one.
-#   main/                 the @colbymchenry/codegraph shim package: a tiny bin
-#                         that execs the matching platform bundle, with every
-#                         platform package in optionalDependencies.
+#   rustcodegraph-<target>/   per-platform package with bin/rustcodegraph(.exe)
+#   main/                     rustcodegraph metadata package
 #
-# The release pipeline then `npm publish`es each dir. This does NOT touch the
-# repo's package.json — the dev/from-source path keeps working; the *published*
-# main package's shape is generated here.
-#
-# Prereq: run build-bundle.sh for each target first (release/codegraph-*.tar.gz).
-# Usage:  scripts/pack-npm.sh [version]    (default: version from package.json)
+# Supports cargo-dist archives for the rustcodegraph crate:
+#   release/rustcodegraph-aarch64-apple-darwin.tar.xz
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${1:-$(node -p "require('$ROOT/package.json').version")}"
 SCOPE="@colbymchenry"
-REL="$ROOT/release"
+PACKAGE_BASENAME="rustcodegraph"
+REL="${RUSTCODEGRAPH_RELEASE_DIR:-$ROOT/release}"
 NPM="$REL/npm"
 
 rm -rf "$NPM"
 mkdir -p "$NPM/main"
 
+target_from_name() {
+  case "$1" in
+    rustcodegraph-darwin-arm64) echo "darwin-arm64" ;;
+    rustcodegraph-darwin-x64) echo "darwin-x64" ;;
+    rustcodegraph-linux-arm64) echo "linux-arm64" ;;
+    rustcodegraph-linux-x64) echo "linux-x64" ;;
+    rustcodegraph-win32-arm64) echo "win32-arm64" ;;
+    rustcodegraph-win32-x64) echo "win32-x64" ;;
+    rustcodegraph-aarch64-apple-darwin) echo "darwin-arm64" ;;
+    rustcodegraph-x86_64-apple-darwin) echo "darwin-x64" ;;
+    rustcodegraph-aarch64-unknown-linux-gnu) echo "linux-arm64" ;;
+    rustcodegraph-x86_64-unknown-linux-gnu) echo "linux-x64" ;;
+    rustcodegraph-aarch64-pc-windows-msvc) echo "win32-arm64" ;;
+    rustcodegraph-x86_64-pc-windows-msvc) echo "win32-x64" ;;
+    *) return 1 ;;
+  esac
+}
+
+extract_archive() {
+  local archive="$1"
+  local dest="$2"
+  case "$archive" in
+    *.zip) tar -xf "$archive" -C "$dest" ;;
+    *.tar.xz) tar -xJf "$archive" -C "$dest" ;;
+    *.tar.gz) tar -xzf "$archive" -C "$dest" ;;
+    *) echo "[pack-npm] unsupported archive: $archive" >&2; return 1 ;;
+  esac
+}
+
+find_binary() {
+  local dir="$1"
+  local target="$2"
+  local archive_base="$3"
+  local binfile="rustcodegraph"
+  if [[ "$target" == win32-* ]]; then
+    binfile="rustcodegraph.exe"
+  fi
+  local candidates=(
+    "$dir/$archive_base/bin/$binfile"
+    "$dir/$archive_base/$binfile"
+    "$dir/bin/$binfile"
+    "$dir/$binfile"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [ -f "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+}
+
+os_from_target() {
+  echo "${1%-*}"
+}
+
+arch_from_target() {
+  echo "${1##*-}"
+}
+
 shopt -s nullglob
-archives=("$REL"/codegraph-*.tar.gz "$REL"/codegraph-*.zip)
-[ ${#archives[@]} -gt 0 ] || { echo "[pack-npm] no bundles in $REL — run build-bundle.sh first" >&2; exit 1; }
+archives=("$REL"/rustcodegraph-*.tar.gz "$REL"/rustcodegraph-*.tar.xz "$REL"/rustcodegraph-*.zip)
+[ ${#archives[@]} -gt 0 ] || { echo "[pack-npm] no Rust bundles in $REL" >&2; exit 1; }
 
 targets=()
+seen=" "
 for archive in "${archives[@]}"; do
   fname="$(basename "$archive")"
-  case "$fname" in
-    *.tar.gz) base="${fname%.tar.gz}" ;;   # codegraph-<target>
-    *.zip)    base="${fname%.zip}" ;;
-  esac
-  target="${base#codegraph-}"             # <target>, e.g. darwin-arm64 / win32-x64
-  os="${target%-*}"                       # darwin | linux | win32
-  arch="${target##*-}"                    # arm64 | x64
-  pkgdir="$NPM/$base"
-  mkdir -p "$pkgdir"
-  case "$fname" in
-    *.zip)
-      tmpx="$(mktemp -d)"
-      unzip -q "$archive" -d "$tmpx"
-      mv "$tmpx/codegraph-${target}"/* "$pkgdir"/
-      rm -rf "$tmpx"
-      nodefile="node.exe"
-      ;;
-    *)
-      tar -xzf "$archive" -C "$pkgdir" --strip-components=1
-      nodefile="node"
-      ;;
-  esac
-  VERSION="$VERSION" SCOPE="$SCOPE" TARGET="$target" OSV="$os" ARCHV="$arch" NODEFILE="$nodefile" \
+  base="$fname"
+  base="${base%.tar.gz}"
+  base="${base%.tar.xz}"
+  base="${base%.zip}"
+  target="$(target_from_name "$base" || true)"
+  [ -n "$target" ] || continue
+  case "$seen" in *" $target "*) continue ;; esac
+  seen="$seen$target "
+
+  os="$(os_from_target "$target")"
+  arch="$(arch_from_target "$target")"
+  binfile="$PACKAGE_BASENAME"
+  [[ "$target" == win32-* ]] && binfile="$PACKAGE_BASENAME.exe"
+  pkgdir="$NPM/$PACKAGE_BASENAME-$target"
+  tmpx="$(mktemp -d)"
+  mkdir -p "$pkgdir/bin"
+  trap 'rm -rf "$tmpx"' RETURN
+  extract_archive "$archive" "$tmpx"
+  binary="$(find_binary "$tmpx" "$target" "$base")"
+  [ -n "$binary" ] || { echo "[pack-npm] $fname did not contain rustcodegraph binary" >&2; exit 1; }
+  cp "$binary" "$pkgdir/bin/$binfile"
+  [[ "$target" == win32-* ]] || chmod +x "$pkgdir/bin/$binfile"
+  for extra in README.md LICENSE CHANGELOG.md; do
+    found="$(find "$tmpx" -type f -name "$extra" -print -quit)"
+    [ -n "$found" ] && cp "$found" "$pkgdir/$extra"
+  done
+  [ -f "$ROOT/README.md" ] && [ ! -f "$pkgdir/README.md" ] && cp "$ROOT/README.md" "$pkgdir/README.md"
+  [ -f "$ROOT/LICENSE" ] && [ ! -f "$pkgdir/LICENSE" ] && cp "$ROOT/LICENSE" "$pkgdir/LICENSE"
+
+  VERSION="$VERSION" SCOPE="$SCOPE" PACKAGE_BASENAME="$PACKAGE_BASENAME" TARGET="$target" OSV="$os" ARCHV="$arch" BINFILE="$binfile" \
     node -e '
       const fs=require("fs");
+      const bin = {};
+      bin[process.env.PACKAGE_BASENAME] = `bin/${process.env.BINFILE}`;
       fs.writeFileSync(process.argv[1], JSON.stringify({
-        name: `${process.env.SCOPE}/codegraph-${process.env.TARGET}`,
+        name: `${process.env.SCOPE}/${process.env.PACKAGE_BASENAME}-${process.env.TARGET}`,
         version: process.env.VERSION,
-        description: `CodeGraph self-contained bundle for ${process.env.TARGET}`,
-        os: [process.env.OSV], cpu: [process.env.ARCHV],
-        files: [process.env.NODEFILE, "lib", "bin"],
+        description: `RustCodeGraph native binary for ${process.env.TARGET}`,
+        os: [process.env.OSV],
+        cpu: [process.env.ARCHV],
+        bin,
+        files: ["bin", "README.md", "LICENSE", "CHANGELOG.md"],
         license: "MIT"
       }, null, 2) + "\n");
     ' "$pkgdir/package.json"
+
+  rm -rf "$tmpx"
+  trap - RETURN
   targets+=("$target")
-  echo "[pack-npm] ${SCOPE}/codegraph-${target}@${VERSION}"
+  echo "[pack-npm] ${SCOPE}/${PACKAGE_BASENAME}-${target}@${VERSION}"
 done
 
-# Main shim package.
-#   npm-shim.js  CLI/MCP launcher (execs the bundled Node) — the `bin`.
-#   npm-sdk.js   programmatic/embedded entry (#354): re-exports the installed
-#                platform bundle's compiled library — the `main`.
-#   dist/        the .d.ts tree only (types). The runtime .js stays in the
-#                per-platform bundle so its deps aren't duplicated here.
-cp "$ROOT/scripts/npm-shim.js" "$NPM/main/npm-shim.js"
-cp "$ROOT/scripts/npm-sdk.js" "$NPM/main/npm-sdk.js"
+[ ${#targets[@]} -gt 0 ] || { echo "[pack-npm] no supported targets found in $REL" >&2; exit 1; }
+
 [ -f "$ROOT/README.md" ] && cp "$ROOT/README.md" "$NPM/main/README.md"
+[ -f "$ROOT/LICENSE" ] && cp "$ROOT/LICENSE" "$NPM/main/LICENSE"
 
-# Ship the type declarations so `types`/`exports.types` resolve. Built from this
-# same release, so they can't skew from the runtime npm-sdk.js re-exports.
-[ -f "$ROOT/dist/index.d.ts" ] || ( echo "[pack-npm] building dist for .d.ts" >&2 && cd "$ROOT" && npm run build >/dev/null )
-ROOT="$ROOT" DEST="$NPM/main" node -e '
-  const fs=require("fs"), path=require("path");
-  const src=path.join(process.env.ROOT,"dist"), dest=path.join(process.env.DEST,"dist");
-  fs.cpSync(src, dest, { recursive:true, filter(s){
-    try { return fs.statSync(s).isDirectory() || s.endsWith(".d.ts"); } catch (e) { return false; }
-  }});
-'
-
-VERSION="$VERSION" SCOPE="$SCOPE" TARGETS="${targets[*]}" \
+VERSION="$VERSION" SCOPE="$SCOPE" PACKAGE_BASENAME="$PACKAGE_BASENAME" TARGETS="${targets[*]}" \
   node -e '
     const fs=require("fs");
     const opt={};
     for (const t of process.env.TARGETS.split(/\s+/).filter(Boolean))
-      opt[`${process.env.SCOPE}/codegraph-${t}`]=process.env.VERSION;
+      opt[`${process.env.SCOPE}/${process.env.PACKAGE_BASENAME}-${t}`]=process.env.VERSION;
     fs.writeFileSync(process.argv[1], JSON.stringify({
-      name: `${process.env.SCOPE}/codegraph`,
+      name: `${process.env.SCOPE}/${process.env.PACKAGE_BASENAME}`,
       version: process.env.VERSION,
-      description: "Local-first code intelligence for AI agents (MCP). Self-contained — bundles its own runtime.",
-      bin: { codegraph: "npm-shim.js" },
-      main: "npm-sdk.js",
-      types: "dist/index.d.ts",
+      description: "Local-first code intelligence for AI agents (MCP). Metadata package for platform-specific native CLI packages.",
       exports: {
-        ".": { types: "./dist/index.d.ts", default: "./npm-sdk.js" },
         "./package.json": "./package.json"
       },
       optionalDependencies: opt,
-      files: ["npm-shim.js","npm-sdk.js","dist","README.md"],
+      files: ["README.md", "LICENSE"],
       license: "MIT"
     }, null, 2) + "\n");
   ' "$NPM/main/package.json"
 
-echo "[pack-npm] ${SCOPE}/codegraph@${VERSION} (${#targets[@]} platform packages in optionalDependencies)"
+echo "[pack-npm] ${SCOPE}/${PACKAGE_BASENAME}@${VERSION} (${#targets[@]} platform packages in optionalDependencies; no root bin)"
 echo "[pack-npm] output: $NPM"

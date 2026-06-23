@@ -1,0 +1,65 @@
+[package]
+name = "rustcodegraph"
+version = "1.0.0"
+edition = "2024"
+description = "Local-first code intelligence graph and CLI for AI agents"
+license = "MIT"
+repository = "https://github.com/hunzhiwange/rustcodegraph"
+homepage = "https://github.com/hunzhiwange/rustcodegraph"
+readme = "README.md"
+default-run = "rustcodegraph"
+autobins = false
+
+[package.metadata.dist]
+dist = true
+npm-package = "rustcodegraph"
+
+[lib]
+name = "rustcodegraph"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rustcodegraph"
+path = "src/bin/rustcodegraph.rs"
+
+[[test]]
+name = "evaluation_types"
+path = "tests/evaluation/types.rs"
+
+[[test]]
+name = "evaluation_runner"
+path = "tests/evaluation/runner.rs"
+
+[dependencies]
+regex = "1"
+notify = "6.1.1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+toml = "0.8"
+tree-sitter = "0.25.8"
+tree-sitter-c = "0.24.2"
+tree-sitter-c-sharp = "0.23.5"
+tree-sitter-cpp = "0.23.4"
+tree-sitter-dart = "0.2.0"
+tree-sitter-go = "0.25.0"
+tree-sitter-java = "0.23.5"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-kotlin-ng = "1.1.0"
+tree-sitter-lua = "0.5.0"
+tree-sitter-luau = "1.2.0"
+tree-sitter-objc = "3.0.2"
+tree-sitter-pascal = "0.10.2"
+tree-sitter-php = "0.24.2"
+tree-sitter-python = "0.25.0"
+tree-sitter-r = "1.3.0"
+tree-sitter-ruby = "0.23.1"
+tree-sitter-rust = "0.24.2"
+tree-sitter-scala = "0.26.0"
+tree-sitter-swift = "0.7.3"
+tree-sitter-typescript = "0.23.2"
+
+[profile.dist]
+inherits = "release"
+lto = "thin"

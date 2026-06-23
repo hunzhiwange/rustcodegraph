@@ -1,74 +1,53 @@
-# Distribution: self-contained bundles
+# Distribution: native Rust bundles
 
-CodeGraph ships a **vendored Node runtime** alongside the app. Because Node 22.5+
-has a built-in real SQLite (`node:sqlite`, with WAL + FTS5), bundling Node means:
+RustCodeGraph ships a native Rust `rustcodegraph` binary. Standalone installers
+and the npm installer expose that exact public command; compiled TypeScript
+runtime files are no longer part of the published runtime. The npm package is a
+cargo-dist installer package that downloads the matching Rust artifact from
+GitHub Releases during install.
 
-- **No native build** — `better-sqlite3` is gone, so there are zero native addons
-  to compile or rebuild.
-- **No wasm fallback** — and therefore no more `database is locked` (issue #238).
-- **No Node-version dependence** — the app always runs on the bundled Node,
-  whatever the user has (or doesn't have) installed.
+## What's In A Bundle
 
-## What's in a bundle
-
-Built by [`scripts/build-bundle.sh`](scripts/build-bundle.sh) — one archive per
-platform, identical recipe (only the Node download differs):
+Built by cargo-dist in CI:
 
 ```
-codegraph-<target>/
-  node | node.exe          # official Node runtime for <target>
-  lib/
-    dist/                  # compiled app (+ tree-sitter .wasm grammars, schema.sql)
-    node_modules/          # production deps only (pure JS / wasm — portable)
-  bin/
-    codegraph | codegraph.cmd   # launcher → runs the bundled Node with the app
+rustcodegraph-<triple>/
+  rustcodegraph | rustcodegraph.exe
+  README.md
+  LICENSE
 ```
 
-Targets: `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`, `win32-x64`,
-`win32-arm64`. Unix targets produce `.tar.gz` (shell launcher); Windows produces
-`.zip` (`node.exe` + a `.cmd` launcher).
+The GitHub Release workflow publishes cargo-dist's native Rust artifacts, such
+as `rustcodegraph-x86_64-unknown-linux-gnu.tar.xz`. cargo-dist also generates
+the Homebrew formula and the `rustcodegraph` npm installer package
+from those artifacts.
+
+## Install Channels
+
+1. **`curl | sh`** ([`install.sh`](install.sh)) detects OS/arch, downloads the
+   matching Rust archive from GitHub Releases, and links `rustcodegraph` onto PATH.
+2. **npm** (`rustcodegraph`) installs a small launcher that
+   downloads the matching native CLI from GitHub Releases.
+3. **Homebrew** (`hunzhiwange/tap/rustcodegraph`) installs the formula generated
+   by cargo-dist.
+4. **Windows** ([`install.ps1`](install.ps1)) downloads the matching `.zip`,
+   places `rustcodegraph.exe` under `current\bin`, and adds that directory to PATH.
+
+## Release Pipeline
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) lets cargo-dist
+build and host GitHub Release artifacts. The workflow extracts GitHub Release
+notes from `CHANGELOG.md` with the Rust `rustcodegraph extract-release-notes`
+command, then publishes cargo-dist's Homebrew formula and npm installer package.
+For a local packaging dry run, run:
 
 ```bash
-scripts/build-bundle.sh linux-x64            # -> release/codegraph-linux-x64.tar.gz
-scripts/build-bundle.sh win32-x64            # -> release/codegraph-win32-x64.zip
+dist build --artifacts=global
 ```
 
-Because dropping better-sqlite3 left **zero native addons**, building a bundle is
-pure file-packaging — **any** target builds on **any** OS (the whole matrix builds
-on one Linux runner). Cross-compilation isn't a concern; only *run-testing* a
-bundle needs the target platform (or emulation, e.g. `docker run --platform
-linux/amd64`).
-
-## Install channels (all deliver the same bundle)
-
-1. **`curl | sh`** ([`install.sh`](install.sh)) — no Node required; ideal for a
-   fresh Linux VPS over SSH. Detects os/arch, pulls the archive from GitHub
-   Releases, symlinks `codegraph` onto PATH. Re-run to upgrade; `--uninstall` to
-   remove.
-2. **npm** ([`scripts/npm-shim.js`](scripts/npm-shim.js)) — preserves
-   `npm i -g @colbymchenry/codegraph`. The main package is a tiny shim; the
-   bundles ship as per-platform `optionalDependencies`
-   (`@colbymchenry/codegraph-<target>` with `os`/`cpu`), so npm installs only the
-   matching one. The shim — run by the user's Node — execs the bundle, so the
-   real work runs on the bundled Node 24. Works even on old Node. On Windows it
-   invokes the bundled `node.exe` against the app entry directly (not the `.cmd`
-   launcher) — modern Node throws `EINVAL` when asked to spawn a `.cmd`/`.bat`.
-3. **Windows** ([`install.ps1`](install.ps1)) — `irm … | iex`; same flow as
-   install.sh (detect arch, pull the `.zip` from Releases, add to PATH).
-4. **Homebrew / Scoop** — TODO (tap + cask pointing at the Release archives).
-
-## Release pipeline
-
-[`.github/workflows/release.yml`](.github/workflows/release.yml) — manually
-triggered. Reads the version from `package.json`, builds every platform bundle on
-one runner, creates the GitHub Release (notes from `CHANGELOG.md`), and publishes
-the npm shim + per-platform packages. Requires the `NPM_TOKEN` repo secret.
+The workflow owns publishing; do not run `npm publish`, `git push`, or tag
+creation manually from a local task.
 
 Still TODO:
-- **Code signing** — the main gap for "download & run": macOS Gatekeeper needs a
-  Developer ID + notarization; Windows needs Authenticode. Homebrew softens the
-  macOS case (handles quarantine).
-- Retire the now-vestigial Node-version gate in `src/bin/codegraph.ts` — the
-  bundle always runs Node 24, and the npm shim does no tree-sitter work.
-- Re-wire `npm uninstall` cleanup (the agent-config `preuninstall`) through the
-  shim — the generated main package doesn't carry it.
+- Code signing for macOS Gatekeeper and Windows Authenticode.
+- Scoop packages pointing at the Release archives.

@@ -1,204 +1,305 @@
+# This file was based on the cargo-dist workflow used by VibeWindow, with the
+# desktop packaging jobs removed.
 name: Release
 
-# Manually triggered ("Run workflow"). On trigger it:
-#   1. reads the version from package.json,
-#   2. promotes `## [Unreleased]` content into `## [<version>]` in
-#      CHANGELOG.md (and commits + pushes that change back to main), so
-#      the published release notes are never sparse just because the
-#      maintainer didn't pre-stage the [<version>] block by hand,
-#   3. builds a self-contained bundle for every platform (one runner — there's no
-#      native compilation, so cross-packaging is fine),
-#   4. creates the GitHub Release (tag v<version>) with all archives, using the
-#      release notes from CHANGELOG.md,
-#   5. publishes the npm thin-installer (shim + per-platform packages).
-#
-# Before triggering: bump package.json. CHANGELOG.md entries can live under
-# `## [Unreleased]` — step 2 takes care of moving them. Set the NPM_TOKEN secret.
-on:
-  workflow_dispatch: {}
-
 permissions:
-  contents: write   # create the GitHub Release + tag, push the CHANGELOG promote
+  contents: write
+  id-token: write
+
+on:
+  pull_request:
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  plan:
+    runs-on: ubuntu-22.04
+    outputs:
+      val: ${{ steps.plan.outputs.manifest }}
+      tag: ${{ !github.event.pull_request && github.ref_name || '' }}
+      tag-flag: ${{ !github.event.pull_request && format('--tag={0}', github.ref_name) || '' }}
+      publishing: ${{ !github.event.pull_request }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v6
         with:
-          # Default checkout is detached at a SHA; we need an actual branch
-          # so the CHANGELOG-promote commit knows where to push.
-          ref: ${{ github.ref }}
-          # Authenticate as the maintainer (admin), not as github-actions[bot].
-          # The "Require PR approval for main branch" ruleset only lets the
-          # Admin repo role bypass — and GitHub blocks adding the GitHub
-          # Actions integration to bypass_actors on user-owned (non-org)
-          # repos with "Actor GitHub Actions integration must be part of
-          # the ruleset source or owner organization." So the auto-promote
-          # and auto-sync `git push origin HEAD:main` steps below both fail
-          # under the default GITHUB_TOKEN. Using a fine-grained PAT owned
-          # by the admin makes the push go through cleanly. Set the
-          # RELEASE_PAT secret with: contents:write on this repo, no other
-          # scopes. Rotate per your token policy; the workflow only runs
-          # on manual dispatch so the blast radius is small.
-          token: ${{ secrets.RELEASE_PAT }}
-      - uses: actions/setup-node@v6
+          persist-credentials: false
+          submodules: recursive
+      - name: Install dist
+        shell: bash
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.30.1/cargo-dist-installer.sh | sh
+      - name: Cache dist
+        uses: actions/upload-artifact@v6
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
+          name: cargo-dist-cache
+          path: ~/.cargo/bin/dist
+      - id: plan
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            make release-check-version TAG="${{ github.ref_name }}"
+          fi
+          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
+          echo "dist ran successfully"
+          cat plan-dist-manifest.json
+          echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
+      - name: Upload dist-manifest.json
+        uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-plan-dist-manifest
+          path: plan-dist-manifest.json
 
-      - name: Sync package-lock.json if version drifted
-        # When the maintainer bumps the version on package.json only — for
-        # example via a GitHub web-UI edit — `npm ci` would refuse to run
-        # with `EUSAGE: npm ci can only install packages when your
-        # package.json and package-lock.json … are in sync`. This step
-        # rewrites just the lock-file's version fields (top-level + the
-        # `packages.""` entry) to match package.json, then auto-commits
-        # and pushes the result so on-disk truth on `main` stays
-        # consistent. Idempotent: if the lock file already matches, no
-        # commit is made.
+  build-local-artifacts:
+    name: build-local-artifacts (${{ join(matrix.targets, ', ') }})
+    needs:
+      - plan
+    if: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix.include != null && (needs.plan.outputs.publishing == 'true' || fromJson(needs.plan.outputs.val).ci.github.pr_run_mode == 'upload') }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container && matrix.container.image || null }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
+    steps:
+      - name: Enable Windows long paths
+        run: git config --global core.longpaths true
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Rust non-interactively if not already installed
+        if: ${{ matrix.container }}
+        run: |
+          if ! command -v cargo > /dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Install dist
+        run: ${{ matrix.install_dist.run }}
+      - name: Fetch local artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-*
+          path: target/distrib/
+          merge-multiple: true
+      - name: Install dependencies
+        run: |
+          ${{ matrix.packages_install }}
+      - name: Build artifacts
+        run: |
+          dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+          echo "dist ran successfully"
+      - id: cargo-dist
+        name: Post-build
+        shell: bash
+        run: |
+          echo "paths<<EOF" >> "$GITHUB_OUTPUT"
+          dist print-upload-files-from-manifest --manifest dist-manifest.json >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-build-local-${{ join(matrix.targets, '_') }}
+          path: |
+            ${{ steps.cargo-dist.outputs.paths }}
+            ${{ env.BUILD_MANIFEST_NAME }}
+
+  build-global-artifacts:
+    needs:
+      - plan
+      - build-local-artifacts
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install cached dist
+        uses: actions/download-artifact@v7
+        with:
+          name: cargo-dist-cache
+          path: ~/.cargo/bin/
+      - run: chmod +x ~/.cargo/bin/dist
+      - name: Fetch local artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-*
+          path: target/distrib/
+          merge-multiple: true
+      - id: cargo-dist
+        shell: bash
+        run: |
+          dist build ${{ needs.plan.outputs.tag-flag }} --output-format=json "--artifacts=global" > dist-manifest.json
+          echo "dist ran successfully"
+          echo "paths<<EOF" >> "$GITHUB_OUTPUT"
+          jq --raw-output ".upload_files[]" dist-manifest.json >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-build-global
+          path: |
+            ${{ steps.cargo-dist.outputs.paths }}
+            ${{ env.BUILD_MANIFEST_NAME }}
+
+  host:
+    needs:
+      - plan
+      - build-local-artifacts
+      - build-global-artifacts
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    runs-on: ubuntu-22.04
+    outputs:
+      val: ${{ steps.host.outputs.manifest }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install cached dist
+        uses: actions/download-artifact@v7
+        with:
+          name: cargo-dist-cache
+          path: ~/.cargo/bin/
+      - run: chmod +x ~/.cargo/bin/dist
+      - name: Fetch artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-*
+          path: target/distrib/
+          merge-multiple: true
+      - id: host
+        shell: bash
+        run: |
+          dist host ${{ needs.plan.outputs.tag-flag }} --steps=upload --steps=release --output-format=json > dist-manifest.json
+          echo "artifacts uploaded and released successfully"
+          cat dist-manifest.json
+          echo "manifest=$(jq -c "." dist-manifest.json)" >> "$GITHUB_OUTPUT"
+      - name: Upload dist-manifest.json
+        uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-dist-manifest
+          path: dist-manifest.json
+      - name: Download GitHub artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-*
+          path: artifacts
+          merge-multiple: true
+      - name: Cleanup
+        run: rm -f artifacts/*-dist-manifest.json
+      - name: Install Rust non-interactively if not already installed
+        run: |
+          if ! command -v cargo > /dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Extract release notes from CHANGELOG
+        env:
+          RELEASE_TAG: "${{ needs.plan.outputs.tag }}"
         run: |
           set -euo pipefail
-          PKG_V=$(node -p "require('./package.json').version")
-          LOCK_V=$(node -p "require('./package-lock.json').version")
-          if [ "$PKG_V" = "$LOCK_V" ]; then
-            echo "package-lock.json already at $PKG_V — nothing to sync."
-            exit 0
-          fi
-          echo "Lock-file version drift: lock=$LOCK_V, package=$PKG_V. Syncing."
-          # `--package-lock-only` rewrites only the lock file, doesn't
-          # touch node_modules or actually install anything. Cheap.
-          npm install --package-lock-only --ignore-scripts
-          # Sanity: lockfile should now report the package version.
-          NEW_LOCK_V=$(node -p "require('./package-lock.json').version")
-          if [ "$NEW_LOCK_V" != "$PKG_V" ]; then
-            echo "::error::lock-file still at $NEW_LOCK_V after sync attempt; expected $PKG_V"; exit 1
-          fi
-          if git diff --quiet -- package-lock.json; then
-            echo "lock file unchanged after sync? bailing"; exit 1
-          fi
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git commit -m "release: sync package-lock.json to ${PKG_V}" -m "[skip ci] Auto-generated by Release workflow."
-          git push origin "HEAD:${GITHUB_REF#refs/heads/}"
-
-      - run: npm ci
-      - name: Ensure zip/unzip
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq zip unzip
-
-      - name: Resolve version
-        id: ver
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Promote [Unreleased] → [<version>] in CHANGELOG.md
-        # Idempotent: a no-op if [Unreleased] is empty OR if the previous
-        # run already moved everything. Auto-commit + push the change back
-        # so the version block on main is the source of truth going
-        # forward (and so subsequent extract-release-notes.mjs calls
-        # surface the full content even if this run is re-triggered).
-        run: |
-          set -euo pipefail
-          V="${{ steps.ver.outputs.version }}"
-          before=$(git rev-parse HEAD)
-          node scripts/prepare-release.mjs "$V"
-          if git diff --quiet -- CHANGELOG.md; then
-            echo "CHANGELOG.md unchanged — nothing to commit."
-          else
-            git config user.name  "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add CHANGELOG.md
-            git commit -m "docs(changelog): promote [Unreleased] into [${V}]" -m "[skip ci] Auto-generated by Release workflow."
-            # Push to the branch the workflow was triggered on (main).
-            git push origin "HEAD:${GITHUB_REF#refs/heads/}"
-          fi
-
-      - name: Build all platform bundles
-        run: |
-          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
-            bash scripts/build-bundle.sh "$t"
-          done
-          ls -lh release
-
-      - name: Generate SHA256SUMS
-        # Published as a release asset; the npm launcher verifies downloaded
-        # bundles against it (basenames only, so its path.basename match works).
-        run: |
-          ( cd release && sha256sum codegraph-* > SHA256SUMS )
-          cat release/SHA256SUMS
-
-      - name: Release notes from CHANGELOG.md
-        # The [<version>] block was guaranteed-populated by the
-        # "Promote" step above, so the [Unreleased] fallback should
-        # never be needed in practice. Kept for defense-in-depth.
-        run: |
-          V="${{ steps.ver.outputs.version }}"
-          node scripts/extract-release-notes.mjs "$V" > notes.md 2>/dev/null \
-            || node scripts/extract-release-notes.mjs Unreleased > notes.md 2>/dev/null || true
-          if [ ! -s notes.md ]; then
-            echo "::error::No release notes in CHANGELOG.md for [$V] or [Unreleased]."
-            exit 1
-          fi
-          echo "----- release notes -----"; cat notes.md
-
+          VERSION="${RELEASE_TAG#v}"
+          cargo run --quiet --bin rustcodegraph -- extract-release-notes "$VERSION" > "$RUNNER_TEMP/notes.txt"
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
+          ANNOUNCEMENT_TITLE: "${{ fromJson(steps.host.outputs.manifest).announcement_title }}"
+          RELEASE_COMMIT: "${{ github.sha }}"
         run: |
-          TAG="v${{ steps.ver.outputs.version }}"
-          # Idempotent: create the release once, otherwise (re-run) refresh assets.
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release/codegraph-* release/SHA256SUMS --clobber
-          else
-            gh release create "$TAG" release/codegraph-* release/SHA256SUMS --title "$TAG" --notes-file notes.md
-          fi
+          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
 
-      - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+  publish-homebrew-formula:
+    needs:
+      - plan
+      - host
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PLAN: ${{ needs.plan.outputs.val }}
+      GITHUB_USER: "rustcodegraph bot"
+      GITHUB_EMAIL: "actions@github.com"
+    if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+          repository: "hunzhiwange/homebrew-tap"
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Fetch homebrew formulae
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-*
+          path: Formula/
+          merge-multiple: true
+      - name: Commit formula files
         run: |
-          V="${{ steps.ver.outputs.version }}"
-          bash scripts/pack-npm.sh "$V"
-          # Platform packages first, then the main shim (which depends on them).
-          # Skip any already on the registry so a re-run only fills in gaps.
-          for dir in release/npm/codegraph-* release/npm/main; do
-            name=$(node -p "require('./$dir/package.json').name")
-            if npm view "$name@$V" version >/dev/null 2>&1; then
-              echo "skip $name@$V (already published)"
-            else
-              echo "publishing $name@$V"
-              ( cd "$dir" && npm publish --access public )
-            fi
+          git config --global user.name "${GITHUB_USER}"
+          git config --global user.email "${GITHUB_EMAIL}"
+
+          for release in $(echo "$PLAN" | jq --compact-output '.releases[] | select([.artifacts[] | endswith(".rb")] | any)'); do
+            filename=$(echo "$release" | jq '.artifacts[] | select(endswith(".rb"))' --raw-output)
+            name=$(echo "$filename" | sed "s/\.rb$//")
+            version=$(echo "$release" | jq .app_version --raw-output)
+
+            export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+            brew update
+            brew style --except-cops FormulaAudit/Homepage,FormulaAudit/Desc,FormulaAuditStrict --fix "Formula/${filename}" || true
+
+            git add "Formula/${filename}"
+            git commit -m "${name} ${version}"
+          done
+          git push
+
+  publish-npm:
+    needs:
+      - plan
+      - host
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PLAN: ${{ needs.plan.outputs.val }}
+    if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
+    steps:
+      - name: Fetch npm packages
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-*
+          path: npm/
+          merge-multiple: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+      - name: Publish npm packages
+        run: |
+          set -euo pipefail
+          for release in $(echo "$PLAN" | jq --compact-output '.releases[] | select([.artifacts[] | endswith("-npm-package.tar.gz")] | any)'); do
+            pkg=$(echo "$release" | jq '.artifacts[] | select(endswith("-npm-package.tar.gz"))' --raw-output)
+            npm publish --access public "./npm/${pkg}"
           done
 
-      - name: Verify every package is actually on the registry
-        run: |
-          V="${{ steps.ver.outputs.version }}"
-          # npm publish can print success without persisting; confirm against the
-          # registry (with retries for propagation) so green means really shipped.
-          for dir in release/npm/codegraph-* release/npm/main; do
-            name=$(node -p "require('./$dir/package.json').name")
-            ok=
-            for i in 1 2 3 4 5 6; do
-              if npm view "$name@$V" version >/dev/null 2>&1; then ok=1; break; fi
-              echo "waiting for $name@$V to appear ($i)…"; sleep 10
-            done
-            [ -n "$ok" ] || { echo "::error::$name@$V never appeared on the registry"; exit 1; }
-            echo "verified $name@$V"
-          done
-
-      - name: Sync packages to npmmirror
-        # npmmirror/cnpm mirror lazily and frequently never pull the per-platform
-        # optionalDependencies on their own, so `npm i` there fails with
-        # "no prebuilt bundle" (issue #303). Nudge a sync now so mirror users get
-        # the bundle without waiting. Best-effort — the launcher also self-heals
-        # from GitHub Releases — so a mirror hiccup never fails the release.
-        continue-on-error: true
-        run: |
-          for dir in release/npm/codegraph-* release/npm/main; do
-            name=$(node -p "require('./$dir/package.json').name")
-            enc=$(node -p "encodeURIComponent(require('./$dir/package.json').name)")
-            echo "sync $name"
-            curl -s -X PUT "https://registry.npmmirror.com/-/package/$enc/syncs" || true
-            echo
-          done
+  custom-publish-crates:
+    needs:
+      - plan
+      - host
+    if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
+    uses: ./.github/workflows/publish-crates.yml
+    with:
+      plan: ${{ needs.plan.outputs.val }}
+    permissions:
+      contents: read
+      id-token: write

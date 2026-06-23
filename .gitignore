@@ -44,8 +44,8 @@ npm-debug.log*
 # Parallels Windows VM SSH/connection config (local machine, see CLAUDE.md)
 .parallels
 
-# CodeGraph data directories (in test projects)
-.codegraph/
+# RustCodeGraph data directories (in test projects)
+.rustcodegraph/
 
 test_frameworks
 
@@ -54,6 +54,8 @@ test-languages/
 
 nul
 release/
+/dist-manifest.json
+/plan-dist-manifest.json
 
 .antigravitycli/
 
@@ -63,3 +65,5 @@ tmux-web/
 assets/__pycache__/
 
 assets/generate-waitlist.py
+
+target/

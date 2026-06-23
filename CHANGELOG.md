@@ -1,7 +1,7 @@
 # Changelog
 
 All notable changes to CodeGraph are documented here. Each entry also ships as
-a [GitHub Release](https://github.com/colbymchenry/codegraph/releases) tagged
+a [GitHub Release](https://github.com/hunzhiwange/rustcodegraph/releases) tagged
 `vX.Y.Z`, which is where most people will look.
 
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
@@ -9,20 +9,41 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### New Features
 
-- Impact and blast-radius analysis for TypeScript, JavaScript, Go, Python, Rust, Ruby, C, Java, C#, PHP, Scala, Kotlin, Swift, Dart, and Pascal/Delphi now understands the readers of a constant. When you change a file-scope, package-level, module-level, or class-level constant — a config object, a lookup table, a shared constant — the other symbols in that file that read it now show up as affected, where before they were invisible (impact only followed calls, imports, and inheritance, so a constant's consumers looked like "nothing depends on this"). This makes `codegraph impact`, and the impact trail in `codegraph_explore`/`codegraph_node`, catch the "change this table, break its readers" class of change. It's on by default and adds no nodes to your graph; bundled/minified files and ambiguously-shadowed names are skipped to keep results precise. Set `CODEGRAPH_VALUE_REFS=0` to turn it off.
-- C file-scope constants and globals — `static const` scalars, pointer/array lookup tables, and shared mutable globals — are now recognized as symbols in their own right. They previously weren't extracted at all, so they never appeared in search or carried any dependents; now they show up in `codegraph search` and participate in impact analysis (see above), so changing a C lookup table surfaces the same-file functions that read it.
-- Java `static final` constants, C# `const` / `static readonly` constants, Scala `object` vals, and Kotlin top-level / `object` / `companion object` `val`s are now classified as constants rather than generic fields, so they participate in the constant-reader impact analysis above — change a `public static final` table, a `const string`, a Scala `object Config { val Timeout = … }`, or a Kotlin `companion object { const val … }` and the methods that read it now show up as affected. (Per-object Java `final` / C# `readonly` / Scala & Kotlin `class` instance properties are unchanged.) Kotlin constants were previously not indexed as their own symbols at all, so they now also appear in `codegraph search`.
-- Swift top-level `let`s and `static let` constants (including those namespaced in an `enum`/`struct`, the common Swift pattern) are now indexed as constants and participate in the constant-reader impact analysis above — change a `static let defaultRetryLimit` or an `enum Constants { static let … }` and the same-file code that reads it shows up as affected. Computed properties and per-instance `let`s are not treated as constants.
-- Dart top-level `const`/`final` and class `static const`/`static final` constants are now indexed as constants and participate in the constant-reader impact analysis above. Instance fields, `var`s, and locals are not treated as constants. (Generated Dart code with the standard `.g.dart`/`.freezed.dart`/`.pb.dart` suffixes is already skipped.)
+## [1.0.0] - 2026-06-22
 
 ### Fixes
 
-- `codegraph index` now rebuilds the full graph from scratch, so it produces the same result as a fresh `codegraph init` instead of reporting "0 nodes, 0 edges" and looking like it wiped your index. Previously, re-running `index` on an unchanged project skipped every file (their contents hadn't changed) and showed an empty-looking summary; it now clears and re-indexes for an honest, complete rebuild every time. Use `codegraph sync` for fast incremental updates between full rebuilds. Thanks @Arc-univer. (#874)
-- The file watcher that auto-syncs the graph now fails cleanly when live watching can no longer be trusted, instead of looking healthy while the index quietly goes stale. If the operating system runs out of file-watch resources, or another process holds the write lock far longer than a normal save, CodeGraph now disables auto-sync once — with a single clear message telling you to run `codegraph sync` (or rely on the git sync hooks) to refresh — rather than retrying forever or repeating the same error on a loop. And while auto-sync is disabled, CodeGraph's tool responses (and `codegraph status`) now say so plainly, so your AI agent knows to read files directly instead of trusting a frozen index. This mostly matters for long-running MCP/daemon sessions, which could otherwise keep serving stale results while appearing to work. Thanks @thismilktea. (#876)
-- On Linux, hitting the kernel's inotify watch limit on a large project no longer silently leaves half the tree unwatched. CodeGraph now tells you once — naming the exact setting to raise (`fs.inotify.max_user_watches`, e.g. `sudo sysctl fs.inotify.max_user_watches=1048576`) — and keeps live-watching the directories it could register while `codegraph sync` (or the git sync hooks) covers the rest. (#876)
+- `rustcodegraph sync` no longer stalls when changed projects contain large source files, so manual sync and watcher-driven refreshes finish promptly instead of requiring Ctrl-C.
 
+## [1.0.6] - 2026-06-22
+
+### New Features
+
+- npm installs now use the main `rustcodegraph` package, which downloads the matching native RustCodeGraph binary automatically.
+- Releases now publish a Homebrew formula for RustCodeGraph through the project tap.
+
+### Fixes
+
+- RustCodeGraph now auto-syncs from real file changes again while the MCP server is running, so newly saved, edited, and deleted source files refresh the graph after the watcher debounce instead of waiting for a manual rebuild.
+- `rustcodegraph sync` once again performs a fast incremental update of changed files instead of behaving like a full `rustcodegraph index` rebuild.
+- Claude uninstall no longer removes user-owned `npx` hook commands whose package name happens to contain `rustcodegraph`.
+- npm publishing now uses GitHub trusted publishing instead of a long-lived npm token.
+- Release automation now uses Node 24-compatible GitHub Actions, avoiding Node runtime deprecation warnings in CI.
+- Install, upgrade, and release links now point at the `hunzhiwange/rustcodegraph` GitHub repository.
+- Crates.io publishing now uses Trusted Publishing, so releases authenticate with short-lived GitHub OIDC tokens instead of a long-lived repository secret.
+
+## [1.0.4] - 2026-06-22
+
+### Fixes
+
+- Published a maintenance release with the latest packaging and release workflow updates.
+
+## [1.0.3] - 2026-06-22
+
+### Fixes
+
+- Published a maintenance release with the latest packaging and release workflow updates.
 
 ## [1.0.1] - 2026-06-13
 
@@ -40,6 +61,14 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `codegraph affected` now accepts `./`-prefixed and absolute file paths, not just bare project-relative ones. Passing `./src/x.ts` or an absolute path — common when the file list comes from another tool — used to silently match nothing and report no affected tests. Thanks @contextFlow-lab. (#825)
 - The CodeGraph MCP server no longer risks getting stuck at 100% CPU after an unexpected internal error. Previously such an error was logged but the process was left running in a broken state, where it could spin a CPU core indefinitely and had to be killed by hand. The server now logs the error and exits cleanly, so a fresh one starts on the next request. Thanks @songhlc. (#850)
 - CodeGraph no longer indexes your entire home directory by accident. Running the installer — or `codegraph init` / `codegraph index` — from your home folder or a filesystem root would index everything underneath it (caches, `Library`, every other project), producing a multi-gigabyte index and constant file-watching churn. CodeGraph now refuses these roots and points you at a specific project instead; pass `--force` if you genuinely mean to. (Combined with the macOS file-descriptor fix already in 1.0.0, this closes the report of a runaway watcher exhausting the system file limit.) Thanks @ligson. (#845)
+
+
+- The Rust installer instructions now show the `codegraph` shell command users install, so copied examples work as written.
+- The Rust MCP `codegraph_callers` and `codegraph_callees` tools now honor their `limit` argument, and `codegraph_impact` now reports symbols that depend on the target instead of downstream calls, so edit-planning output matches the established TypeScript-era behavior.
+- npm package removal no longer runs a lifecycle cleanup hook, so `npm uninstall` cannot be held up by missing platform binaries; run `codegraph uninstall` explicitly when you want CodeGraph removed from agent configs.
+- `codegraph index` now rebuilds the full graph from scratch, so it produces the same result as a fresh `codegraph init` instead of reporting "0 nodes, 0 edges" and looking like it wiped your index. Previously, re-running `index` on an unchanged project skipped every file (their contents hadn't changed) and showed an empty-looking summary; it now clears and re-indexes for an honest, complete rebuild every time. Use `codegraph sync` for fast incremental updates between full rebuilds. Thanks @Arc-univer. (#874)
+- The file watcher that auto-syncs the graph now fails cleanly when live watching can no longer be trusted, instead of looking healthy while the index quietly goes stale. If the operating system runs out of file-watch resources, or another process holds the write lock far longer than a normal save, CodeGraph now disables auto-sync once — with a single clear message telling you to run `codegraph sync` (or rely on the git sync hooks) to refresh — rather than retrying forever or repeating the same error on a loop. And while auto-sync is disabled, CodeGraph's tool responses (and `codegraph status`) now say so plainly, so your AI agent knows to read files directly instead of trusting a frozen index. This mostly matters for long-running MCP/daemon sessions, which could otherwise keep serving stale results while appearing to work. Thanks @thismilktea. (#876)
+- On Linux, hitting the kernel's inotify watch limit on a large project no longer silently leaves half the tree unwatched. CodeGraph now tells you once — naming the exact setting to raise (`fs.inotify.max_user_watches`, e.g. `sudo sysctl fs.inotify.max_user_watches=1048576`) — and keeps live-watching the directories it could register while `codegraph sync` (or the git sync hooks) covers the rest. (#876)
 
 ## [1.0.0] - 2026-06-12
 
@@ -190,7 +219,7 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Swift deferred-validation flows (and similar "handler array" patterns) now connect end-to-end in `codegraph_trace` and `codegraph_explore` — following a request's lifecycle reaches the validators registered with `.validate { … }` instead of dead-ending where the framework runs them by iterating a stored list of closures. Any pattern where closures are appended to a collection and later invoked by looping over it is now traced.
 - `codegraph_explore` now spells out the dynamic-dispatch relationships of the symbols you ask about — e.g. "the closures registered here are run by `didCompleteTask`" — so the indirect hops you'd otherwise grep to reconstruct are listed alongside the call flow.
 - `codegraph_explore` answers multi-phase questions that span a large "god file" far more completely. For a flow like "build, send, and validate a request" — where one big file holds the build chain and the validate logic lives in others — it now keeps every method *on the flow path* in full, collapses the file's off-path methods to one-line signatures, and guarantees each phase's defining file is shown (instead of truncating at a fixed size and dropping whichever phase came last, which sent you to read it by hand). Incidental files that merely name-drop the flow are still trimmed, so the response stays focused on the code that answers the question.
-- CodeGraph is usable as an embedded library again: `require("@colbymchenry/codegraph")` and `import` now resolve the programmatic API — the `CodeGraph` class plus building blocks like `DatabaseConnection`, `QueryBuilder`, `initGrammars`, and `FileLock` — so you can drive the graph directly from your own app (for example an Electron process) instead of only through the CLI or MCP server. Embedding runs on your own runtime, so it needs Node 22.5+ for the built-in SQLite. (#354)
+- CodeGraph is usable as an embedded library again: `require("rustcodegraph")` and `import` now resolve the programmatic API — the `CodeGraph` class plus building blocks like `DatabaseConnection`, `QueryBuilder`, `initGrammars`, and `FileLock` — so you can drive the graph directly from your own app (for example an Electron process) instead of only through the CLI or MCP server. Embedding runs on your own runtime, so it needs Node 22.5+ for the built-in SQLite. (#354)
 
 ### Fixes
 
@@ -283,7 +312,7 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Several static-extraction and resolution correctness fixes underpin the routing work above: C++ inheritance edges that were previously missing, Dart methods that were extracted signature-only, Python handlers named `index`/`get`/`update` that were being silently dropped, and an explore output-budget issue that under-returned source on repos with very large files.
 - `codegraph serve --mcp` no longer keeps running after its parent agent is force-killed (OOM, `kill -9`, or container teardown) on Linux, where it used to hold inotify watches, file descriptors, and the SQLite WAL indefinitely; the server now shuts down as soon as its parent process changes, tunable via `CODEGRAPH_PPID_POLL_MS` (#277).
-- Installing `@colbymchenry/codegraph` through a registry mirror that hadn't yet mirrored the matching per-platform package no longer fails with `no prebuilt bundle for <platform>`; the launcher now downloads the bundle from GitHub Releases and caches it, with `CODEGRAPH_NO_DOWNLOAD=1` to disable the fallback and `CODEGRAPH_DOWNLOAD_BASE` to point it at your own mirror (#303).
+- Installing `rustcodegraph` through a registry mirror that hadn't yet mirrored the matching per-platform package no longer fails with `no prebuilt bundle for <platform>`; the launcher now downloads the bundle from GitHub Releases and caches it, with `CODEGRAPH_NO_DOWNLOAD=1` to disable the fallback and `CODEGRAPH_DOWNLOAD_BASE` to point it at your own mirror (#303).
 - `install.sh` no longer fails with `403` / "could not resolve latest version" on shared or cloud hosts that exhaust GitHub's unauthenticated API rate limit; it now resolves the version through the unthrottled releases redirect, and `CODEGRAPH_VERSION` accepts a bare version like `0.9.4` as well as `v0.9.4` (#325).
 
 ## [0.9.3] - 2026-05-22
@@ -408,20 +437,23 @@ Thanks @andreinknv for the substantive draft this release was based on.
 
 - Fixed the `codegraph` command failing with `permission denied` right after a fresh global install — the 0.7.5 package shipped the CLI without its executable bit, so your shell refused to run it. New installs work out of the box. If you're stuck on 0.7.5, upgrade to 0.7.6 or unblock yourself in place by making the installed binary executable with `chmod +x`.
 
-[0.9.7]: https://github.com/colbymchenry/codegraph/releases/tag/v0.9.7
-[0.9.6]: https://github.com/colbymchenry/codegraph/releases/tag/v0.9.6
-[0.9.5]: https://github.com/colbymchenry/codegraph/releases/tag/v0.9.5
-[0.9.4]: https://github.com/colbymchenry/codegraph/releases/tag/v0.9.4
-[0.9.3]: https://github.com/colbymchenry/codegraph/releases/tag/v0.9.3
-[0.9.2]: https://github.com/colbymchenry/codegraph/releases/tag/v0.9.2
-[0.9.1]: https://github.com/colbymchenry/codegraph/releases/tag/v0.9.1
-[0.9.0]: https://github.com/colbymchenry/codegraph/releases/tag/v0.9.0
-[0.8.0]: https://github.com/colbymchenry/codegraph/releases/tag/v0.8.0
-[0.7.10]: https://github.com/colbymchenry/codegraph/releases/tag/v0.7.10
-[0.7.9]: https://github.com/colbymchenry/codegraph/releases/tag/v0.7.9
-[0.7.7]: https://github.com/colbymchenry/codegraph/releases/tag/v0.7.7
-[0.7.6]: https://github.com/colbymchenry/codegraph/releases/tag/v0.7.6
-[0.9.8]: https://github.com/colbymchenry/codegraph/releases/tag/v0.9.8
-[0.9.9]: https://github.com/colbymchenry/codegraph/releases/tag/v0.9.9
-[1.0.0]: https://github.com/colbymchenry/codegraph/releases/tag/v1.0.0
-[1.0.1]: https://github.com/colbymchenry/codegraph/releases/tag/v1.0.1
+[0.9.7]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.9.7
+[0.9.6]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.9.6
+[0.9.5]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.9.5
+[0.9.4]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.9.4
+[0.9.3]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.9.3
+[0.9.2]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.9.2
+[0.9.1]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.9.1
+[0.9.0]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.9.0
+[0.8.0]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.8.0
+[0.7.10]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.7.10
+[0.7.9]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.7.9
+[0.7.7]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.7.7
+[0.7.6]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.7.6
+[0.9.8]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.9.8
+[0.9.9]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.9.9
+[1.0.0]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.0.0
+[1.0.1]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.0.1
+[1.0.1]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.0.1
+[1.0.6]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.0.6
+[1.0.0]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.0.0

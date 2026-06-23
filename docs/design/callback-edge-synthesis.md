@@ -1,18 +1,18 @@
 # Design + status: general callback / observer edge synthesis
 
-**Status:** SHIPPED (the synthesizer in `callback-synthesizer.ts` is merged and on
+**Status:** SHIPPED (the synthesizer in `callback_synthesizer.rs` is merged and on
 `main`). This doc records the original design.
 **Motivation:** close the dynamic-dispatch hole that static extraction leaves for
 observer / event-emitter / signal patterns, where a *dispatcher* invokes callbacks
 registered elsewhere through a shared store — so flows like "how does an update
 reach the screen" actually exist in the graph.
 
-> **Update (2026-06-01):** the `codegraph_trace` and `codegraph_context` MCP tools
-> were since **removed** — `codegraph_explore` is the single surfacing tool now. Its
-> "Flow" section (`buildFlowFromNamedSymbols`) and the `codegraph_node` trail surface
+> **Update (2026-06-01):** the `trace` and `context` MCP tools
+> were since **removed** — `rustcodegraph_explore` is the single surfacing tool now. Its
+> "Flow" section (`format_flow_section`) and the `rustcodegraph_node` trail surface
 > these synthesized edges; the `trace(a, b)` notation below means "the a→b flow,"
-> which you now verify with `codegraph_explore` / `probe-explore.mjs` (the
-> `probe-trace.mjs` / `probe-context.mjs` dev probes went away with the tools).
+> which you now verify with `rustcodegraph_explore` / `rustcodegraph agent-eval probe-explore`
+> (the old trace/context dev probes went away with the tools).
 
 ---
 
@@ -26,27 +26,26 @@ We synthesize `dispatcher → callback` edges that static parsing misses. It wor
 - Precision is high: excalidraw got **1** synthesized edge out of 27k (the correct one);
   node count moved +3 after Phase 3 (no explosion).
 
-**Files touched (all uncommitted on `main`):**
-- `src/resolution/callback-synthesizer.ts` — the whole-graph synthesis pass (Phase 1 + 2).
-- `src/resolution/index.ts` — calls `synthesizeCallbackEdges()` at the end of
-  `resolveAndPersistBatched()` (after base edges are persisted) + the import.
-- `src/extraction/tree-sitter.ts` — `visitFunctionBody` now extracts **named** nested
+**Files touched:**
+- `src/resolution/callback_synthesizer.rs` — the whole-graph synthesis pass (Phase 1 + 2).
+- `src/resolution/index.rs` — calls `synthesize_callback_edges()` after base edges are persisted.
+- `src/extraction/tree_sitter.rs` — `visit_function_body` now extracts **named** nested
   functions (Phase 3), so inline named handlers become linkable nodes.
 
 **How to reproduce / test:**
 ```bash
 npm run build
-rm -rf /tmp/codegraph-corpus/excalidraw/.codegraph
-( cd /tmp/codegraph-corpus/excalidraw && codegraph init -i )
+rm -rf /tmp/rustcodegraph-corpus/excalidraw/.rustcodegraph
+( cd /tmp/rustcodegraph-corpus/excalidraw && rustcodegraph init -i )
 # synthesized edges (provenance='heuristic', metadata.synthesizedBy in {callback,event-emitter}):
-sqlite3 /tmp/codegraph-corpus/excalidraw/.codegraph/codegraph.db \
+sqlite3 /tmp/rustcodegraph-corpus/excalidraw/.rustcodegraph/rustcodegraph.db \
   "select s.name||' → '||t.name||'  '||coalesce(e.metadata,'') from edges e \
    join nodes s on e.source=s.id join nodes t on e.target=t.id where e.provenance='heuristic';"
 # end-to-end flow (the synthesized edge shows up in explore's Flow section + node trail):
-node scripts/agent-eval/probe-explore.mjs /tmp/codegraph-corpus/excalidraw "triggerUpdate triggerRender"
+rustcodegraph agent-eval probe-explore /tmp/rustcodegraph-corpus/excalidraw "triggerUpdate triggerRender"
 ```
-Probe scripts (dev-only, in `scripts/agent-eval/`): `probe-node.mjs` (symbol + trail),
-`probe-explore.mjs` (relevant source + the flow among named symbols). EventEmitter
+Rust probe commands: `rustcodegraph agent-eval probe-node` (symbol + trail),
+`rustcodegraph agent-eval probe-explore` (relevant source + the flow among named symbols). EventEmitter
 fixture lives at `/tmp/cb-fixture/bus.js` (ephemeral — recreate or move into `__tests__/`).
 
 ---
@@ -72,12 +71,12 @@ only callee was `randomInteger`; `trace(triggerUpdate, triggerRender)` returned 
 callback edge has **no ref to resolve** (`cb()` is anonymous) and needs **cross-file,
 multi-site correlation** (registrar, registration, dispatcher). So it's a whole-graph
 pass after base resolution, language-level (any OO observer), living in
-`src/resolution/callback-synthesizer.ts` — **not** under `frameworks/`.
+`src/resolution/callback_synthesizer.rs` — **not** under `frameworks/`.
 
 > Sibling mechanism for the *other* dynamic-dispatch class — **named** attribute/
 > descriptor dispatch (e.g. django `self._iterable_class(...)`) — is the
-> `claimsReference` hook (`resolution/types.ts` + `resolution/index.ts` pre-filter)
-> + a `FrameworkResolver.resolve()` (django ORM resolver in `frameworks/python.ts`).
+> `claims_reference` hook (`resolution/types.rs` + `resolution/index.rs` pre-filter)
+> + a `FrameworkResolver.resolve()` (django ORM resolver in `frameworks/python.rs`).
 > That one *does* fit `resolve()` because the ref is named. Both are part of the same
 > coverage effort; see the "Related work" section.
 
@@ -122,12 +121,12 @@ edges use **`provenance: 'heuristic'`** + `metadata: { synthesizedBy: 'callback'
 high/medium/low **confidence tiers were NOT implemented** — the fan-out cap +
 registrar-name uniqueness + named-only handlers are the precision guards instead.
 
-### Phase 3 — inline callback extraction (`tree-sitter.ts`)
+### Phase 3 — inline callback extraction (`tree_sitter.rs`)
 The real blocker for EventEmitter on real repos: inline handlers
 (`on('mount', function onmount(){})`) weren't **nodes**, so nothing could link to them.
-Root cause: `visitFunctionBody` walked *through* nested functions without extracting them.
-Fix: in `visitForCallsAndStructure`, when a body node is a `functionType` and
-`extractName` returns a real name, call `extractFunction` (which extracts it and walks
+Root cause: `visit_function_body` walked *through* nested functions without extracting them.
+Fix: in the call/structure visitor, when a body node is a function-like node and
+name extraction returns a real name, extract the function (which extracts it and walks
 its own body) and return. **Named only** — anonymous arrows fall through to the existing
 recursion (so their inner calls stay attributed to the enclosing fn). This bounded it:
 excalidraw +3 nodes, no explosion, no regression.
@@ -175,13 +174,13 @@ excalidraw +3 nodes, no explosion, no regression.
 
 ## Related work (same coverage effort)
 This is one half of closing dynamic-dispatch coverage. The other artifacts on `main`:
-- **Named attribute/descriptor resolver**: `claimsReference` (`resolution/types.ts`,
-  pre-filter in `resolution/index.ts`) + django ORM resolver (`frameworks/python.ts`,
+- **Named attribute/descriptor resolver**: `claims_reference` (`resolution/types.rs`,
+  pre-filter in `resolution/index.rs`) + django ORM resolver (`frameworks/python.rs`,
   `_iterable_class` → `ModelIterable.__iter__`).
 - **Retrieval/UX changes** (separate from coverage): `explore` whole-small-file + glue
-  fixes, the `explore` Flow section (`buildFlowFromNamedSymbols`), and `node`-with-trail
-  — all in `src/mcp/tools.ts`. (`codegraph_trace` / `codegraph_context` were later
+  fixes, the `explore` Flow section (`format_flow_section`), and `node`-with-trail
+  — all in `src/mcp/tools.rs`. (`trace` / `context` were later
   removed; explore is the one surfacing tool.)
 - **Full investigation context + findings:** auto-memory
-  `project_codegraph_read_displacement` (why coverage — not prompting/hooks/new-tools —
-  is the lever for getting agents to use codegraph over Read).
+  `project_rustcodegraph_read_displacement` (why coverage — not prompting/hooks/new-tools —
+  is the lever for getting agents to use RustCodeGraph over Read).

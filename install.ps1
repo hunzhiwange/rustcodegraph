@@ -1,35 +1,40 @@
-# CodeGraph standalone installer for Windows (PowerShell).
+# RustCodeGraph standalone installer for Windows (PowerShell).
 #
-# Downloads a self-contained bundle (a vendored Node runtime + the app) from
-# GitHub Releases. No Node.js, no build tools required.
+# Downloads a native Rust binary bundle from GitHub Releases. No Node.js or
+# build tools required.
 #
-#   irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/hunzhiwange/rustcodegraph/main/install.ps1 | iex
 #
-# Upgrade with `codegraph upgrade` (or just re-run this). To uninstall: remove
-# $env:LOCALAPPDATA\codegraph and drop its \current\bin entry from your user PATH.
+# Upgrade with `rustcodegraph upgrade` (or just re-run this). To uninstall: remove
+# $env:LOCALAPPDATA\rustcodegraph and drop its \current\bin entry from your user PATH.
 #
 # Environment:
-#   CODEGRAPH_VERSION      release tag to install (default: latest)
-#   CODEGRAPH_INSTALL_DIR  install location (default: %LOCALAPPDATA%\codegraph)
+#   RUSTCODEGRAPH_VERSION release tag to install (default: latest)
+#   RUSTCODEGRAPH_INSTALL_DIR  install location (default: %LOCALAPPDATA%\rustcodegraph)
 
 $ErrorActionPreference = 'Stop'
-$repo = 'colbymchenry/codegraph'
-$installDir = if ($env:CODEGRAPH_INSTALL_DIR) { $env:CODEGRAPH_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'codegraph' }
+$repo = 'hunzhiwange/rustcodegraph'
+$installDir = if ($env:RUSTCODEGRAPH_INSTALL_DIR) {
+  $env:RUSTCODEGRAPH_INSTALL_DIR
+} else {
+  Join-Path $env:LOCALAPPDATA 'rustcodegraph'
+}
 
 # 1. Detect architecture -> target matching the release archives.
 $arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'x64' }
 $target = "win32-$arch"
+$artifactTarget = if ($arch -eq 'arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
 
 # 2. Resolve the version (latest release unless pinned).
-$version = $env:CODEGRAPH_VERSION
+$version = $env:RUSTCODEGRAPH_VERSION
 if (-not $version) {
   $version = (Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest").tag_name
 }
-if (-not $version) { throw "codegraph: could not resolve latest version; set CODEGRAPH_VERSION." }
+if (-not $version) { throw "rustcodegraph: could not resolve latest version; set RUSTCODEGRAPH_VERSION." }
 
 # 3. Download + extract the bundle into a stable 'current' dir (overwritten on upgrade).
-$url = "https://github.com/$repo/releases/download/$version/codegraph-$target.zip"
-Write-Host "Installing CodeGraph $version ($target)..."
+$url = "https://github.com/$repo/releases/download/$version/rustcodegraph-$artifactTarget.zip"
+Write-Host "Installing RustCodeGraph $version ($target)..."
 $tmp = Join-Path $env:TEMP ("cg-" + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $zip = Join-Path $tmp 'cg.zip'
@@ -39,16 +44,18 @@ $dest = Join-Path $installDir 'current'
 if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Expand-Archive -Path $zip -DestinationPath $dest -Force
-# Archives contain a top-level codegraph-<target>\ dir; flatten it.
-$inner = Join-Path $dest "codegraph-$target"
-if (Test-Path $inner) {
-  Get-ChildItem -Force $inner | Move-Item -Destination $dest -Force
-  Remove-Item -Recurse -Force $inner
+$binDir = Join-Path $dest 'bin'
+New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+$exe = Join-Path $dest "rustcodegraph-$artifactTarget\bin\rustcodegraph.exe"
+if (-not (Test-Path $exe)) { throw "rustcodegraph: downloaded archive did not contain rustcodegraph-$artifactTarget\bin\rustcodegraph.exe" }
+Move-Item -Path $exe -Destination (Join-Path $binDir 'rustcodegraph.exe') -Force
+if (-not (Test-Path (Join-Path $dest 'package.json'))) {
+  @{ name = 'rustcodegraph'; version = $version.TrimStart('v') } |
+    ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $dest 'package.json')
 }
 Remove-Item -Recurse -Force $tmp
 
 # 4. Put the launcher dir on the user's PATH.
-$binDir = Join-Path $dest 'bin'
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (($userPath -split ';') -notcontains $binDir) {
   [Environment]::SetEnvironmentVariable('Path', "$binDir;$userPath", 'User')
@@ -56,4 +63,4 @@ if (($userPath -split ';') -notcontains $binDir) {
 }
 
 Write-Host "Installed to $dest"
-Write-Host "Run: codegraph --help"
+Write-Host "Run: rustcodegraph --help"

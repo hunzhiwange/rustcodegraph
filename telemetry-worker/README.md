@@ -23,14 +23,15 @@ with the npm package — the engine's `files` allowlist excludes it.
 ## Deploy
 
 Prereqs: the `getcodegraph.com` zone on the deploying Cloudflare account (the custom
-domain route auto-provisions DNS + cert), wrangler ≥ 4.36 (the `ratelimits` binding).
+domain route auto-provisions DNS + cert), `wrangler` ≥ 4.36 (the `ratelimits` binding),
+and `worker-build` matching the Rust Worker SDK version in `Cargo.toml`.
 
 ```bash
 cd telemetry-worker
-npm install
-npx wrangler login                      # once
-npx wrangler secret put POSTHOG_KEY     # the phc_… project write key — never committed
-npm run deploy
+cargo install worker-build --version 0.8.5
+wrangler login                       # once
+wrangler secret put POSTHOG_KEY      # the phc_... project write key; never committed
+wrangler deploy
 ```
 
 The PostHog project itself must have **"Discard client IP data"** enabled — defense in
@@ -39,9 +40,11 @@ depth on top of this worker never forwarding IPs (`$geoip_disable` is also set p
 ## Local dev & checks
 
 ```bash
-cp .dev.vars.example .dev.vars   # placeholder key; also feeds `wrangler types`
-npm run check                    # wrangler types + tsc --noEmit + deploy --dry-run
-npm run dev                      # http://localhost:8787
+cp .dev.vars.example .dev.vars   # placeholder key for local forwarding
+cargo test
+cargo check --target wasm32-unknown-unknown
+wrangler deploy --dry-run
+wrangler dev                     # http://localhost:8787
 
 curl -i localhost:8787/v1/events -H 'content-type: application/json' -d '{
   "machine_id": "00000000-0000-4000-8000-000000000000",
@@ -55,6 +58,6 @@ curl -i localhost:8787/v1/events -H 'content-type: application/json' -d '{
 
 ## Changing the schema
 
-The allowlist in `src/index.ts` mirrors `docs/design/telemetry.md` (and the user-facing
+The allowlist in `src/lib.rs` mirrors `docs/design/telemetry.md` (and the user-facing
 `TELEMETRY.md`). A field is added by one PR touching all of them together — that is the
 whole point of the design.

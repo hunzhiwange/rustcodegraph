@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS schema_versions (
 );
 
 -- Insert initial version
-INSERT INTO schema_versions (version, applied_at, description)
+INSERT OR IGNORE INTO schema_versions (version, applied_at, description)
 VALUES (1, strftime('%s', 'now') * 1000, 'Initial schema');
 
 -- =============================================================================

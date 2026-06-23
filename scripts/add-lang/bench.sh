@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Add-lang benchmark for ONE repo:
-#   clone -> wipe+index (with the codegraph on PATH) -> verify extraction ->
+#   clone -> wipe+index (with the rustcodegraph on PATH) -> verify extraction ->
 #   with/without retrieval A/B (reuses scripts/agent-eval/run-all.sh).
 #
-# Assumes the codegraph dev build is already built + linked on PATH — the skill
+# Assumes the rustcodegraph dev build is already built + linked on PATH — the skill
 # runs `npm run build && ./scripts/local-install.sh` ONCE before looping repos.
 # The A/B is skipped if extraction fails its critical checks (don't burn $ on a
 # broken extractor); set FORCE_AB=1 to run it anyway.
@@ -23,10 +23,10 @@ AGENT_EVAL="$(cd "$HARNESS/../agent-eval" && pwd)"
 CORPUS="${CORPUS:-/tmp/codegraph-corpus}"
 REPO="$CORPUS/$NAME"
 
-command -v codegraph >/dev/null || { echo "no codegraph on PATH (build + ./scripts/local-install.sh first)"; exit 1; }
+command -v rustcodegraph >/dev/null || { echo "no rustcodegraph on PATH (build + ./scripts/local-install.sh first)"; exit 1; }
 
 echo "==================== add-lang bench: $NAME ($LANG_TOKEN) ===================="
-echo "codegraph: $(command -v codegraph) -> $(codegraph --version 2>/dev/null || echo '?')"
+echo "rustcodegraph: $(command -v rustcodegraph) -> $(rustcodegraph --version 2>/dev/null || echo '?')"
 
 # 1. Ensure the repo (shallow clone, reuse if present).
 mkdir -p "$CORPUS"
@@ -38,13 +38,13 @@ else
 fi
 
 # 2. Wipe + index with the binary under test.
-echo "→ wiping .codegraph and indexing"
-rm -rf "$REPO/.codegraph"
-( cd "$REPO" && codegraph init -i ) || { echo "indexing failed"; exit 1; }
+echo "→ wiping .rustcodegraph and indexing"
+rm -rf "$REPO/.rustcodegraph"
+( cd "$REPO" && rustcodegraph init -i ) || { echo "indexing failed"; exit 1; }
 
 # 3. Verify extraction (cheap guard before the paid A/B).
 echo "→ verifying extraction"
-node "$HARNESS/verify-extraction.mjs" "$REPO" "$LANG_TOKEN"
+rustcodegraph add-lang verify-extraction "$REPO" "$LANG_TOKEN"
 VERIFY=$?
 
 # 4. Retrieval A/B (skipped if extraction is broken, unless FORCE_AB=1).
