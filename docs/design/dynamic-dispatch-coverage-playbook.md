@@ -1,672 +1,672 @@
-# Dynamic-Dispatch Coverage Playbook
+# 动态调度覆盖手册
 
-**Audience:** a Claude agent continuing this work.
-**Mission:** systematically close static-extraction coverage holes for **dynamic
-dispatch** across **every language and framework rustcodegraph supports**, and validate
-each one the same way, so cross-symbol *flows* exist in the graph everywhere.
+**观众：** 克劳德特工正在继续这项工作。
+**使命：**系统地弥补**动态的静态提取覆盖漏洞
+跨**每种语言和框架 rustcodegraph 支持**进行调度**，并验证
+每个都以相同的方式进行，因此交叉符号*流*存在于图中的任何地方。
 
-> This is the top-level playbook. The deep design for one mechanism (the callback
-> synthesizer) is in [`callback-edge-synthesis.md`](./callback-edge-synthesis.md).
-> Full investigation context + findings: auto-memory `project_rustcodegraph_read_displacement`.
+> 这是顶级剧本。一种机制的深层设计（回调
+> 合成器）位于 [`callback-edge-synthesis.md`](./callback-edge-synthesis.md) 中。
+> 完整的调查背景+结果：自动记忆`project_rustcodegraph_read_displacement`。
 
-> **Update (2026-06-01):** the `trace` and `context` MCP tools were
-> **removed** — `rustcodegraph_explore` is the single surfacing tool now. Its "Flow" section
-> (`format_flow_section`) surfaces the synthesized edges this playbook is about, and
-> you validate coverage with `rustcodegraph_explore` / `rustcodegraph agent-eval probe-explore`.
-> Where the text below writes `trace(a, b)` or lists `trace`/`context` among the tools,
-> read it as "the a→b flow, now surfaced and verified via explore." The synthesizers and
-> the coverage matrix are unchanged.
-
----
-
-## 1. The goal (why this matters)
-
-rustcodegraph's value is being **the map** — answering structural/flow questions
-(`trace`, `impact`, callers, "how does X reach Y") that grep/Read cannot. Agents
-will use rustcodegraph instead of Read **only when it is sufficient**. We proved
-empirically (see memory) that the lever for sufficiency is **coverage**, not
-prompting/hooks/new-tools: when a flow is missing from the graph, the agent reads
-the files to reconstruct it; when the flow *is* in the graph, the agent can answer
-completely without reading.
-
-**Validated end-to-end on excalidraw:** after closing the update-flow hole, 2/3
-headless agent runs answered the "how does an update reach the screen" question with
-**Read 0 and a complete answer** — impossible before, because the key edge wasn't in
-the graph. (Caveat: coverage *enables* the no-read path; agent confirm-by-reading
-variance means it doesn't *force* it. Completeness improves unconditionally.)
-
-The mission is to make that true for **all** languages/frameworks.
+> **更新 (2026-06-01)：** `trace` 和 `context` MCP 工具已
+> **已删除** — `rustcodegraph_explore` 现在是单一曲面工具。它的“流程”部分
+> (`format_flow_section`) 显示此剧本所涉及的合成边，并且
+> 您可以使用 `rustcodegraph_explore` / `rustcodegraph agent-eval probe-explore` 验证覆盖范围。
+> 其中下面的文字写为 `trace(a, b)` 或在工具中列出 `trace`/`context`，
+> 将其解读为“a→b 流程，现已浮出水面并通过探索进行验证。”合成器和
+> 覆盖矩阵不变。
 
 ---
 
-## 2. The problem class: dynamic dispatch
+## 1. 目标（为什么这很重要）
 
-Static tree-sitter extraction captures explicit calls (`foo()`, `this.bar()`). It
-**misses** any call whose target is computed/indirect. Four recurring shapes, with a
-**difficulty gradient** (do the cheap ones first):
+rustcodegraph 的价值在于 **地图** — 回答结构/流程问题
+（`trace`、`impact`、调用者，“X 如何到达 Y”）grep/Read 不能。代理商
+**仅当足够时**才会使用 rustcodegraph 而不是 Read。我们证明了
+根据经验（见记忆），充足性的杠杆是**覆盖率**，而不是
+提示/挂钩/新工具：当图表中缺少流时，代理会读取
+用于重建它的文件；当流量*在*图中时，代理可以回答
+完全没有阅读。
 
-| # | Shape | Example | Fix mechanism | Cost |
+**在 exalidraw 上进行端到端验证：** 关闭更新流程漏洞后，2/3
+无头代理运行回答了“更新如何到达屏幕”的问题
+**读取 0 和完整答案** — 以前不可能，因为关键边缘不在
+图表。 （警告：覆盖*启用*无读取路径；代理通过读取确认
+方差意味着它不会“强制”它。完整性无条件提高。）
+
+我们的使命是让**所有**语言/框架都实现这一点。
+
+---
+
+## 2.问题类别：动态调度
+
+静态树守护者提取捕获显式调用（`foo()`、`this.bar()`）。它
+**错过**任何其目标是计算/间接的调用。四种重复出现的形状，带有
+**难度梯度**（先做便宜的）：
+
+| # | 形状 | 例子 | 修复机制 | 成本 |
 |---|---|---|---|---|
-| 1 | **Named attribute / descriptor** | django `self._iterable_class(self)` | framework resolver (`claims_reference` + `resolve()`) | **cheap** |
-| 2 | **Field-backed observer** | `onUpdate(cb)` + `for(cb of cbs)cb()` | callback synthesizer (whole-graph pass) | medium |
-| 3 | **String-keyed EventEmitter** | `on('e',fn)` / `emit('e')` | callback synthesizer (event-keyed) | medium |
-| 4 | **Inline callback handler** | `on('e', function h(){})` / `() => {}` | extraction (named) + synthesizer link-through-body (anon) | named: cheap · anon: hard |
-| 5 | **Closure-collection dispatch** | Swift `validators.write{$0.append(v)}` … `validators.forEach{$0()}` | callback synthesizer (`closure_collection_edges`, element-invoke gated) | medium |
+| 1 | **命名属性/描述符** | Django `self._iterable_class(self)` | 框架解析器（`claims_reference` + `resolve()`） | **便宜的** |
+| 2 | **现场支持观察员** | `onUpdate(cb)` + `for(cb of cbs)cb()` | 回调合成器（全图传递） | 中等的 |
+| 3 | **字符串键控事件发射器** | `on('e',fn)` / `emit('e')` | 回调合成器（事件键控） | 中等的 |
+| 4 | **内联回调处理程序** | `on('e', function h(){})` / `() => {}` | 提取（命名）+合成器链接通过主体（匿名） | 名称：廉价 · 匿名：困难 |
+| 5 | **关闭-收集派送** | 斯威夫特 `validators.write{$0.append(v)}` … `validators.forEach{$0()}` | 回调合成器（`closure_collection_edges`，元素调用门控） | 中等的 |
 
-Key distinction driving the mechanism choice:
-- **A named ref exists** to resolve (`_iterable_class` is an attribute name) → **resolver**.
-- **No ref exists** (`cb()` is anonymous; needs registrar↔dispatcher correlation) → **synthesizer**.
-
----
-
-## 3. Worked examples (the two mechanisms, end to end)
-
-### 3a. Django ORM descriptor — the **resolver** pattern (Python)
-- **Hole:** `QuerySet._fetch_all` calls `self._iterable_class(self)` (a runtime-chosen
-  iterable, default `ModelIterable`), whose `__iter__` runs the SQL compiler. Static
-  parsing can't resolve the attribute-as-callable → `_fetch_all`'s only callee was
-  `_prefetch_related_objects`; `trace(_fetch_all, execute_sql)` returned no path.
-- **Fix:** the Django resolver claims the unresolved `_iterable_class` ref through the
-  name-exists pre-filter, then resolves it to `ModelIterable.__iter__`.
-- **Files:** `src/resolution/types.rs` (`claims_reference?` on `FrameworkResolver`),
-  `src/resolution/index.rs` (pre-filter consults `claims_reference`),
-  `src/resolution/frameworks/python.rs` (Django resolver + `claims_reference` +
-  `resolveModelIterableIter`).
-- **Result:** `trace(_fetch_all, execute_sql)` → `_fetch_all → __iter__ → execute_sql` (3 hops).
-
-### 3b. Excalidraw observer + EventEmitter — the **synthesizer** (TS)
-- **Hole:** `Scene.triggerUpdate` does `for (cb of this.callbacks) cb()`; `triggerRender`
-  is registered via `scene.onUpdate(this.triggerRender)`. The `triggerUpdate →
-  triggerRender` edge is dynamic → `trace` returned no path; the whole update flow broke.
-- **Fix:** a whole-graph pass that detects registrar/dispatcher channels, correlates
-  registration sites, and synthesizes `dispatcher → callback` edges. Plus extraction of
-  **named** inline callbacks so handlers like express's `function onmount(){}` are nodes.
-- **Files:** `src/resolution/callback_synthesizer.rs` (the pass — field observers +
-  EventEmitter), `src/resolution/index.rs` (calls `synthesize_callback_edges()` after
-  base resolution), `src/extraction/tree_sitter.rs` (`visit_function_body`
-  extracts named nested functions).
-- **Result:** `trace(mutateElement, triggerRender)` → 3 hops; express `use → onmount`.
-
-### 3c. Alamofire deferred validation — closure-collection dispatch (Swift)
-- **Hole:** `DataRequest.validate(_:)` builds a closure and `validators.write { $0.append(validator) }`;
-  the base `Request.didCompleteTask` runs them via `validators.forEach { $0() }`. Append and
-  dispatch live in *different files and classes* (a subclass appends, the base iterates) and the
-  field is a Swift `Protected<[@Sendable () -> Void]>` — so neither same-file pairing nor the
-  name-based registrar match (`onX`/`subscribe`/…) reaches it. `trace(didCompleteTask, validate)`
-  returned no path; the agent grepped `validators` and read three files to reconstruct it.
-- **Fix:** `closure_collection_edges` (`callback_synthesizer.rs`). A **dispatcher** iterates a collection
-  *invoking each element* (`coll.forEach { $0() }` / `{ it() }`); a **registrar** appends a closure to
-  the same-named field (`.append`/`.add`/`.push`/`.insert`, incl. Swift `.write { $0.append }`). The
-  element-invoke (`$0(` / `it(`) is the precision **gate** — it proves the collection holds closures —
-  so a repo with no closure-collection dispatch yields **0 edges** regardless of how many `.append`
-  sites it has. Pairs dispatcher → registrar globally by field name (cross-file/class required),
-  fan-out-capped. Surfaced two ways: inline in `trace`, and as a "Dynamic-dispatch links among your
-  symbols" section in `rustcodegraph_explore` (`format_dynamic_dispatch_links`) so the relationship shows even
-  when the agent named only `validate`, not the `didCompleteTask` that drains the list.
-- **Files:** `src/resolution/callback_synthesizer.rs` (`closure_collection_edges`),
-  `src/mcp/tools.rs` (`format_dynamic_dispatch_links` + the explore synth-links section).
-- **Result:** `trace(didCompleteTask, validate)` connects with the closure-collection hop + the
-  `validators.write { $0.append }` wiring site inlined. 9 precise edges on Alamofire
-  (`validators`/`streams`/`finishHandlers`/`requestsToRetry`), **0 on every non-Swift control**.
-  Forced rustcodegraph-only (Read+Grep+Bash blocked): 3/3 runs answer build/send/validate correctly.
-
-### 3d. Insight — an "adoption floor" can hide a trace-endpoint bug (Alamofire)
-Alamofire (110 files) was the README's weakest repo and was written off as the "small-repo floor"
-(native grep is cheap, so the agent reads anyway). It wasn't. Reading the **transcripts** — every
-`Read`'s `file_path`+offset and the assistant text right before it — surfaced the agent's own words:
-*"the trace collided with same-named symbols (44 `request`s, 8 `task`s), let me read by line."*
-`trace`'s endpoint disambiguation (`scorePair`, shared-dir-prefix only) was resolving an
-overloaded name to an **empty delegate/protocol stub** — `request` → `EventMonitor.request(){}`
-(a 1-line no-op) over the real `Session.request`, because two unrelated `Source/Features/` stubs
-shared a deeper dir prefix than the correct `Source/Core/` pair. Garbage trace → manual reading,
-sometimes a spiral (12 reads / 11 greps in one run). **Fix:** endpoint-relevance scoring
-that penalizes empty stubs (≤1 body line) and test-file symbols; among real methods it's
-flat, so path-proximity (cosmos `EndBlocker`) is unaffected. Result (n=8): WITH-arm tool calls
-12 → 8 median, and the read **variance collapsed** (0–12 → 1–4 — the meltdowns *were* the
-trace-collision flounder). General bug: protocol/delegate-stub flooding hits Swift/Java/C#/Go.
-
-**Methodology lesson:** when the agent reads on a small repo, don't conclude "adoption floor" — diff
-*what it read* against what the tool returned *immediately before*. A read of content the tool already
-gave = adoption; a read after the tool returned the **wrong thing** (stub endpoints, collided names) =
-a fixable bug. The transcript reasoning, not the median, tells you which. The forced rustcodegraph-only
-hook (block Read+Grep+Glob+Bash-search) is the variance-free way to confirm sufficiency separately
-from adoption.
+推动机制选择的关键区别：
+- **存在要解析的命名引用**（`_iterable_class` 是属性名称）→ **解析器**。
+- **不存在引用**（`cb()` 是匿名的；需要注册器↔调度器关联）→ **合成器**。
 
 ---
 
-## 4. The repeatable methodology (run this per language/framework)
+## 3. 工作示例（两种机制，端到端）
 
-### Step 1 — Pick the framework's canonical *flow* question
-Every framework has a signature data/control flow. Pick the "how does X reach/become Y"
-question and a real repo (add to `.claude/skills/agent-eval/corpus.json`). Examples:
-- React state→DOM, Vue reactive→render, Svelte store→update
-- Rails request→controller→view, Spring request→`@Controller`→service
-- Express/Koa request→middleware→handler, FastAPI request→route→dependency
-- Redux action→reducer→store, RxJS subscribe→operator→observer
-- Any ORM: query builder → SQL execution (django pattern)
+### 3a. Django ORM 描述符 — **解析器** 模式 (Python)
+- **漏洞：** `QuerySet._fetch_all` 调用 `self._iterable_class(self)` （运行时选择的
+iterable，默认`ModelIterable`），其`__iter__`运行SQL编译器。静止的
+解析无法解析属性为可调用 → `_fetch_all` 的唯一被调用者是
+`_prefetch_related_objects`; `trace(_fetch_all, execute_sql)` 没有返回路径。
+- **修复：** Django 解析器通过以下方式声明未解析的 `_iterable_class` 引用
+name-exists 预过滤器，然后将其解析为 `ModelIterable.__iter__`。
+- **文件：** `src/resolution/types.rs`（`FrameworkResolver` 上的 `claims_reference?`），
+`src/resolution/index.rs`（前置过滤器参考`claims_reference`），
+`src/resolution/frameworks/python.rs`（Django 解析器 + `claims_reference` +
+`resolveModelIterableIter`）。
+- **结果：** `trace(_fetch_all, execute_sql)` → `_fetch_all → __iter__ → execute_sql`（3 跳）。
 
-### Step 2 — Measure the hole (deterministic, no agent)
+### 3b. Excalidraw 观察者 + EventEmitter — **合成器** (TS)
+- **孔：** `Scene.triggerUpdate` 做 `for (cb of this.callbacks) cb()`； `triggerRender`
+通过 `scene.onUpdate(this.triggerRender)` 注册。 `triggerUpdate →
+triggerRender` edge is dynamic → `trace`未返回路径；整个更新流程中断了。
+- **修复：** 检测注册商/调度员通道、关联的全图传递
+注册位点，并合成 `dispatcher → callback` 边。再加上提取
+**命名**内联回调，因此像express的`function onmount(){}`这样的处理程序是节点。
+- **文件：** `src/resolution/callback_synthesizer.rs`（通行证 — 现场观察员 +
+EventEmitter), `src/resolution/index.rs` (之后调用 `synthesize_callback_edges()`
+基本分辨率），`src/extraction/tree_sitter.rs`（`visit_function_body`
+提取命名的嵌套函数）。
+- **结果：** `trace(mutateElement, triggerRender)` → 3 跳；快递`use → onmount`。
+
+### 3c. Alamofire 延迟验证 — 闭包集合调度 (Swift)
+- **孔：** `DataRequest.validate(_:)` 构建闭合和 `validators.write { $0.append(validator) }`；
+基础 `Request.didCompleteTask` 通过 `validators.forEach { $0() }` 运行它们。追加并
+分派生活在*不同的文件和类*（子类附加，基础迭代）和
+字段是 Swift `Protected<[@Sendable () -> Void]>` - 所以既不是相同文件配对，也不是
+基于名称的注册商匹配 (`onX`/`subscribe`/...) 达到此目的。 `trace(didCompleteTask, validate)`
+没有返回路径；代理 grep `validators` 并读取三个文件来重建它。
+- **修复：** `closure_collection_edges` (`callback_synthesizer.rs`)。 **调度程序**迭代集合
+*调用每个元素* (`coll.forEach { $0() }` / `{ it() }`); **注册商** 附加一个闭包
+同名字段（`.append`/`.add`/`.push`/`.insert`，包括 Swift `.write { $0.append }`）。这
+element-invoke (`$0(` / `it(`) 是精确的 **gate** — 它证明集合持有闭包 —
+因此，无论有多少 `.append`，没有闭包集合调度的存储库都会产生 **0 边**
+它拥有的网站。按字段名称全局配对调度程序 → 注册程序（需要跨文件/类），
+扇出上限。以两种方式出现：在 `trace` 中内联，以及作为“动态调度链接”
+`rustcodegraph_explore` (`format_dynamic_dispatch_links`) 中的符号”部分，因此关系显示均匀
+当代理仅命名 `validate`，而不是耗尽列表的 `didCompleteTask` 时。
+- **文件：** `src/resolution/callback_synthesizer.rs` (`closure_collection_edges`),
+`src/mcp/tools.rs`（`format_dynamic_dispatch_links` + 探索合成器链接部分）。
+- **结果：** `trace(didCompleteTask, validate)` 连接到闭包集合跃点 +
+`validators.write { $0.append }` 接线现场内联。 Alamofire 上的 9 个精确边缘
+(`validators`/`streams`/`finishHandlers`/`requestsToRetry`)，**每个非 Swift 控件均为 0**。
+强制仅使用 rustcodegraph（Read+Grep+Bash 被阻止）：3/3 正确运行答案构建/发送/验证。
+
+### 3d.洞察力——“采用层”可以隐藏跟踪端点错误（Alamofire）
+Alamofire（110 个文件）是自述文件中最弱的存储库，被注销为“小型存储库层”
+（本机 grep 很便宜，因此代理无论如何都会读取）。事实并非如此。阅读**文字记录**——每
+`Read` 的 `file_path`+ 偏移量和其前面的辅助文本 — 浮现了特工自己的话：
+*“轨迹与同名符号发生碰撞（44 `request`、8 `task`），让我逐行读取。”*
+`trace` 的端点消歧（`scorePair`，仅共享目录前缀）正在解决
+**空委托/协议存根**的重载名称 - `request` → `EventMonitor.request(){}`
+（1 行无操作）在真实的 `Session.request` 上，因为两个不相关的 `Source/Features/` 存根
+共享比正确的 `Source/Core/` 对更深的目录前缀。垃圾追踪→人工读取，
+有时是一个螺旋（一次运行 12 次读取/11 次 grep）。 **修复：**端点相关性评分
+惩罚空存根（≤1 正文行）和测试文件符号；在真正的方法中，它是
+平坦，因此路径邻近度 (cosmos `EndBlocker`) 不受影响。结果 (n=8)：WITH-arm 工具调用
+12 → 8 中位数，读数**方差崩溃**（0–12 → 1–4 — 崩溃*是*
+痕迹碰撞比目鱼）。一般错误：protocol/delegate-stub 泛洪攻击 Swift/Java/C#/Go。
+
+**方法论教训：** 当代理阅读小型存储库时，不要得出“采用地板”的结论 - diff
+*它读取的内容*与工具*之前*返回的内容相对应。已阅读该工具的内容
+给予=收养；工具返回**错误的东西**（存根端点、冲突名称）后的读取=
+一个可修复的错误。文字记录推理（而不是中位数）告诉您这一点。强制 rustcodegraph-only
+hook (block Read+Grep+Glob+Bash-search) 是单独确认充分性的无方差方法
+来自收养。
+
+---
+
+## 4. 可重复的方法（按语言/框架运行）
+
+### 第 1 步 — 选择框架的规范*流程*问题
+每个框架都有一个签名数据/控制流。选择“X 如何到达/成为 Y”
+问题和真实的回购协议（添加到 `.claude/skills/agent-eval/corpus.json`）。示例：
+- React 状态→DOM，Vue 反应式→渲染，Svelte 存储→更新
+- Rails请求→控制器→视图，Spring请求→`@Controller`→服务
+- Express/Koa请求→中间件→处理程序，FastAPI请求→路由→依赖
+- Redux操作→reducer→store，RxJS订阅→operator→observer
+- 任何 ORM：查询构建器 → SQL 执行（django 模式）
+
+### 第 2 步 — 测量漏洞（确定性，无代理）
 ```bash
 rm -rf <repo>/.rustcodegraph && ( cd <repo> && rustcodegraph init -i )
 rustcodegraph agent-eval probe-explore <repo> "<from-symbol> <to-symbol>"   # does the flow break? where?
 rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # trail: is the next hop missing?
 ```
-A "No direct call path … breaks at dynamic dispatch" + a sparse trail at the break
-point **locates the hole** (this is exactly how `_iterable_class` and `triggerUpdate`
-were found). Confirm it's dynamic by reading the break symbol's body.
+“没有直接调用路径……在动态调度时中断”+中断处的稀疏路径
+点**定位孔**（这正是 `_iterable_class` 和 `triggerUpdate` 的方式
+被发现）。通过读取中断符号的主体来确认它是动态的。
 
-### Step 3 — Classify → choose the mechanism (use the §2 table)
-- `self.<attr>(...)` / descriptor / metaclass → **resolver** (§3a).
-- `for(cb of store)cb()` / `store.forEach(cb=>cb())` → **field-observer synthesizer** (§3b).
-- `on('e',fn)` + `emit('e')` → **EventEmitter synthesizer** (§3b).
-- Inline handler not a node → **named:** extraction (already done generically in
-  `tree_sitter.rs`); **anonymous:** synthesizer link-through-body (not yet built).
-- Dispatch that CAN'T be precision-gated as a class (runtime-keyed `table[key](...)`,
-  `getattr(self, expr)`, reflection, typed mediator buses, `new Proxy`) → **boundary
-  surfacing** (`src/mcp/dynamic_boundaries.rs`, #687): explore ANNOUNCES the dispatch
-  site where the static path ends — file:line, form, and candidate targets when the
-  key is statically visible — instead of synthesizing an edge. Query-time only, zero
-  graph mutation, fires only when the asked-about flow fails to connect. This is the
-  deliberate floor for the frontier: a wrong edge poisons the map (silent beats
-  wrong), but an honest "the flow continues at THIS site, likely into THESE
-  candidates" still saves the read-reconstruction spiral. When a boundary form later
-  proves precision-gateable on real repos (e.g. a same-repo literal-key command bus),
-  promote it to a synthesizer channel and the boundary note disappears on its own —
-  the flow then connects.
+### 第 3 步 — 分类 → 选择机制（使用 §2 表）
+- `self.<attr>(...)` / 描述符 / 元类 → **解析器** (§3a)。
+- `for(cb of store)cb()` / `store.forEach(cb=>cb())` → **现场观察合成器** (§3b)。
+- `on('e',fn)` + `emit('e')` → **EventEmitter 合成器** (§3b)。
+- 内联处理程序不是节点 → **命名：** 提取（通常已在
+`tree_sitter.rs`）； **匿名：**合成器链接通过主体（尚未构建）。
+- 不能作为一个类进行精确门控的调度（运行时键控的 `table[钥匙](...)`，
+`getattr(self, expr)`、反射、类型化中介总线、`new Proxy`) → **边界
+浮出水面**（`src/mcp/dynamic_boundaries.rs`，#687）：探索宣布调度
+静态路径结束的站点 — file:line、form 和候选目标
+键是静态可见的——而不是合成边缘。仅查询时间，零
+图突变，仅当所询问的流无法连接时触发。这是
+故意为边界设置地板：错误的边缘毒害了地图（沉默的节拍
+错误），但诚实的“流量继续在这个网站上，可能进入这些
+候选者”仍然保存了读取重建螺旋。当稍后形成边界时
+证明在真实的存储库上可精确门控（例如相同的存储库文字键命令总线），
+将其提升至合成器通道，边界音符自行消失 —
+然后流程连接。
 
-### Step 4 — Implement
-- **Resolver:** add to `src/resolution/frameworks/<lang>.rs` — a `resolve()` branch +
-  `claims_reference(name)` if the ref name isn't a declared symbol. Copy the Django resolver pattern.
-- **Synthesizer channel:** extend `src/resolution/callback_synthesizer.rs` — add the
-  framework's registrar/dispatcher **name patterns** and **body patterns** (e.g. signals
-  use `.connect()`/`.emit()`; Rx uses `.subscribe()`/`.next()`).
-- Reindex (Step 2 command) and re-run the explore probe — the flow should now connect.
+### 第 4 步 — 实施
+- **解析器：** 添加到 `src/resolution/frameworks/<lang>.rs` — `resolve()` 分支 +
+如果引用名称不是声明的符号，则为 `claims_reference(name)`。复制 Django 解析器模式。
+- **合成器通道：** 扩展 `src/resolution/callback_synthesizer.rs` — 添加
+框架的注册器/调度程序**名称模式**和**主体模式**（例如信号
+使用`.connect()`/`.emit()`； Rx 使用 `.subscribe()`/`.next()`）。
+- 重新索引（步骤 2 命令）并重新运行探索探针 — 流程现在应该已连接。
 
-### Step 5 — Validate (the same way every time)
-1. **Deterministic:** `rustcodegraph agent-eval probe-explore <repo> "<from> <to>"`
-   shows the path; `rustcodegraph agent-eval probe-node` shows the bridged hop. The
-   previously-broken hop is closed.
-2. **Precision:** count + spot-check synthesized/resolved edges — no explosion, correct targets:
+### 第 5 步 — 验证（每次都以相同的方式）
+1. **确定性：** `rustcodegraph agent-eval probe-explore <repo> "<from> <to>"`
+显示路径； `rustcodegraph agent-eval probe-node` 显示桥接跃点。这
+先前中断的跃点已关闭。
+2. **精度：** 计数 + 抽查合成/解析边缘 - 无爆炸，正确目标：
    ```bash
    sqlite3 <repo>/.rustcodegraph/rustcodegraph.db \
      "select s.name||' → '||t.name||'  '||coalesce(e.metadata,'') from edges e \
       join nodes s on e.source=s.id join nodes t on e.target=t.id where e.provenance='heuristic';"
    ```
-   (Resolver edges aren't `heuristic`; verify via the trace + callees instead.)
-3. **Regression:** node count stable (`select count(*) from nodes;` before/after — a big
-   jump means an extraction change over-fired); existing traces on a control repo intact.
-4. **End-to-end agent eval:** run the flow question with rustcodegraph and measure
-   **reads / answer-completeness / cost** vs a pre-fix baseline:
+（解析器边缘不是 `heuristic`；而是通过跟踪 + 被调用者进行验证。）
+3. **回归：** 节点数稳定（`select count(*) from nodes;` 之前/之后 - 一个很大的
+跳跃意味着提取变化过度）；控制仓库上的现有痕迹完好无损。
+4. **端到端代理评估：**使用 rustcodegraph 和测量运行流程问题
+**读取/答案完整性/成本**与修复前基线相比：
    ```bash
    # headless (exact cost + clean tool sequence)
    bash scripts/agent-eval/run-agent.sh <repo> with "<flow question>"
    # or the full A/B + interactive Explore-subagent path:
    scripts/agent-eval/audit.sh local <name> <url> "<flow question>" all
    ```
-   Then parse: `Read` count, rustcodegraph-tool count, cost, and whether the answer now
-   contains the glue symbols (the ones that previously required a read).
+然后解析：`Read` 计数、rustcodegraph-tool 计数、成本以及现在是否有答案
+包含粘合符号（之前需要读取的符号）。
 
-### Success criteria (per language/framework)
-- `rustcodegraph_explore` surfaces the canonical flow end-to-end (no dynamic-dispatch break).
-- Agent can answer the flow question with **Read 0** (achievable in ≥ some runs) and the
-  glue symbols appear in the answer.
-- **No node explosion** and no regression on a control repo.
-- Synthesized edges are precise on a spot-check (no generic-name over-linking).
+### 成功标准（每种语言/框架）
+- `rustcodegraph_explore` 端到端地呈现规范流（无动态调度中断）。
+- 代理可以用 **Read 0** 回答流程问题（可在 ≥ 一些运行中实现）并且
+答案中出现粘合符号。
+- **没有节点爆炸**，并且控制仓库上没有回归。
+- 抽查时合成的边缘是精确的（没有通用名称过度链接）。
 
 ---
 
-## 5. Validation toolkit (reference)
+## 5. 验证工具包（参考）
 
-| Tool | Purpose |
+| 工具 | 目的 |
 |---|---|
-| `rustcodegraph agent-eval probe-explore <repo> "<from> <to>"` | call-path between two symbols (the hole detector) |
-| `rustcodegraph agent-eval probe-node <repo> <sym> [code]` | symbol + trail (callers/callees); `code` adds the body |
-| `rustcodegraph agent-eval probe-explore <repo> "<query>"` | explore output |
-| `scripts/agent-eval/{audit,run-agent,itrun}.sh` | agent A/B (headless + interactive); also the `/agent-eval` skill |
-| `sqlite3 <repo>/.rustcodegraph/rustcodegraph.db` | direct edge/node inspection (provenance, metadata, counts) |
+| `rustcodegraph agent-eval probe-explore <repo> "<from> <to>"` | 两个符号之间的调用路径（空洞检测器） |
+| `rustcodegraph agent-eval probe-node <repo> <sym> [code]` | 符号+踪迹（调用者/被调用者）； `code` 添加本体 |
+| `rustcodegraph agent-eval probe-explore <repo> "<query>"` | 探索输出 |
+| `scripts/agent-eval/{audit,run-agent,itrun}.sh` | 代理 A/B（无头+交互式）；还有`/agent-eval`技能 |
+| `sqlite3 <repo>/.rustcodegraph/rustcodegraph.db` | 直接边缘/节点检查（出处、元数据、计数） |
 
-Probe commands run through `rustcodegraph agent-eval` against the Rust binary; the former `.mjs` probes are retired. Run `npm run build` first. Reindex after any
-extraction or resolution change (`rm -rf <repo>/.rustcodegraph && rustcodegraph init -i`) — the
-synthesizer/resolvers run at index time. Test fixtures: keep a tiny per-pattern fixture
-(see `/tmp/cb-fixture/bus.js`; **move into `__tests__/`** when shipping).
+探测命令通过 `rustcodegraph agent-eval` 针对 Rust 二进制文件运行；以前的 `.mjs` 探头已退役。首先运行 `npm run build`。任何之后重新索引
+提取或分辨率更改 (`rm -rf <repo>/.rustcodegraph && rustcodegraph init -i`) —
+合成器/解析器在索引时间运行。测试夹具：为每个图案保留一个微小的夹具
+（参见 `/tmp/cb-fixture/bus.js`；**运输时移至 `__tests__/`**）。
 
 ---
 
-## 6. Coverage matrix (fill in as you go)
+## 6. 覆盖范围矩阵（随意填写）
 
-Status legend: ✅ done+validated · 🔬 hole identified · ⬜ not started.
-`Mechanism`: R = resolver, S = synthesizer channel, X = extraction.
+状态图例： ✅ 已完成+已验证 · 🔬 已识别漏洞 · ⬜ 未开始。
+`Mechanism`：R = 旋转变压器，S = 合成器通道，X = 提取。
 
-| Language | Framework(s) | Canonical flow to test | Mechanism | Status |
+| 语言 | 框架 | 测试的规范流程 | 机制 | 地位 |
 |---|---|---|---|---|
-| TypeScript/JS | React / observer / EventEmitter / React Router | state→render; dispatch→callback; route→component | S + X | ✅ rendering+dispatch (excalidraw); **React Router JSX routing** `<Route path component={C}/>` (v5) + `element={<C/>}` (v6) → component (react-realworld **0→10, 10/10**). + **object data-router** `createBrowserRouter([{path, element/Component}])` (literal form); Next.js config/`nextjs-pages` false-positives FIXED. 🔬 lazy data-router (`path: paths.x.path, lazy: () => import()` — variable paths + lazy modules) |
-| TypeScript/JS | Vue / Nuxt | template events (@click→handler); component composition; reactive→render | S + X | ✅ events + composition (vitepress S / vben M / element-plus L); 🔬 reactive→render (vue-core Proxy runtime — frontier, deferred) |
-| TypeScript/JS | Svelte / SvelteKit | template calls/composition; SvelteKit action→api; store→DOM | X | ✅ already strong (realworld S / skeleton M / shadcn L): template `{fn()}` calls, `<Pascal/>` composition, `import * as api` namespace, `load`→api all work out of the box. + exported-const object-of-functions extraction (SvelteKit `actions`). 🔬 `$lib`-namespace-from-action + store/reactive frontier |
-| TypeScript/JS | Express / Koa | request → route → handler → service | R + X | ✅ named handlers + middleware + controller/service (resolver) + **inline arrow handlers → service body calls** (realworld S 19 / parse M / ghost L 65 edges). 🔬 custom routers (payload had 0 routes — not `app.get`-style) |
-| TypeScript/JS | NestJS | request → @Controller → DI service → repo | R | ✅ already well-covered (realworld S / immich M-L / amplication L): @decorator routes (HTTP/GraphQL/microservice/WS) via resolver + DI `this.svc.method()` controller→service resolves correctly at scale (name + co-location). No dynamic-dispatch hole. 🔬 committed `dist/` build output gets indexed (realworld) — general build-dir-ignore follow-up |
-| TypeScript/JS | RxJS / signals | subscribe → operator → observer | S | ⬜ |
-| Python | Django ORM | QuerySet → SQL compiler | R | ✅ |
-| Python | Django / DRF (views) | url → view → model | R + X | ✅ url→view (`path`/`url`/`as_view`) + **DRF `router.register`→ViewSet** (realworld S / wagtail M / saleor L); ORM QuerySet→SQL (prior work). 🔬 signals (`post_save`→receiver), DRF viewset CRUD actions (inherited), saleor GraphQL resolvers |
-| Python | Flask / FastAPI | request → route → handler → dependency | R + X | ✅ **Flask: handler resolved across intervening decorators (`@login_required`) + stacked `@x.route` lines** (microblog S 6→27, redash L decorator routes 6/6); **FastAPI: empty-path router-root routes `@router.get("")` incl. multi-line** (realworld S 12→20 / Netflix dispatch L **290/290 100%**) + **bare-name builtin guard** — a handler named after a Python builtin method (`index`/`get`/`update`/`count`…) was filtered as a builtin and lost its route→handler edge. + **Flask-RESTful `add_resource(Resource,'/x')` → Resource class** (redash 6→**77**) + **tuple `methods=('GET',)`** (was mislabeled GET) + **broadened detection** (requirements/Pipfile/setup + subdir app-factory entrypoints — flask-realworld 0→**19**). 🔬 FastAPI `Depends()` dependency edges (light validation) |
-| Go | Gin / chi / gorilla/mux / net-http | request → route → handler → service; middleware chain (`Use`→`Next`) | S + X | ✅ **routes on ANY group var** (`v1.GET`, `PublicGroup.GET`) not just `r/router` (gin-vue-admin S→M 4→259 / realworld S / gitness L) — was missing all group-routed apps; named handlers resolve precisely. **gorilla/mux confirmed covered** by the any-receiver `HandleFunc`/`Handle` handling (subrouter-var `s.HandleFunc(...)` + namespaced handlers; `.Methods()` chain ignored). + **gin middleware-chain synthesizer** (`ginMiddlewareChainEdges`): gin runs its entire chain through one dynamic line — `(*Context).Next` does `c.handlers[c.index](c)`, a slice-index dispatch tree-sitter can't resolve, so `callees(Next)` dead-ended at the `len()` helper (`safeInt8`) and the agent rabbit-holed re-querying it. Find the dispatcher (a Go method invoking a `handlers` slice by index) and link it → every HandlerFunc registered via `.Use`/`.GET`/…/`.Handle`; gated on the dispatcher existing (inert on non-gin Go repos), named handlers only (closures skipped), capped. gin L: `callees(Next)` now surfaces `Logger`/`Recovery`/`ErrorLogger`+handlers (node count stable 2,544; 5 precise edges with `registeredAt` wiring sites). **Agent A/B (headless median-of-4, Opus 4.8): gin flipped from rustcodegraph −58% cost / −129% time (the rabbit-hole, incl. a stray `Workflow` mis-fire on 2/4 WITH runs) → +7% cost / +35% tokens / +8% time / 38% tool calls, all 4 WITH runs clean (0 Read/Grep/Bash, no Workflow, no duplicate calls).** 🔬 inline `func(c){}` handlers (anonymous, body lost); subrouter/`PathPrefix` path-prefix not prepended (label only); gitness chi custom (26/321) |
-| Rust | Axum / actix / Rocket | request → route → handler | R + X | ✅ **Axum chained methods + namespaced handlers** — `.route("/x", get(h1).post(h2))` emitted only the first method+handler, and `get(mod::handler)` captured the module not the fn (realworld-axum S **12→19, 19/19**); balanced-paren scan + per-method nodes + last-`::`-segment handler. **Rocket attribute macros 550/556 (99%)** (Rocket repo L) — already strong. crates.io named axum routes resolve (6/8; rest are closures/var handlers; its API is mostly the utoipa `routes!` macro = frontier). Cargo-workspace module resolution (prior work). **actix builder API** `web::resource("/x").route(web::get().to(h))` / `.to(h)` / App `.route("/x", web::get().to(h))` (actix-examples **51→128 routes, 35→112 resolved**) — was the dominant actix style and fully missed (the handler is in `.to(h)`, not `get(h)`). 🔬 actix `web::scope("/api")` prefix (not prepended to nested resource paths) + anonymous `.to` closure handlers |
-| Java | Spring | request → @RestController → @Autowired service → repo | R + X | ✅ **bare `@GetMapping`/`@PostMapping` + class `@RequestMapping` prefix join → route→method** (realworld S / mall M / halo L) — was missing all path-less method mappings; DI controller→service resolves (name + dir) + **interface→impl dispatch synthesizer** (`interfaceOverrideEdges`: a class's `implements`/`extends` → link each interface/base method → its same-name override; JVM-gated, capped, **overload-aware**; mall **310** / halo **734** synth edges, node count unchanged) so trace follows controller→service-**interface**→**impl** instead of dead-ending at the abstract method — `trace("PmsProductController.getList","PmsProductServiceImpl.list")` connects in **3 hops** (probe-validated). + **field-injected concrete-bean trace** (#389): `this.<field>.method()` strips the `this.` receiver at extraction, and the resolver looks up the receiver name in the enclosing class's field declarations to get the declared type, then resolves the method on it — closes the controller→bean hop when the field-name doesn't capitalize to the type (`@Resource(name="userBO") UserBO userbo` → `userbo.toLogin2()` reaches `UserBO.toLogin2`). + **`@Value("${k}")` / `@ConfigurationProperties(prefix="X")` → application.{yml,yaml,properties}** binding with Spring's relaxed binding (kebab↔camel↔snake), incl. `${k:default}`. mall-tiny S: 11/11 `@Value` resolved. ⚠️ **agent A/B null** (n=2: the agent went context→explore→Read and never invoked `trace`, so the synth edges weren't exercised — adoption-gated, the recurring wall; see `docs/benchmarks/call-sequence-analysis.md`). The fix is correct + improves trace/callees/impact/context connectivity regardless; agent-visible read reduction needs trace adoption. 🔬 Spring Data JPA derived queries (`findByEmail`) — metaprogramming frontier; `@PropertySource` external files; Spring Cloud Config; mapper-class simple-name collisions across packages (dropped to avoid mis-resolution) |
-| Java | MyBatis (XML mappers) | DAO interface method → `<select\|insert\|update\|delete id="X">` SQL | R (XML extract) + S (Java↔XML synthesizer) | ✅ **XML mapper as first-class language** (#389) — `src/extraction/mybatis_extractor.rs` parses files containing `<mapper namespace="...">`; emits one method-shaped node per statement qualified `<namespace>::<id>` + `<sql id="X">` fragments + `<include refid>` references. Non-mapper XML (pom, log4j) → file node only. `mybatis_java_xml_edges` synthesizer indexes Java methods by `<ClassName>::<methodName>` and joins to XML qualified names by suffix-match — ambiguous simple-name collisions dropped (precision over recall). mall-tiny S **6/6 custom-SQL mapper methods bridge** to their XML statements; full enterprise chain `trace(controller.action → mapper.method-xml)` connects across controller / service-iface / impl / mapper / XML. 🔬 cross-mapper `<include>` via unqualified refid; MyBatis Plus dynamic methods (`BaseMapper<T>` CRUD inherited from framework, not in project); annotation-driven mappers (`@Select("SELECT ...")` on Java methods — the SQL lives in the annotation, not XML) |
-| Kotlin | Spring Boot / Jetpack Compose | request → @RestController → service; @Composable → child | R + X | ✅ **Spring Boot Kotlin** — the Spring resolver was `['java']`-only with a Java-syntax method regex (`public X name()`); extended to `.kt` + Kotlin `fun name(` handler matching (petclinic-kotlin **0→18, 18/18**; class-prefix joins; DI controller→repo resolves — `showOwner ← GET /owners/{ownerId}` → `OwnerRepository.findById`). **Compose composition already static** (@Composable→child are plain function calls — Jetcaster `PodcastInformation→HtmlTextContainer`). Java Spring unchanged (realworld 19/19). 🔬 Ktor `routing { get("/x"){…} }` lambda handlers (anonymous) + Compose recomposition (implicit `mutableStateOf`, no setState gate) + coroutines/Flow |
-| Swift | Vapor | request → route → controller | R + X | ✅ **was 0 routes on every real app** — the extractor required an `app/router/routes` receiver + a `"path"` literal, but real Vapor routes on grouped builders (`let todos = routes.grouped("todos"); todos.get(use: index)`) with NO path arg. Rewrote: any receiver, optional/non-string path segments, `.grouped`/`.group{}` prefix tracking, `use:` discriminator. vapor-template S **0→3 (3/3**, nested `/todos/:todoID`), SteamPress M **0→27 (27/27)**, SwiftPackageIndex-Server L **0→14 (14/14** handler resolution). 🔬 typed-route enums (SPI `SiteURL.x.pathComponents` — path label only, handler still resolves) + closure handlers `app.get("x"){ }` (anonymous) |
-| Swift | Alamofire / closure-collection | request → build → send → **validate** (deferred closures) | S | ✅ **closure-collection dispatch synthesizer** (`closure_collection_edges`): the Swift deferred-handler pattern `DataRequest.validate` `validators.write{$0.append(v)}` … base `Request.didCompleteTask` `validators.forEach{$0()}` (append + dispatch in different files/classes, field is `Protected<[() -> Void]>`). The element-invoke `$0(`/`it(` is the precision gate → **9 edges on Alamofire** (validators/streams/finishHandlers/requestsToRetry), **0 on every non-closure-collection control**. Surfaced inline in `trace` + as an explore "Dynamic-dispatch links" section (so it shows when the agent named only `validate`, not the `didCompleteTask` that drains the list). Forced rustcodegraph-only: **3/3** build/send/validate correct. + **trace endpoint relevance**: overloaded `request`/`task` (44/8 defs, mostly empty `EventMonitor` delegate stubs) now resolve to the real `Session.request`, not a 1-line no-op — **WITH-arm tool calls 12→8 median, read variance 0–12→1–4** (the meltdowns were all the trace-collision flounder); control-safe (excalidraw/okhttp/gin traces intact, gin A/B 0 reads). + **god-file multi-phase rendering** (`format_explore_file_result`): a flow whose necessary code spans a god-file (Session.swift build chain ~11K) PLUS other files (validate logic) used to truncate at the fixed `maxOutputChars` and drop whichever phase came last. Six coordinated layers make it render all phases: (1) on-spine god-files render spine-full + off-path methods as signatures (true-spine), (2) every NAMED token's substantive def is seeded into the subgraph (FTS buried `validate` under the build terms → Validation.swift was never gathered), (3) a file that DEFINES a named symbol outranks one that merely references the flow (Validation=50 > incidental Combine=23), (4) the 90%-budget early-break and (5) the total cap both exempt necessary (named/spine) files — incidental files stay capped, (6) the final ceiling is 1.5× so it doesn't slice the necessary content the loop assembled. Alamofire now renders build+validators-exec+validate in ONE explore (~16K); A/B reads med 2→**0.5**, tools 8→**5.5**; excalidraw control held at 0 reads (no bloat). Sequential-flow spine is irreducible (no redundant siblings to collapse) — the fix is to render it, not cap it. |
-| C# | ASP.NET Core | request → [Http*] action → DI service → EF | X | ✅ **feature-folder detection** (realworld 0→19 — was undetected) + **bare `[HttpGet]` + class `[Route]` prefix** (eShopOnWeb 9→33 / jellyfin L) — co-located so no `claims_reference` needed. 🔬 EF Core LINQ/DbSet (metaprogramming frontier) |
-| Ruby | Rails / Sinatra | request → routes.rb → Controller#action → model | R | ✅ **RESTful `resources`/`resource` routing → controller#action** (realworld S 16 / spree M / forem L), pluralization + only/except + `claims_reference`; explicit routes fixed to precise `controller#action` too. 🔬 ActiveRecord dynamic finders (`Article.find_by_slug`) — metaprogramming frontier |
-| PHP | Laravel | request → route → controller → Eloquent | R | ✅ **precise `Route::get([Ctrl::class,'m'])` / `'Ctrl@m'` → Ctrl@method** (realworld S / firefly M / bookstack L) — was resolving the bare method name to the WRONG controller (every `index`→ArticleController); Route::resource→controller. 🔬 Eloquent dynamic finders/relationships (metaprogramming frontier) |
-| PHP | Drupal | request → *.routing.yml → _controller/_form | R | ✅ **`claims_reference` for FQCN handlers** (`\Drupal\…\Class::method` passed the pre-filter only because the `::method` name was known; bare `_form` FQCNs `\…\FormClass` and single-colon `Class:method` controller-services were dropped before resolve()) + **single-colon controller match** + **detect via composer `type:drupal-*` / `name:drupal/*` + `*.info.yml` fallback** (a contrib module with empty `require` was undetected → 0 routes). admin_toolbar S **0→14 (14/14)** / webform M 208 (**144**) / core L 836 (536→**731, 87%**). Remainder is the **entity-annotation handler frontier** (`_entity_form: type.op` resolves via the entity's PHP `#[ContentEntityType]` handlers, not a direct class). 🔬 **OOP `#[Hook]` attributes** — Drupal 11 moved ~all procedural hooks to attribute methods (core: 418 `#[Hook]` files vs 3 procedural), so the resolver's docblock/`module_hook` detection is obsolete for modern core (0 hook edges) |
-| C/C++ | C++ vtables / inheritance | virtual call → override; general direct dispatch | S + X | ✅ **general dispatch strong** (redis C **29k** cross-file calls / leveldb C++ **1.4k**) + **C++ inheritance extraction fix** (`base_class_clause` was unhandled, so C++ extends edges were missing — leveldb **219→298**) + **cpp-override synthesizer** (base virtual method → subclass override, gated to C++, capped — leveldb 12 precise: `Iterator::Next→MergingIterator`). 🔬 C callback structs (`s->fn()` → 422-way fan-out, too noisy to synthesize) + C++ pure-virtual base methods (`virtual void f()=0;` declarations aren't extracted as nodes, so those overrides can't bridge) |
-| Dart | Flutter | setState → build; build → child widgets | S + X | ✅ **setState→build synthesizer** (Dart analog of react-render: a State method whose body calls `setState(` → `build`) gated to `.dart` + **foundational Dart method-range fix** — Dart models a method body as a *sibling* of the signature, so method nodes were signature-only (`end==start`); now `endLine` spans the body (required for ALL body analysis: callees, context slices, the synthesizer's body scan). counter `initState→build`, books `build→BookDetail/BookForm`; widget composition already static (compass_app `build→ErrorIndicator/HomeButton`). Controls unchanged (excalidraw 9,290 / django 302 — the range fix only extends sibling-body grammars). 🔬 MVVM Command/ChangeNotifier dispatch (compass_app — no setState) + `Navigator.push(MaterialPageRoute(builder:))` nav routes |
-| Lua / Luau | Neovim / Roblox | module dispatch (require→mod, mod.fn); event/callback | — | ✅ **already covered for the dominant flow (measure-first, no code change)** — Neovim is module-heavy (`require('x')` + `x.fn()`), and the general import + name resolution already handles it: telescope.nvim **220 imports + 335 cross-file `mod.fn` calls**, traces end-to-end (`map_entries ← init.lua → get_current_picker (state.lua)`). Luau instance-path `require(game:GetService(...))` handled by the extractor. 🔬 event-callback registration (`vim.keymap.set(…, fn)`, autocmd `callback=`, Roblox `signal:Connect(fn)`) is predominantly INLINE anonymous closures (corpus ~12 inline vs ~2 named) — the anonymous-handler frontier; named handlers too rare to justify a synthesizer |
-| Scala | Play / Akka | request → conf/routes → controller action | R + X | ✅ **Play `conf/routes` → controller** — the extensionless `conf/routes` wasn't indexed; added narrow file-walk opt-in (`isPlayRoutesFile`) + a Play resolver parsing `METHOD /path Controller.action(args)` → the action method (computer-database **0→8, 7/8**; starter 0→4, 3/4 — the unresolved are Play's framework `Assets` controller, external). Scala general controller→DAO dispatch already resolves. No-regression: the file-walk change only ADDS Play routes files (excalidraw 9,290 / suite 800 unchanged). 🔬 SIRD programmatic router (`-> /v1 Router` include + `case GET(p"/x")` in code) + Akka actor `receive`/`Behaviors.receiveMessage` message→handler |
-| Swift × Objective-C | mixed iOS apps | Swift `obj.foo(bar:)` → ObjC `-fooWithBar:`; ObjC `[obj fooWithBar:]` → Swift `@objc func foo(bar:)` | R | ✅ **Swift↔ObjC cross-language bridge** — `frameworks/swift-objc.ts` implements Apple's `@objc` auto-bridging name math (incl. init forms `initWith<First>:`, property getter+setter pairs, `@objc(custom:)` override) and the reverse direction strips Cocoa preposition prefixes (`With`/`For`/`By`/`In`/`On`/`At`/`From`/`To`/`Of`/`As`) to derive Swift base-name candidates. Validated on Charts S **28/1 obj→swift / swift→objc**, realm-swift M **36/1185**, wikipedia-ios L **52/983**. Genericname blocklist (`init`, `description`, `count`, …) keeps precision. Confidence 0.6 (name-match's 1.0 wins ties) — bridge only fires when name-match has no result. 🔬 Swift generics over ObjC protocols, Swift extensions on ObjC classes (silently miss; matches Java/Kotlin generics frontier) |
-| JS × native | React Native legacy bridge | JS `NativeModules.X.fn(...)` → ObjC `RCT_EXPORT_METHOD` / Java/Kotlin `@ReactMethod` | R | ✅ **RN legacy bridge** — `frameworks/react-native.ts` parses `RCT_EXPORT_MODULE` (default-name from `RCT`-prefix-stripped class name) + `RCT_EXPORT_METHOD(selector:(...))` + `RCT_REMAP_METHOD(jsName, selector)` on the ObjC side and `@ReactMethod` + `getName()` literal on Java/Kotlin. AsyncStorage S **8/8 precise** (`setItem`→`legacy_multiSet`, etc.), react-native-firebase L **18 precise after `RCTEventEmitter` built-in blocklist** (initial 78 included 60 `addListener:`/`remove:` false positives — every emitter subclass declares those via `RCT_EXPORT_METHOD`, JS callers route through the `NativeEventEmitter` abstraction not the native method directly). 🔬 dynamic bridge keys (`NativeModules[someVar]`) — literal-key only |
-| JS × native | React Native TurboModules | JS spec interface ↔ native impl | R (spec as ground truth) | ✅ partial — parses `TurboModuleRegistry.get*<Spec>('Name')` + the `Spec` interface methods. Each spec method matches to a native impl by selector first-keyword (ObjC) / identifier (JVM). react-native-svg S **9 precise** (`getTotalLength`, `getPointAtLength`, `getCTM`, `isPointInFill`, …) bridging to Java impls (the iOS side is Codegen-auto-generated without `RCT_EXPORT_METHOD` declarations). 🔬 TurboModule native impl classes that don't use legacy macros (RNSvg iOS — would need inheritance-aware bridging via the Codegen-generated `NativeFooSpec` superclass) |
-| ObjC/Java/Kotlin → JS | React Native event emitters | native `sendEventWithName:`/`emit(...)` → JS `addListener('e', handler)` | S (cross-lang channel) | ✅ **rn-event-channel synthesizer** — matches ObjC `sendEventWithName:@"X"`, Swift `sendEvent(withName: "X", ...)`, and JVM `.emit("X", ...)` to JS `addListener('X', handler)` keyed by literal event name. Same fan-out cap (`EVENT_FANOUT_CAP=6`) as in-language channel. **Subscribe-wrapper fallback** for RN-library APIs (`const Foo = { watchX(listener) { addListener('e', listener) } }`) — when the handler arg is a parameter, falls back to the enclosing function and then the enclosing `constant`/`variable` (reachability-correct attribution to the JS API surface). RNFirebase L **3 push-notification flow edges** (UIApplicationDelegate → JS `onMessage`/`onNotificationOpenedApp`), RNGeolocation S **2 location-event edges** (Swift `onLocationChange`/`onLocationError` → JS `Geolocation`). 🔬 inline arrow handlers `addListener('e', d => …)` (anonymous frontier) |
-| JS × Swift/Kotlin | Expo Modules | JS `requireNativeModule('X').fn(...)` → Swift/Kotlin `Function("fn") { ... }` | R (extract → synthetic method nodes) | ✅ **expo-modules framework extractor** — parses Swift/Kotlin `Module { Name("X"); Function("y") { ... }; AsyncFunction("z") { ... }; Property("w") { ... } }` literals and synthesizes `method` nodes named after each declaration. JS callsites resolve via existing name-matcher (no separate `resolve()` needed). expo-haptics S **6 method nodes** (`notificationAsync`, `impactAsync`, `selectionAsync` × Swift + Kotlin), expo-camera M **41** (full SDK surface incl. `takePictureAsync`, `record`, `scanFromURLAsync`, view props `width`/`height`), expo SDK sweep L **134** (7 packages, 72 Swift + 62 Kotlin). Same-name JS wrappers in the package itself shadow the native names (`CameraView.tsx`'s `pausePreview` wraps native `pausePreview`); external consumer apps bridge through to native directly. 🔬 closure body extraction (the Function trailing closure isn't a body-range node yet) |
-| JS × native | React Native Fabric / Codegen + legacy Paper view components | JSX `<MyView prop={v}/>` → Codegen spec → native class (or Paper `RCT_EXPORT_VIEW_PROPERTY` / `@ReactProp`) | R (extract) + S (native-impl) + JSX | ✅ **fabric-view extractor + fabric-native-impl synthesizer** — extractor parses **both** modern Codegen TS specs (`codegenNativeComponent<NativeProps>('Name', ...)`) **and** legacy Paper view-manager macros (`RCT_EXPORT_VIEW_PROPERTY` on ObjC, `@ReactProp` on Java/Kotlin). Emits a `component` node per declaration + a `property` node per declared prop. Synthesizer links the component to its native impl class by RN's convention-based name+suffix (`exact`/`View`/`ComponentView`/`Manager`/`ViewManager`). Combined with `reactJsxChildEdges`, full consumer flow: JSX `<MyView/>` → fabric `component` → native class. Validated on RNSegmentedControl S **(legacy Paper) 1 component + 11 props + 4 bridges**, RNScreens M **(pure Codegen) 27 components + 272 props + 68 bridges** (was 0 before Phase 6), RNSkia L **(hybrid + monorepo) 5 + 14 + 15 across Codegen TS + Android Java + iOS ObjC**. **Monorepo detect** added: probes `packages/<sub>/package.json` etc. via `listDirectories` when the root manifest is a workspace declaration (was the gating bug on RNSkia). 🔬 Fabric event-handler props (`onTap={cb}`) — JSX attribute extraction needed |
+| TypeScript/JS | React / 观察者 / EventEmitter / React Router | 状态→渲染；调度→回调；路线→组件 | S+X | ✅ 渲染+调度（excalidraw）； **React Router JSX 路由** `<Route path component={C}/>` (v5) + `element={<C/>}` (v6) → 组件 (react-realworld **0→10, 10/10**)。 + **对象数据路由器** `createBrowserRouter([{path, element/Component}])`（文字形式）； Next.js config/`nextjs-pages` 误报已修复。 🔬 惰性数据路由器（`path: paths.x.path, lazy: () => import()` — 变量路径 + 惰性模块） |
+| TypeScript/JS | Vue/Nuxt | 模板事件（@click→处理程序）；成分组成；反应→渲染 | S+X | ✅ 事件+组合（vitepress S / vben M / element-plus L）； 🔬 反应式 → 渲染（vue-core 代理运行时 — 前沿，延迟） |
+| TypeScript/JS | Svelte / SvelteKit | 模板调用/组合； SvelteKit 操作→api；存储→DOM | X | ✅ 已经很强大（现实世界S/骨架M/shadcn L）：模板`{fn()}`调用，`<Pascal/>`组合，`import * as api`命名空间，`load`→api所有开箱即用。 + 导出常量函数对象提取 (SvelteKit `actions`)。 🔬 `$lib`-来自操作的命名空间 + 存储/反应边界 |
+| TypeScript/JS | 快递 / 相思木 | 请求 → 路由 → 处理程序 → 服务 | 右+X | ✅ 命名处理程序 + 中间件 + 控制器/服务（解析器） + **内联箭头处理程序 → 服务主体调用**（真实世界 S 19 / 解析 M / 幽灵 L 65 边）。 🔬 自定义路由器（有效负载有 0 条路由——不是 `app.get` 风格） |
+| TypeScript/JS | NestJS | 请求 → @Controller → DI 服务 → 存储库 | 右 | ✅ 已经很好地覆盖了（现实世界 S / immich M-L / amplication L）：@decorator 通过解析器 + DI `this.svc.method()` 控制器路由（HTTP/GraphQL/微服务/WS）→服务大规模正确解析（名称+共置）。无动态调度孔。 🔬 提交的 `dist/` 构建输出被索引（现实世界） - 一般构建目录忽略后续操作 |
+| TypeScript/JS | RxJS / 信号 | 订阅 → 操作者 → 观察者 | S | ⬜ |
+| Python | Django ORM | 查询集 → SQL 编译器 | 右 | ✅ |
+| Python | Django / DRF（视图） | url → 视图 → 模型 | 右+X | ✅ url→视图 (`path`/`url`/`as_view`) + **DRF `router.register`→ViewSet** (真实世界 S / wagtail M / saleor L); ORM 查询集→SQL（之前的工作）。 🔬 信号（`post_save`→接收器）、DRF 视图集 CRUD 操作（继承）、销售或 GraphQL 解析器 |
+| Python | 烧瓶/FastAPI | 请求→路由→处理程序→依赖 | 右+X | ✅ **Flask：跨干预装饰器（`@login_required`）+堆叠`@x.route`行解析处理程序**（微博S 6→27，redash L装饰器路线6/6）； **FastAPI：空路径路由器根路由 `@router.get("")` 包括。多行** (现实世界 S 12→20 / Netflix 调度 L **290/290 100%**) + **裸名内置防护** - 以 Python 内置方法命名的处理程序 (`index`/`get`/`update`/`count`…) 被过滤为内置方法，并丢失了其路由→处理程序边缘。 + **Flask-RESTful `add_resource(Resource,'/x')` → 资源类** (redash 6→**77**) + **元组 `methods=('GET',)`** (被错误标记为 GET) + **扩大检测** (requirements/Pipfile/setup + subdir 应用程序工厂入口点 —flask-realworld 0→**19**)。 🔬 FastAPI `Depends()` 依赖边缘（轻验证） |
+| 去 | Gin / chi / gorilla/mux / net-http | 请求→路由→处理程序→服务；中间件链（`Use`→`Next`） | S+X | ✅ **任何组变量**（`v1.GET`、`PublicGroup.GET`）上的路由，而不仅仅是 `r/router`（gin-vue-admin S→M 4→259 / realworld S / gitness L） - 缺少所有组路由应用程序；命名处理程序精确解析。 **gorilla/mux 确认由任何接收器 `HandleFunc`/`Handle` 处理覆盖**（子路由器变量 `s.HandleFunc(...)` + 命名空间处理程序；忽略 `.Methods()` 链）。 + **gin 中间件链合成器** (`ginMiddlewareChainEdges`)：gin 通过一条动态线运行其整个链 - `(*Context).Next` 运行 `c.handlers[c.索引](c)`，切片索引调度树托管者无法解析，因此 `callees(Next)` 在 `len()` 帮助器 (`safeInt8`) 处陷入死胡同，代理兔子洞重新查询它。找到调度程序（通过索引调用 `handlers` 切片的 Go 方法）并链接它 → 通过 `.Use`/`.GET`/…/`.Handle` 注册的每个 HandlerFunc；对现有的调度程序进行门控（在非 gin Go 存储库上是惰性的），仅命名处理程序（跳过闭包），有上限。 gin L：`callees(Next)` 现在表面 `Logger`/`Recovery`/`ErrorLogger`+ 处理程序（节点数稳定为 2,544；5 个精确边缘，带有 `registeredAt` 接线站点）。 **特工 A/B（无头中位数 4，Opus 4.8）：从 rustcodegraph 翻转杜松子酒 −58% 成本 / −129% 时间（兔子洞，包括在 2/4WITH 运行中的杂散 `Workflow` 失火）→ +7% 成本 / +35% 代币 / +8% 时间 / 38% 工具调用，所有 4 个WITH 运行干净（0 Read/Grep/Bash，无工作流程，无重复调用）。** 🔬 内联 `func(c){}` 处理程序（匿名，主体丢失）； subrouter/`PathPrefix` 路径前缀未预先添加（仅标签）；吉特尼斯气定制 (26/321) |
+| 锈 | 阿克苏姆 / actix / 火箭 | 请求 → 路由 → 处理程序 | 右+X | ✅ **Axum 链式方法 + 命名空间处理程序** — `.route("/x", get(h1).post(h2))` 仅发出第一个方法+处理程序，而 `get(mod::handler)` 捕获模块而不是 fn (realworld-axum S **12→19, 19/19**)；平衡括号扫描+每个方法节点+最后一个`::`段处理程序。 **Rocket 属性宏 550/556 (99%)** (Rocket repo L) — 已经很强了。 crates.io 名为 axum 路由解析（6/8；其余是闭包/var 处理程序；其 API 主要是 utoipa `routes!` 宏 = frontier）。货物工作区模块解析（之前的工作）。 **actix 构建器 API** `web::resource("/x").route(web::get().to(h))` / `.to(h)` / 应用程序 `.route("/x", web::get().to(h))`（actix 示例 **51→128 条路线，35→112 已解析**） - 是占主导地位的 actix 风格，完全错过了（处理程序位于 `.to(h)`，而不是 `get(h)`）。 🔬 actix `web::scope("/api")` 前缀（不添加到嵌套资源路径前面）+ 匿名 `.to` 闭包处理程序 |
+| 爪哇 | 春天 | 请求 → @RestController → @Autowired 服务 → 存储库 | 右+X | ✅ **裸 `@GetMapping`/`@PostMapping` + 类 `@RequestMapping` 前缀连接→路由→方法**（现实世界 S / 商场 M / 光环 L） - 缺少所有无路径方法映射； DI 控制器→服务解析（名称 + 目录）+ **接口→impl 调度合成器**（`interfaceOverrideEdges`：类的 `implements`/`extends` → 链接每个接口/基本方法→其同名覆盖；JVM 门控、上限、**过载感知**；mall **310** / halo **734** 合成边缘，节点数不变）因此跟踪如下控制器→服务**接口**→**实现**，而不是在抽象方法处死胡同 — `trace("PmsProductController.getList","PmsProductServiceImpl.list")` 在 **3 跳**中连接（探针验证）。 + **字段注入的具体 bean 跟踪** (#389)：`this.<field>.method()` 在提取时剥离 `this.` 接收器，解析器在封闭类的字段声明中查找接收器名称以获取声明的类型，然后解析其上的方法 - 当字段名称不大写为类型时关闭控制器→bean 跳跃（`@Resource(name="userBO") UserBO userbo` → `userbo.toLogin2()` 到达`UserBO.toLogin2`）。 + **`@Value("${k}")` / `@ConfigurationProperties(prefix="X")` → application.{yml,yaml,properties}** 与 Spring 的宽松绑定 (kebab↔camel↔snake) 绑定，包括。 `${k:default}`。 mall-tiny S：11/11 `@Value` 已解决。 ⚠️ **代理 A/B 为空**（n=2：代理进入上下文→探索→读取并且从未调用 `trace`，因此合成边缘没有被行使 - 采用门控，循环墙；参见 `docs/benchmarks/call-sequence-analysis.md`）。修复是正确的+无论如何都改进了跟踪/被调用者/影响/上下文连接；代理可见的读取减少需要跟踪采用。 🔬 Spring Data JPA 派生查询 (`findByEmail`) — 元编程前沿； `@PropertySource` 外部文件； Spring云配置；包之间的映射器类简单名称冲突（已删除以避免错误解析） |
+| 爪哇 | MyBatis（XML 映射器） | DAO接口方法→`<select\|插入\|更新\|删除 id="X">` SQL | R（XML 提取）+ S（Java↔XML 合成器） | ✅ **XML 映射器作为一流语言** (#389) — `src/extraction/mybatis_extractor.rs` 解析包含 `<mapper namespace="...">` 的文件；每个语句发出一个方法形节点，限定 `<namespace>::<id>` + `<sql id="X">` 片段 + `<include refid>` 引用。非映射器 XML（pom、log4j）→ 仅文件节点。 `mybatis_java_xml_edges` 合成器通过 `<ClassName>::<methodName>` 索引 Java 方法，并通过后缀匹配连接到 XML 限定名称 — 消除了不明确的简单名称冲突（精度高于召回率）。 mall-tiny S **6/6 自定义 SQL 映射器方法桥接**至其 XML 语句；完整的企业链 `trace(controller.action → mapper.method-xml)` 跨控制器/service-iface/impl/mapper/XML 连接。 🔬 通过不合格的 refid 进行交叉映射器 `<include>`； MyBatis Plus动态方法（`BaseMapper<T>` CRUD继承自框架，不在项目中）；注解驱动的映射器（Java 方法上的 `@Select("SELECT ...")` — SQL 位于注解中，而不是 XML） |
+| 科特林 | Spring Boot / Jetpack 组合 | 请求→@RestController→服务； @Composable → 子级 | 右+X | ✅ **Spring Boot Kotlin** — Spring 解析器仅是 `['java']`，带有 Java 语法方法正则表达式 (`public X name()`)；扩展到 `.kt` + Kotlin `fun name(` 处理程序匹配（petclinic-kotlin **0→18, 18/18**；类前缀连接；DI 控制器→repo 解析 — `showOwner ← GET /owners/{ownerId}` → `OwnerRepository.findById`）。 **Compose 组合已经是静态的**（@Composable→child 是普通函数调用 - Jetcaster `PodcastInformation→HtmlTextContainer`）。 Java Spring 不变（现实世界 19/19）。 🔬 Ktor `routing { get("/x"){…} }` lambda 处理程序（匿名）+ Compose 重组（隐式 `mutableStateOf`，无 setState 门）+ 协程/Flow |
+| 迅速 | 汽 | 请求→路由→控制器 | 右+X | ✅ **每个真实应用程序上都有 0 条路由** — 提取器需要 `app/router/routes` 接收器 + `"path"` 文字，但分组构建器 (`let todos = routes.grouped("todos"); todos.get(use: index)`) 上的真实 Vapor 路由没有路径参数。重写：任何接收器、可选/非字符串路径段、`.grouped`/`.group{}` 前缀跟踪、`use:` 鉴别器。 steam-template S **0→3（3/3**，嵌套 `/todos/:todoID`），SteamPress M **0→27 (27/27)**，SwiftPackageIndex-Server L **0→14（14/14** 处理程序分辨率）。 🔬 类型化路由枚举（SPI `SiteURL.x.pathComponents` - 仅路径标签，处理程序仍然解析）+ 闭包处理程序 `app.get("x"){ }`（匿名） |
+| 迅速 | Alamofire / 闭包集合 | 请求→构建→发送→**验证**（延迟关闭） | S | ✅ **闭包集合调度合成器** (`closure_collection_edges`)：Swift 延迟处理程序模式 `DataRequest.validate` `validators.write{$0.append(v)}` … 基本 `Request.didCompleteTask` `validators.forEach{$0()}` （在不同文件/类中追加 + 调度，字段为 `Protected<[() -> Void]>`）。元素调用 `$0(`/`it(` 是精度门 → **Alamofire 上有 9 个边**（验证器/流/finishHandlers/requestsToRetry），**每个非闭包集合控件上有 0 个边**。在 `trace` + 中内联显示，作为探索“动态调度链接”部分（因此当代理仅命名为 `validate`，而不是耗尽列表的 `didCompleteTask` 时，它会显示）。仅强制 rustcodegraph：**3/3** 构建/发送/验证正确。 + **跟踪端点相关性**：重载的 `request`/`task`（44/8 定义，大部分是空的 `EventMonitor` 委托存根）现在解析为真正的 `Session.request`，而不是 1 行无操作 — **WITH-arm 工具调用 12→8 中值，读取方差 0–12→1–4**（崩溃都是跟踪冲突）比目鱼）；控制安全（excalidraw/okhttp/gin 跟踪完整，gin A/B 0 读取）。 + **上帝文件多阶段渲染**（`format_explore_file_result`）：一个流程，其必要的代码跨越上帝文件（Session.swift构建链~11K）加上其他文件（验证逻辑），用于在固定的`maxOutputChars`处截断并删除最后一个阶段。六个协调层使其渲染所有阶段：（1）主干上帝文件将主干完整 + 路径外方法渲染为签名（真正的主干），（2）每个 NAMED 令牌的实质性定义都被播种到子图中（FTS 埋藏在构建条款下的 `validate` → Validation.swift 从未收集），（3）定义命名符号的文件优先于仅引用流的文件（Validation=50 >附带组合 = 23)，(4) 90% 预算早期突破和 (5) 总上限都免除必要的（命名/主干）文件 - 附带文件保持上限，(6) 最终上限为 1.5×，因此它不会分割循环组装的必要内容。 Alamofire 现在在 ONE Explore 中渲染 build+validators-exec+validate (~16K)； A/B读取med 2→**0.5**，工具8→**5.5**； excalidraw 控件保持在 0 读取（无膨胀）。顺序流脊柱是不可约的（没有多余的兄弟姐妹会崩溃）——解决方法是渲染它，而不是限制它。 |
+| C# | ASP.NET 核心 | 请求 → [Http*] 操作 → DI 服务 → EF | X | ✅ **功能文件夹检测**（真实世界 0→19 — 未检测到）+ **裸 `[HttpGet]` + 类 `[Route]` 前缀**（eShopOnWeb 9→33 / jellyfin L） — 位于同一位置，因此不需要 `claims_reference`。 🔬 EF Core LINQ/DbSet（元编程前沿） |
+| 红宝石 | 铁路/西纳特拉 | 请求→routes.rb→Controller#action→模型 | 右 | ✅ **RESTful `resources`/`resource` 路由→controller#action** (realworld S 16 / spree M / forem L)，复数 + only/ except + `claims_reference`；显式路由也固定为精确的 `controller#action`。 🔬 ActiveRecord 动态查找器 (`Article.find_by_slug`) — 元编程前沿 |
+| PHP | 拉维尔 | 请求 → 路由 → 控制器 → Eloquent | 右 | ✅ **精确的 `Route::get([Ctrl::class,'m'])` / `'Ctrl@m'` → Ctrl@method** (realworld S / firefly M / bookstack L) - 将裸方法名称解析为错误的控制器（每个 `index`→ArticleController）；路线::资源→控制器。 🔬 雄辩的动态发现者/关系（元编程前沿） |
+| PHP | 德鲁帕尔 | 请求 → *.routing.yml → _controller/_form | 右 | ✅ **FQCN 处理程序的 `claims_reference`** （`\Drupal\…\Class::method` 通过预过滤器只是因为 `::method` 名称已知；裸 `_form` FQCN `\…\FormClass` 和单冒号 `Class:method` 控制器服务在解析（）之前被删除）+ **单冒号控制器匹配** + **通过 Composer 检测 `type:drupal-*` / `name:drupal/*` + `*.info.yml` 后备**（未检测到带有空 `require` 的 contrib 模块 → 0 个路由）。 admin_toolbar S **0→14 (14/14)** / 网络表单 M 208 (**144**) / 核心 L 836 (536→**731, 87%**)。其余部分是**实体注释处理程序前沿**（`_entity_form: type.op` 通过实体的 PHP `#[ContentEntityType]` 处理程序解析，而不是直接类）。 🔬 **OOP `#[Hook]` 属性** — Drupal 11 将所有过程挂钩移至属性方法（核心：418 个 `#[Hook]` 文件与 3 个过程），因此解析器的 docblock/`module_hook` 检测对于现代核心来说已过时（0 个挂钩边缘） |
+| C/C++ | C++ vtables/继承 | 虚拟呼叫→覆盖；一般直接调度 | S+X | ✅ **通用调度强**（redis C **29k** 跨文件调用 / leveldb C++ **1.4k**） + **C++ 继承提取修复**（`base_class_clause` 未处理，因此 C++ 扩展边缘丢失 - leveldb **219→298**） + **cpp 覆盖合成器**（基本虚拟方法 → 子类覆盖，门控到 C++，上限 - leveldb 12 精确： `Iterator::Next→MergingIterator`）。 🔬 C 回调结构（`s->fn()` → 422 路扇出，噪音太大而无法合成）+ C++ 纯虚拟基方法（`virtual void f()=0;` 声明不会提取为节点，因此这些覆盖无法桥接） |
+| 镖 | 扑 | 设置状态 → 构建；构建 → 子部件 | S+X | ✅ **setState→构建合成器**（react-render 的 Dart 模拟：其主体调用 `setState(` → `build` 的 State 方法）门控到 `.dart` + **基础 Dart 方法范围修复** — Dart 将方法主体建模为签名的 *兄弟*，因此方法节点仅包含签名 (`end==start`)；现在 `endLine` 跨越了主体（所有主体分析都需要：被调用者、上下文切片、合成器的主体扫描）。柜台`initState→build`，书籍`build→BookDetail/BookForm`；小部件组成已经静态（compass_app `build→ErrorIndicator/HomeButton`）。控件保持不变（excalidraw 9,290 / django 302 - 范围修复仅扩展兄弟体语法）。 🔬 MVVM Command/ChangeNotifier 调度（compass_app — 无 setState）+ `Navigator.push(MaterialPageRoute(builder:))` 导航路线 |
+| 卢阿/卢奥 | Neovim / Roblox | 模块调度(require→mod, mod.fn);事件/回调 | — | ✅ **已经涵盖了主要流程（测量优先，没有代码更改）** - Neovim 是重模块（`require('x')` + `x.fn()`），一般导入+名称解析已经处理它：telescope.nvim **220 导入 + 335 跨文件 `mod.fn` 调用**，端到端跟踪（`map_entries ← init.lua → get_current_picker (state.lua)`）。由提取器处理的 Luau 实例路径 `require(game:GetService(...))`。 🔬 事件回调注册（`vim.keymap.set(…, fn)`、autocmd `callback=`、Roblox `signal:Connect(fn)`）主要是内联匿名闭包（语料库 ~12 内联 vs ~2 命名）——匿名处理程序前沿；命名处理程序太罕见，无法证明合成器的合理性 |
+| 斯卡拉 | 播放 / 阿卡 | 请求→conf/routes→控制器动作 | 右+X | ✅ **播放 `conf/routes` → 控制器** — 无扩展的 `conf/routes` 未编入索引；添加了窄文件遍历选择加入 (`isPlayRoutesFile`) + Play 解析器解析 `METHOD /path Controller.action(args)` → 操作方法（计算机数据库 **0→8, 7/8**；启动器 0→4, 3/4 — 未解析的是 Play 的框架 `Assets` 控制器，外部）。 Scala通用控制器→DAO调度已经解决。无回归：文件行走仅更改 ADDS Play 路线文件（excalidraw 9,290 / suite 800 不变）。 🔬 SIRD 编程路由器（代码中包含 `-> /v1 Router` + `case GET(p"/x")`）+ Akka actor `receive`/`Behaviors.receiveMessage` 消息→处理程序 |
+| Swift × Objective-C | 混合 iOS 应用程序 | Swift `obj.foo(bar:)` → ObjC `-fooWithBar:`; ObjC `[obj fooWithBar:]` → Swift `@objc func foo(bar:)` | 右 | ✅ **Swift↔ObjC 跨语言桥** - `frameworks/swift-objc.ts` 实现 Apple 的 `@objc` 自动桥接名称数学（包括 init 形式 `initWith<First>:`、属性 getter+setter 对、`@objc(custom:)` 覆盖），并且反向去除 Cocoa 介词前缀(`With`/`For`/`By`/`In`/`On`/`At`/`From`/`To`/`Of`/`As`) 派生 Swift 基本名称候选。已在 Charts S **28/1 obj→swift / swift→objc**、realm-swift M **36/1185**、wikipedia-ios L **52/983** 上验证。通用名称块列表（`init`、`description`、`count`，...）保持精度。置信度 0.6（名称匹配的 1.0 获胜）- 仅当名称匹配没有结果时才会触发桥接。 🔬 ObjC 协议上的 Swift 泛型，ObjC 类上的 Swift 扩展（默默地错过；匹配 Java/Kotlin 泛型前沿） |
+| JS × 原生 | React Native 遗留桥 | JS `NativeModules.X.fn(...)` → ObjC `RCT_EXPORT_METHOD` / Java/Kotlin `@ReactMethod` | 右 | ✅ **RN 遗留桥** - `frameworks/react-native.ts` 在 ObjC 端解析 `RCT_EXPORT_MODULE` （来自 `RCT` 前缀去除类名的默认名称）+ `RCT_EXPORT_METHOD(selector:(...))` + `RCT_REMAP_METHOD(jsName, selector)` ，在 Java/Kotlin 上解析 `@ReactMethod` + `getName()` 文字。 AsyncStorage S **8/8 精确**（`setItem`→`legacy_multiSet` 等），react-native-firebase L **`RCTEventEmitter` 内置阻止列表后为 18 精确**（初始 78 包括 60 个 `addListener:`/`remove:` 误报 - 每个发射器子类都通过 `RCT_EXPORT_METHOD` 声明这些误报，JS 调用者通过`NativeEventEmitter` 抽象不是直接的本机方法）。 🔬 动态桥键 (`NativeModules[someVar]`) — 仅文字键 |
+| JS × 原生 | React Native TurboModules | JS 规范接口 ↔ 原生实现 | R（规范作为基本事实） | ✅ 部分 — 解析 `TurboModuleRegistry.get*<Spec>('Name')` + `Spec` 接口方法。每个规范方法通过选择器第一个关键字 (ObjC) / 标识符 (JVM) 与本机 impl 匹配。 react-native-svg S **9 精确**（`getTotalLength`、`getPointAtLength`、`getCTM`、`isPointInFill`，...）桥接到 Java impls（iOS 端是 Codegen 自动生成的，无需 `RCT_EXPORT_METHOD` 声明）。 🔬 不使用旧宏的 TurboModule 原生 impl 类（RNSvg iOS - 需要通过 Codegen 生成的 `NativeFooSpec` 超类进行继承感知桥接） |
+| ObjC/Java/Kotlin → JS | React Native 事件发射器 | 原生 `sendEventWithName:`/`emit(...)` → JS `addListener('e', handler)` | S（跨语言通道） | ✅ **rn-event-channel 合成器** — 将 ObjC `sendEventWithName:@"X"`、Swift `sendEvent(withName: "X", ...)` 和 JVM `.emit("X", ...)` 与按文字事件名称键入的 JS `addListener('X', handler)` 匹配。与语言内通道相同的扇出上限 (`EVENT_FANOUT_CAP=6`)。 **RN 库 API (`const Foo = { watchX(listener) { addListener('e', listener) } }`) 的订阅包装器回退** — 当处理程序 arg 是参数时，回退到封闭函数，然后回退到封闭函数 `constant`/`variable`（对 JS API 表面的可达性正确归因）。 RNFirebase L **3 个推送通知流边缘**（UIApplicationDelegate → JS `onMessage`/`onNotificationOpenedApp`），RNGeolocation S **2 个位置事件边缘**（Swift `onLocationChange`/`onLocationError` → JS `Geolocation`）。 🔬 内联箭头处理程序 `addListener('e', d => …)`（匿名边界） |
+| JS × Swift/Kotlin | 世博模块 | JS `requireNativeModule('X').fn(...)` → Swift/Kotlin `Function("fn") { ... }` | R（提取→合成方法节点） | ✅ **expo-modules 框架提取器** — 解析 Swift/Kotlin `Module { Name("X"); Function("y") { ... }; AsyncFunction("z") { ... }; Property("w") { ... } }` 文字并合成以每个声明命名的 `method` 节点。 JS 调用点通过现有的名称匹配器进行解析（不需要单独的 `resolve()`）。 expo-haptics S **6 个方法节点**（`notificationAsync`、`impactAsync`、`selectionAsync` × Swift + Kotlin）、expo-camera M **41**（完整的 SDK 表面，包括 `takePictureAsync`、`record`、`scanFromURLAsync`、视图道具 `width`/`height`）、expo SDK 扫描 L **134** （7 个包，72 个 Swift + 62 个 Kotlin）。包本身中的同名 JS 包装器会隐藏本机名称（`CameraView.tsx` 的 `pausePreview` 包装本机 `pausePreview`）；外部消费者应用程序直接桥接到本机。 🔬 闭包主体提取（Function 尾随闭包还不是主体范围节点） |
+| JS × 原生 | React Native Fabric / Codegen + 遗留 Paper 视图组件 | JSX `<MyView prop={v}/>` → Codegen 规范 → 本机类（或 Paper `RCT_EXPORT_VIEW_PROPERTY` / `@ReactProp`） | R（提取）+ S（原生实现）+ JSX | ✅ **fabric-view 提取器 + Fabric-native-impl 合成器** — 提取器解析 **现代 Codegen TS 规范 (`codegenNativeComponent<NativeProps>('Name', ...)`) ** 和 ** 旧版 Paper 视图管理器宏（ObjC 上的 `RCT_EXPORT_VIEW_PROPERTY`，Java/Kotlin 上的 `@ReactProp`）。每个声明发出一个 `component` 节点 + 每个声明的 prop 发出一个 `property` 节点。合成器通过 RN 基于约定的名称+后缀 (`exact`/`View`/`ComponentView`/`Manager`/`ViewManager`) 将组件链接到其本机 impl 类。与`reactJsxChildEdges`结合，完整的消费者流程：JSX `<MyView/>`→布料`component`→原生类。在 RNSegmentedControl S **（旧版 Paper）1 个组件 + 11 个 props + 4 个桥**、RNScreens M **（纯 Codegen）27 个组件 + 272 个 props + 68 个桥**（第 6 阶段之前为 0）、RNskia L **（混合 + monorepo）5 + 14 + 15 上进行验证，跨 Codegen TS + Android Java + iOS ObjC**。添加了 **Monorepo 检测**：当根清单是工作区声明时，通过 `listDirectories` 探测 `packages/<sub>/package.json` 等（是 RNSkia 上的门控错误）。 🔬 Fabric 事件处理程序 props (`onTap={cb}`) — 需要 JSX 属性提取 |
 
-(Verify the exact supported set against `src/extraction/languages/` and
-`src/resolution/frameworks/` before starting — this table is a starting point.)
-
----
-
-## 7. Known limits & gotchas (from the excalidraw/django work)
-
-- **Coverage enables, doesn't force, the no-read path.** Agents still read to *confirm
-  source* sometimes; cost stays ~flat (rustcodegraph calls trade for reads). The reliable
-  win is **completeness** + making Read-0 *possible*. Don't expect a guaranteed cost drop.
-- **Vue (validated 2026-05-23, vitepress S / vben M / element-plus L).** SFC `<template>`
-  is unparsed by the extractor, so template usage needs synthesis (`vueTemplateEdges`):
-  `@click="fn"` → handler, kebab `<el-button>` → `ElButton`. PascalCase `<Child/>` is
-  already covered by the JSX channel (the SFC component node spans the template). Result:
-  agent reads drop in every size (vben login 1–3 vs 4–11), **strongest where handlers are
-  local functions** (vben `handleLogin`/`handleSubmit`).
-  **Composable-destructure handlers RESOLVED:** `@click="closeSidebar"` where
-  `const { close: closeSidebar } = useSidebarControl()` now follows alias → composable →
-  the returned `close` fn (when it's defined in the composable's file). vitepress sidebar
-  flow dropped **6 → 0 reads** (best case). Precise-only — no fallback to the composable
-  itself (the static `useX()` call edge already covers that), so it adds nothing where the
-  returned fn can't be located (e.g. re-exported / external composable). Remaining limits:
-  **prefix-convention kebab** — element-plus `el-button` → `button.vue` (component named
-  `button`, not `ElButton`), so kebab stays unresolved there; and **reactive→render**
-  (vue-core Proxy runtime) — the deep framework-internal frontier, deferred.
-- **Svelte / SvelteKit (validated 2026-05-23, realworld S / skeleton M / shadcn L) — already well-covered.**
-  Unlike Vue, the `.svelte` extractor already parses the template: `extractTemplateCalls` (`{fn()}`),
-  `extractTemplateComponents` (`<Pascal/>` composition — skeleton 956 / shadcn 1610 reference edges),
-  plus `import * as api` namespace + `load`→api resolution all work. Agent A/B (realworld login): with
-  rustcodegraph **1 read** vs without **4** — rustcodegraph already wins out of the box. The one extraction gap
-  was **object-of-functions** (`export const actions = { default: async () => {} }`; the walker
-  deliberately skips object-literal functions to avoid inline-object noise). Fixed for EXPORTED consts
-  (general — Redux/Express handler maps too); `extractFunction` `nameOverride` keeps inline-object arrows
-  skipped. **Residual:** a `$lib`-alias namespace call (`api.post`) from an extracted action node doesn't
-  resolve even though the same alias resolves for `load` — a deeper resolver interaction, deferred
-  (local/relative calls from actions connect). **Lesson: measure before assuming a hole** — modern Svelte
-  barely uses `on:click={fn}` (form actions / callback props instead), so the assumed event-handler hole
-  wasn't the real one; Svelte needed far less than Vue.
-- **Express / Koa (validated 2026-05-23, realworld S / parse M / ghost L) — high-value inline-handler fix.**
-  The resolver already handled named handlers, middleware, and `XController.method`/`XService.method`.
-  The real hole was **inline arrow route handlers** (`router.post('/x', async (req,res) => {...})` — the
-  dominant modern pattern): the handler regex `[^)]+` broke on the arrow's `)`, so the route connected to
-  NOTHING and the anonymous handler's body (the request→service flow) was lost. The entire inline-handler
-  API was unreachable (realworld `POST /users/login` → 0 edges). Fixed (`frameworks/express.ts`): span the
-  call with a string-aware balanced scan; for inline arrows, extract the body's calls (RESERVED-filtered to
-  drop res/req/builtins) and attribute them to the route node → realworld **19** / ghost **65** precise
-  route→service edges (POST /users/login→login, POST /articles→createArticle, …), no node explosion,
-  framework-scoped (zero blast radius off Express). **Deterministic win is clear; the agent A/B is muddied
-  by repo characteristics** — realworld (39 files) is below the size where rustcodegraph beats reading, and
-  Ghost's layered custom-API architecture makes both arms thrash. Residual: **custom routers** — payload's
-  6.4k-file codebase had 0 routes (its router abstraction isn't `app.get`-style, so undetected). Lesson
-  inverse of Svelte: Express's dominant pattern WAS the uncovered one, so it needed real work like Vue.
-- **NestJS (validated 2026-05-23, realworld S / immich M-L / amplication L) — already well-covered.** The
-  `nestjs` resolver handles @decorator routes (HTTP/GraphQL/microservice/WS). DI controller→service
-  (`this.svc.method()`) resolves correctly **even at scale** — every immich controller→service edge hit the
-  right same-module service (`addUsersToAlbum→addUsers`, `getMyApiKey→getMine`, `copyAsset→copy`) via
-  name + co-location, no type_of edge needed. Agent A/B (immich album flow): rustcodegraph **eliminated Grep
-  (0 vs 3)** tracing route→controller→service. No dynamic-dispatch hole. One GENERAL hygiene gap surfaced
-  (not NestJS-specific): the realworld example **commits its `dist/`** build output, which rustcodegraph indexes
-  (246 dup nodes) because the file walk only respects `.gitignore` with no default build-dir ignore. Real
-  apps (immich/amplication) gitignore `dist/` (0 dup nodes), so it's narrow — a default ignore for
-  `dist/build/out/.next/coverage` is a clean follow-up, deferred (core-indexer change, the user's call).
-- **Rails (validated 2026-05-23, realworld S / spree M / forem L) — high-value RESTful-routing fix.** The
-  `rails` resolver only saw explicit `get '/x' => 'c#a'` routes, so resource-routed apps (the dominant
-  pattern) had ZERO route nodes (realworld + spree). Fixed (`frameworks/ruby.ts`): expand `resources :x` /
-  `resource :x` into their RESTful actions (only/except filters + pluralization for the singular `resource`),
-  reference a precise `controller#action`, and resolve that to the action method in `<ctrl>_controller.rb`
-  (explicit routes fixed too — they referenced a bare ambiguous `action`). realworld **0→16**, forem
-  **0→635** precise route→action edges. Agent A/B (forem comment-creation, large): rustcodegraph **1–4 reads /
-  0 grep / 47–53s** vs without **4–5 reads / 2–3 grep / 66–85s** — fewer reads, no grep, faster. **The
-  `claims_reference` pre-filter was the gotcha:** `articles#index` names no declared symbol, so resolve
-  dropped it before `resolve()` ran — needed the same claim hook as the django ORM work. Residuals: **Rails
-  Engine routing** (spree still 0 — it mounts an engine, not `config/routes.rb` resources); ActiveRecord
-  dynamic finders (`Article.find_by_slug` — metaprogramming frontier).
-- **Spring/MyBatis enterprise flow (validated 2026-05-26, mall-tiny S — closes #389).** Three holes that left
-  the canonical enterprise-Java chain (`HTTP route → Controller → BO/Service → ServiceImpl → DAO/Mapper →
-  MyBatis XML SQL`) broken at multiple hops on real Spring projects.
-  1. **Field-injected concrete-bean trace.** Java's `this.userbo.toLogin2()` parsed as `method_invocation(
-     object=field_access(this, userbo))`. The extractor surfaced `this.userbo.toLogin2` verbatim and the
-     name-matcher's single-dot regex couldn't unwrap it; even if it had, `userbo` doesn't capitalize cleanly
-     to `UserBO` (the JVM naming heuristic in `matchMethodCall.Strategy2`) so the receiver-typed lookup also
-     missed. Fix is in the language layer, not Spring-specific: (a) extractor unwraps `field_access(this, X)`
-     to use `X` as the receiver (`src/extraction/tree_sitter.rs`); (b) `matchMethodCall` learns to look up
-     the receiver name as a field declaration in the enclosing class and use the field's `signature`-stored
-     declared type (`infer_java_field_receiver_type` in `src/resolution/name_matcher.rs`). Repro confirmed on the
-     issue's exact example: `UserAction.toLogin2 → UserBO.toLogin2` edge appeared (was 0 outgoing edges).
-  2. **MyBatis XML mapper indexing + Java↔XML bridge.** `*.xml` is now a language (`xml`), with a custom
-     extractor (`src/extraction/mybatis_extractor.rs`) that emits one method-shaped node per `<select|insert|
-     update|delete|sql id="X">` qualified as `<namespace>::<id>`, plus `<include refid="X"/>` → `<sql>`
-     fragment refs. Non-mapper XML (pom, log4j, web.xml) emits only a file node — no symbol noise. A new
-     synthesizer (`mybatis_java_xml_edges` in `callback_synthesizer.rs`) indexes Java methods by
-     `<ClassName>::<methodName>` and joins them to the XML qualified names by suffix-match. Ambiguous
-     simple-name collisions are dropped (precision over recall). mall-tiny: 6/6 custom-SQL mapper methods
-     bridge to their `<select>` statements; full chain `trace(UmsRoleController.listResource → UmsResource
-     Mapper::getResourceListByRoleId(xml))` connects in 4 hops across controller/service/impl/mapper/XML.
-  3. **Spring config-key linkage.** `application.{yml,yaml,properties}` + profile variants
-     (`application-dev.yml`, `bootstrap.yml`, etc.) parse on the framework path. Leaf YAML keys + every
-     `.properties` line become `constant` nodes qualified by their dotted path. `@Value("${k}")` /
-     `@Value("${k:default}")` and `@ConfigurationProperties(prefix="X")` emit binding nodes that resolve to
-     the matching key (or, for prefix, the closest key under it). **Relaxed binding** (kebab `cache-list`
-     ↔ camel `cacheList` ↔ snake `cache_list` ↔ `CACHE_LIST`) handled via canonical-form match. mall-tiny:
-     11/11 `@Value` annotations resolved (incl. `secure.ignored` `@ConfigurationProperties` prefix).
-  Coverage frontier: cross-module XML statement references (`<include refid="other.X">` to a fragment in
-  another mapper file — works when the include uses the dotted namespace form); `@PropertySource` external
-  property files; Spring Cloud Config (remote properties); ambiguous mapper-name collisions across packages
-  (Java mapper `com.a.X` and `com.b.X` both with `selectOne` — currently dropped to avoid mis-resolving).
-- **Rust port framework/dynamic-dispatch parity (validated 2026-06-21, synthetic small fixtures).** The Rust
-  facade now wires framework extraction, native-parser fallbacks, reference resolution, and callback synthesis
-  for the same representative flows covered by the TypeScript suites: Django/Flask routes, Flutter
-  `setState→build`, C++ typed pointer calls and virtual overrides, JVM FQN imports, Spring field/config
-  binding, MyBatis Java↔XML, React Native bridge/event/Fabric, Drupal routing, Java anonymous-class overrides,
-  and Go gRPC generated-stub→handwritten-impl dispatch. New Rust-side gRPC coverage adds
-  `go-grpc-stub-impl` heuristic edges from `Unimplemented*Server` generated methods to the unique handwritten
-  same-name receiver method, while refusing generated-file siblings. Validation: `frameworks_integration_test`
-  18/18, `rn_event_channel_test` 3/3, `react_native_bridge_test` 16/16, `fabric_view_test` 4/4,
-  `drupal_test` 30/30; Rust parity ignores dropped to 318.
-- **Rust retrieval validation checkpoint (2026-06-21, macOS local + synthetic MCP probe).** Rust is
-  test-green locally (`cargo test -- --test-threads=1`; `cargo fmt --check`; Rust ignore count 318/318).
-  A two-file TypeScript fixture confirmed basic MCP source retrieval and call graph connectivity
-  (`routeSave -> onSave -> processPayment -> settleInvoice`), but `rustcodegraph_explore` is **not yet
-  TypeScript-comparable for multi-symbol flow prompts**: the symbol-bag query returned only the explore
-  heading, not the relevant source/flow. Agent A/B remains skipped under the validation policy until
-  explore-flow reaches parity. Linux Docker was blocked by an unresponsive Docker daemon; Windows VM
-  validation was blocked by a missing `.parallels` connection file.
-- **Spring (validated 2026-05-23, realworld S / mall M / halo L) — bare-mapping + class-prefix routing fix.**
-  The resolver required a string path in the mapping regex, so BARE method mappings (`@PostMapping` with the
-  path on the class `@RequestMapping`) — the dominant multi-method-controller pattern — were missed (halo
-  had 28 routes for 2444 files; realworld's 2-action favorite controller linked only one). Fix
-  (`frameworks/java.ts`): treat class `@RequestMapping` as a PREFIX (joined, not a bogus route); match
-  verb-specific mappings BARE-or-with-path; also handle method-level `@RequestMapping(method=...)` (older
-  style). realworld 13→19, mall →246 precise route→method (class prefix joined); DI controller→service
-  resolves (`article→findBySlug`). Agent A/B (mall cart flow): with rustcodegraph 0 reads/0 grep vs without 2/2.
-  **A first cut regressed mall 292→1** by dropping `@RequestMapping`-on-method — *caught by the cross-repo
-  route-count check*; the playbook's regression guard earns its keep. Residuals: halo's custom patterns
-  (9/29 resolve); Spring Data JPA derived queries (metaprogramming frontier).
-- **Django / DRF (validated 2026-05-23, realworld S / wagtail M / saleor L) — mostly covered + a DRF-router
-  fix.** The ORM (`_iterable_class`→ModelIterable, the original investigation) and URL routing
-  (`path`/`url`/`as_view`→view) were already done. The one hole: **DRF `router.register(r'articles',
-  ArticleViewSet)`** (the core CRUD endpoints) wasn't extracted — only `path()`/`url()` were. Fix
-  (`frameworks/python.rs`): match `router.register` (the STRING first arg separates it from
-  `admin.register(Model, Admin)`, whose first arg is a model class) → route→ViewSet class. Narrow in this
-  corpus (realworld has 1 router; wagtail uses `path()`, saleor is GraphQL) but real for DRF-router APIs.
-  Agent A/B (wagtail Page flow, medium): rustcodegraph **4–7 reads / 1–4 grep / 58–81s** vs without **7–9 reads
-  / 6 grep / 82–86s** — fewer reads, fewer greps, faster. No regression (wagtail/saleor route counts
-  unchanged — purely additive). Residuals: signals (`post_save`→receiver), DRF viewset CRUD actions
-  (inherited from the base class, not in the user's ViewSet), saleor's GraphQL resolvers.
-- **Laravel (validated 2026-05-23, realworld S / firefly M / bookstack L) — route precision fix.** The
-  resolver discarded the controller from the handler: `Route::get([UserController::class,'index'])` /
-  `'UserController@index'` emitted a BARE `index` ref, which name-matching mis-resolved to the WRONG
-  controller (every `index`/`show` → whichever it found first; realworld GET user → ArticleController.index,
-  should be UserController). Fix (`frameworks/laravel.ts`): emit precise `Controller@method` (array + string
-  syntax, namespace-stripped) + `claims_reference` it past the pre-filter → existing Pattern-4
-  `resolveControllerMethod`. realworld all routes correct; bookstack 267/332 precise (GET pages →
-  PageApiController.list). Agent A/B (bookstack page-view, large): rustcodegraph **2–3 reads / 1–2 grep /
-  51–60s** vs without **4–6 / 3–5 / 60–74s**. No node explosion. Residuals: firefly resolves only 3/568
-  (its fluent `->uses()` / `['uses'=>...]` handler format isn't parsed); Eloquent dynamic finders
-  (metaprogramming frontier).
-- **Gin / chi (validated 2026-05-23, realworld S / gin-vue-admin M / gitness L) — group-var routing fix.**
-  The route regex matched only `(router|r|mux|app|e).METHOD(...)`, but real apps route on GROUP vars
-  (`v1.GET`, `PublicGroup.GET`, `userRouter.POST`), so group-routed apps connected almost nothing
-  (gin-vue-admin: **4 routes for 625 files**). Fix (`frameworks/go.ts`): broaden the receiver to ANY
-  identifier — the verb + string-path + handler-arg gates keep it route-specific (`http.Get(url)` has no
-  handler arg → excluded). gin-vue-admin **4→259** routes (257 resolve precisely: `POST createInfo →
-  CreateInfo`); realworld stable (no regression); no garbage. **Agent A/B (create-user flow): rustcodegraph
-  0 reads / 0 grep / 26–30s vs without 3 / 3 / 52–53s — cleanest backend win yet (0/0, 2× faster).**
-  Residuals: inline `func(c *gin.Context){}` handlers (anonymous, body lost — like Express before its fix);
-  gitness's chi custom handlers (26/321).
-- **ASP.NET Core (validated 2026-05-23, realworld S / eShopOnWeb M / jellyfin L) — detection + bare-attribute
-  fix.** Two holes: (1) `detect()` only fired on a `/Controllers/` dir or root `Program.cs`/`.csproj` (which
-  often isn't in the indexed source set), so feature-folder apps (realworld: `Features/*/FooController.cs`,
-  subdir `Program.cs`) were NEVER detected → 0 routes despite a full controller set. Broaden: scan
-  Controller/Program/Startup `.cs` for ASP.NET signatures. (2) the attribute regex required a string path →
-  bare `[HttpGet]` (route on the class `[Route("[controller]")]`) missed (eShopOnWeb was 24 bare / 2
-  string). Match bare-or-path + join the class `[Route]` prefix (like Spring). **No `claims_reference`
-  needed** — ASP.NET attribute routes are co-located IN the controller with the action, so the bare method
-  ref resolves same-file (unlike Rails/Laravel, whose routes live in a separate file). realworld 0→19,
-  eShopOnWeb 9→33, jellyfin 362→399, all precise (`GET /articles → Get`, class prefix joined), no explosion.
-  Agent A/B (eShop catalog listing): rustcodegraph **1–2 reads / 0 grep / 63–75s** vs without **6–7 / 1–6 /
-  77–79s**. Residual: EF Core LINQ/DbSet (metaprogramming frontier).
-- **Flask / FastAPI (validated 2026-05-23, fastapi-realworld S / flask-microblog S / Netflix dispatch L /
-  redash L) — decorator-extraction + builtin-name fixes.** Routes were extracted but the request→route→handler
-  flow broke at two regex assumptions and one resolver filter. (1) **Flask required `def` immediately after
-  `@x.route(...)`**, so any intervening decorator (`@login_required`, `@cache.cached`) or **stacked `@x.route`
-  lines** (one view bound to several URLs) dropped the route — microblog extracted **6 of 27** real routes.
-  Switched Flask to FastAPI's `findHandler` scan (match the decorator, then find the next `def`), skipping
-  intervening decorators: **6→27**, all resolved. (2) **FastAPI's path regex `[^'"]+` rejected the empty path**
-  `@router.get("")` (router/prefix-root routes, frequently multi-line) → realworld lost 8 endpoints (list/create
-  article, comments, login/register). `[^'"]+`→`[^'"]*` + empty-path name guard: realworld **12→20**, Netflix
-  dispatch **290/290 (100%)**. (3) **Bare-name builtin guard** (`src/resolution/index.rs`): a handler named
-  after a Python builtin *method* (`index`, `get`, `update`, `count`…) was filtered by `isBuiltInOrExternal`
-  and lost its route→handler edge — microblog's `index` view (its `/` + `/index` stacked routes) resolved to
-  nothing. The dotted-method branch already had a `knownNames` guard; mirrored it onto the bare branch (a name
-  a declared symbol owns is not a builtin call). +2 legit edges on realworld, **0 change on the django control**
-  (302/373 identical — precision held). Flows trace end-to-end (`login → get_user_by_email` 2 hops;
-  `create_user → from_dict`). Agent A/B (realworld login-auth flow, n=2/arm): rustcodegraph **0–1 read / 0 grep /
-  3–4 rustcodegraph / 30–39s** (context→[search]→trace→node) vs without **3 read / 2 grep / 33–36s** — eliminates
-  grep, cuts reads to 0–1 (small repo, so wall-clock ties; the tool-count drop is the win). Residuals: **Flask-RESTful** class-based
-  `api.add_resource(Resource,'/x')` (redash's actual API shape — a separate class-method-as-verb mechanism, NOT
-  the README's documented decorator/blueprint Flask) and a pre-existing **JS file-route false-positive** in
-  redash's React frontend (32 bogus `.js` "routes" from a JS resolver — unrelated to Python). **Lesson: the
-  builtin-name filter is a silent precision tax across Python** — any view/function named `get`/`index`/`update`
-  loses edges; the fix is general (helps Django/DRF handlers too), not Flask-specific.
-- **Drupal (validated 2026-05-23, admin_toolbar S / webform M / drupal-core L) — pre-filter + detection fixes.**
-  The `*.routing.yml` extractor and the `_controller`/`_form` resolver already existed but two gaps kept most
-  routes unlinked. (1) **The `claims_reference` pre-filter gotcha (again):** Drupal handler refs are FQCNs
-  (`\Drupal\…\Class::method`), bare form classes (`\…\SettingsForm`), or single-colon controller-services
-  (`\…\Controller:method`). Only the `::method` shape survived `resolveOne`'s pre-filter (its `member` is a
-  known method name); the bare-FQCN forms and single-colon controllers named no declared symbol and were
-  dropped before `resolve()` ran. Added `claims_reference` (FQCN / `Class:method` / `hook_*`) + a single-colon
-  branch in the controller regex → core **536→731 of 836 routes (87%)**; all three previously-broken shapes now
-  resolve (`/admin/content/comment`→CommentAdminOverview form, `/big_pipe/no-js`→setNoJsCookie controller).
-  (2) **Detection missed standalone contrib modules:** `detect()` only checked composer `require` for a
-  `drupal/*` dep, but a contrib module often has an EMPTY `require` and is identified only by
-  `"name":"drupal/<m>"` + `"type":"drupal-module"` (admin_toolbar → 0 routes). Broadened to composer name/type
-  + a `*.info.yml` fallback → admin_toolbar **0→14 (14/14)**. Canonical flow traverses (`getAnnouncements` ←
-  `/admin/announcements_feed`); node count unchanged (resolution-only). Agent A/B (dblog route→controller,
-  n=2/arm): rustcodegraph **0 read / 1 grep / 20–22s** vs without **1 read / 2 grep + glob / 28–32s** — fewer
-  tools and faster on the ~10k-file core. **Residuals (frontier):**
-  entity-annotation handlers (`_entity_form: comment.default` → handler classes declared in the entity's
-  `#[ContentEntityType]` annotation, not a direct ref — ~78 of core's ~105 remaining unresolved) and **OOP
-  `#[Hook]` attributes** — Drupal 11 converted nearly all procedural hooks to `#[Hook('event')]` methods (core:
-  418 attribute files vs 3 procedural `*.module` hooks), so the resolver's procedural-hook detection (docblock
-  `@Implements` / `module_hook` naming) finds essentially nothing in modern core (0 hook edges). Both are real
-  follow-ups, not regressions.
-- **Rust / Axum + Rocket + actix (validated 2026-05-23, realworld-axum S / actix-examples + Rocket M / crates.io L) — Axum chained-method + namespaced-handler fix.**
-  The attribute-macro path (`#[get("/x")] fn h`, actix/Rocket) and single Axum `.route("/x", get(h))` already
-  worked, but the Axum extractor used a flat regex that captured only the FIRST `method(handler)` of a route
-  and only a bare `\w+` handler. Two dominant Axum idioms broke it: (1) **method chains**
-  `.route("/user", get(get_current_user).put(update_user))` — the `.put` arm produced NO route node, so half
-  the API was missing (realworld-axum had only the GET of each chain); (2) **namespaced handlers**
-  `get(listing::feed_articles)` — `\w+` captured `listing` (the module), so the route resolved to nothing.
-  Rewrote with a balanced-paren scan of each `.route(...)` call, a per-method node, and last-`::`-segment
-  handler names → realworld-axum **12→19 routes, 19/19 resolved** (every chained PUT/DELETE/POST now present;
-  `feed_articles` resolves). **Rocket needed nothing** (550/556, 99% — attribute macros). crates.io confirms
-  namespaced axum handlers resolve (router.rs 6/6) but defines most of its API via the `utoipa_axum` `routes!`
-  macro (frontier) and has a SvelteKit frontend (42 of its 50 "routes" are `+page.svelte`, correctly
-  attributed to SvelteKit). Agent A/B (update-user flow,
-  n=2/arm): rustcodegraph **0–2 read / 0 grep / 32–40s** vs without **3 read / 0–1 grep + glob / 33–41s** — modest
-  (realworld-axum is in the small-repo tie zone) but consistent, with one fully-clean 0-read/0-grep run. Node
-  count stable; the Axum fix is Axum-scoped (the attribute/actix/Rocket path is untouched).
-- **Actix runtime routing (validated 2026-05-23, actix-examples) — the builder API was the dominant style and fully missed.**
-  Actix's attribute macros (`#[get("/x")] fn h`) were covered, but real actix apps route via the builder API:
-  `web::resource("/path").route(web::get().to(handler))`, `web::resource("/").to(handler)` (all methods), and
-  App-level `.route("/path", web::get().to(handler))`. The handler lives in `.to(handler)`, not `get(handler)`,
-  so the Axum `.route` scan extracted nothing for them — actix-examples had **80 `web::resource` calls** all
-  unlinked. Added an actix block: scan each `web::resource("/path")` (bounding its method chain at the next
-  resource to avoid bleed) for `web::METHOD().to(h)` pairs, fall back to a direct `.to(h)` (method `ANY`), plus
-  the App-level `.route("/x", web::METHOD().to(h))` form. actix-examples **51→128 routes, 35→112 resolved
-  (87.5%)** (`GET /user/{name}`→with_param, `POST /user`→add_user). No regression on Axum (realworld-axum still
-  19/19) — the actix patterns (`web::resource`/`web::method().to()`) don't appear in Axum code. **Residuals
-  (frontier):** `web::scope("/api")` prefixes aren't prepended to nested resource paths, and anonymous `.to(|req|
-  …)` closure handlers have no named target (the ~16 still-unresolved).
-- **Swift / Vapor (validated 2026-05-23, vapor-template S / SteamPress M / SwiftPackageIndex-Server L) — the resolver was effectively dead on real apps.**
-  The Vapor extractor only matched `(app|router|routes).METHOD("path", use: handler)`, but modern Vapor routes
-  on a grouped builder inside `RouteCollection.boot(routes:)`: `let todos = routes.grouped("todos");
-  todos.get(use: index)` — any var receiver, NO path arg (the path is the group prefix). Every real app tested
-  extracted **0 routes** (template, penny-bot, Feather, SteamPress, SPI). Rewrote the extractor: (1) any
-  receiver `\w+` (not just app/router/routes); (2) optional path segments that may be non-string
-  (`User.parameter`, `:id`, a path constant) — the `use:` keyword is the discriminator separating a route from
-  `Environment.get("X")` / `req.parameters.get("X")`; (3) a group-prefix map from `let X = Y.grouped("a")` and
-  `Y.group("a") { X in }` so a route on a grouped/nested var gets the full path (`todo.delete(use: delete)` →
-  `DELETE /todos/:todoID`). Result: vapor-template **0→3 (3/3**, nested path exact), SteamPress **0→27
-  (27/27**, incl. `BlogPost.parameter` routes), SPI **0→14 (14/14** handler resolution). Canonical flow
-  traverses (`createPostHandler` ← `GET /createPost`, → `createPostView`). **Residuals (frontier):**
-  typed-route enums (SPI registers via `app.get(SiteURL.x.pathComponents, use:)` — handler resolves but the
-  path label is `/`, no string literal) and closure handlers (`app.get("hello") { req in }` — anonymous, no
-  named target). penny-bot (Discord bot) and Feather (custom module router) have no standard Vapor routing at
-  all — the Vapor ecosystem's routing styles vary widely. Agent A/B (create-post flow, n=2/arm): rustcodegraph
-  **0 read / 0 grep / 4 rustcodegraph / 26–30s** (both runs fully clean) vs without **1–4 read / 0–2 grep +
-  glob/bash, one run spawned a sub-agent / 34–48s**. Node count stable; fix is Vapor-scoped (SwiftUI/UIKit
-  untouched).
-- **React Router routing (validated 2026-05-23, react-realworld S) — the routing half of the React row.**
-  React rendering (state→render, jsx-child) was already covered; route→component was NOT — `react.ts` extracted
-  components/hooks and Next.js file routes but returned `references: []`, so `<Route>` declarations produced
-  nothing. Added `<Route>` JSX extraction: scan a window after each `<Route\b` (so the nested `>` in
-  `element={<Comp/>}` doesn't truncate it), pull `path="…"` + `component={C}` (v5) or `element={<C/>}` (v6) in
-  any attribute order, emit a route node + component reference (resolves via the existing PascalCase
-  `resolveComponent`). react-realworld **0→10, 10/10** (`/login`→Login, `/editor/:slug`→Editor,
-  `/@:username`→Profile); `<Routes>` container excluded via the `\b` boundary. No regression on excalidraw
-  (9,290 nodes, 46 react-render synth edges intact, 0 false routes). 🔬 the object **data-router** API
-  `createBrowserRouter([{ path, element }])` (modern v6, used by bulletproof-react) is object-based not JSX — a
-  separate frontier; plus a pre-existing Next.js false-positive (`*.config.mjs` in a `pages/` app dir treated
-  as a route).
-- **Dart / Flutter (validated 2026-05-23, flutter/samples: counter S / books S / compass_app M) — synthesizer + a foundational extractor fix.**
-  Flutter's reactive hop is `setState(() {…})` re-running `build(context)` — framework-internal, no static edge,
-  so "tap → handler → setState → rebuilt UI" dead-ends at setState (the Dart analog of React's setState→render).
-  Added a `flutter-build` synthesizer channel (Phase 4b): for each Dart class with a `build` method, link every
-  sibling method whose body calls `setState(` → `build` (gated to `.dart`). **But it was blocked by a
-  foundational gap:** Dart models a method body as a *sibling* of the `method_signature` node, so every Dart
-  method node had `endLine == startLine` (signature only) — `sliceLines(start,end)` saw only `void f() {`, never
-  the body. Fixed in the shared `createNode`: when a function/method's resolved body sits beyond the node,
-  extend `endLine` to it (guarded — child-body grammars are a no-op; controls excalidraw 9,290 / django 302
-  unchanged). This fix is foundational, not Flutter-specific — every Dart callee/context/body scan was
-  previously truncated. Result: counter `initState→build`, books `initState→build` + `build→BookDetail/BookForm`.
-  **Widget composition needs no synthesis** — unlike JSX, Dart widgets are explicit constructor calls
-  (`BookDetail(...)`), already static (compass_app `build→ErrorIndicator/HomeButton/_Card`). **Residuals
-  (frontier):** MVVM state management (compass_app uses Command/ChangeNotifier + ListenableBuilder, 0 setState —
-  a different dispatch shape) and `Navigator.push(MaterialPageRoute(builder: (_) => DetailPage()))` navigation
-  (route-as-widget, uncovered).
-- **Kotlin / Spring Boot + Jetpack Compose (validated 2026-05-23, spring-petclinic-kotlin S / compose-samples) — extend Spring to Kotlin; Compose is free.**
-  Kotlin had ZERO framework coverage — no resolver listed `kotlin`, and the Spring resolver was `languages:
-  ['java']` with a `.java`-only extract gate and a Java-syntax handler regex (`public X name()`). So Spring Boot
-  Kotlin apps (identical `@GetMapping`/`@RestController` annotations, `.kt` files) extracted 0 routes. Extended
-  the Spring resolver: `['java','kotlin']`, accept `.kt`, and add a Kotlin `fun name(` alternative to the
-  handler-method regex (Kotlin has no access modifier and the return type follows the name). petclinic-kotlin
-  **0→18, 18/18**; class `@RequestMapping` prefixes join, stacked annotations (`@ResponseBody`) are skipped, DI
-  controller→repo resolves (`showOwner ← GET /owners/{ownerId}` → `OwnerRepository.findById` /
-  `VisitRepository.findByPetId`). Java Spring unchanged (realworld 19/19 — the Kotlin `fun` and Java `public X`
-  alternatives are disjoint per language). **Jetpack Compose composition needs no work** — `@Composable`
-  functions calling child `@Composable`s are plain Kotlin function calls, already static (Jetcaster
-  `PodcastInformation→HtmlTextContainer`, `FollowedPodcastCarouselItem→PodcastImage`), like Dart widget
-  constructors. Agent A/B (view-owner flow, n=2/arm): rustcodegraph **0–1 read / 0 grep / 1 rustcodegraph / 11–18s** (a
-  single `context` call answers it) vs without **2 read / 0–1 grep + glob / 20–28s**. **Residuals (frontier):**
-  Ktor `routing { get("/x") { … } }` inline-lambda handlers (anonymous,
-  no named target), Compose recomposition (implicit — reading `mutableStateOf` triggers recompose, no
-  `setState`-style gate to anchor a synthesizer), and coroutines/Flow dispatch.
-- **Lua / Luau (validated 2026-05-23, telescope.nvim / lualine.nvim / Knit — measure-first, already covered).**
-  The matrix guessed "event/callback dispatch (synthesizer)", but measurement says otherwise: real Neovim
-  plugins are MODULE-dispatch-heavy (`local m = require('telescope.actions'); m.fn()`), and rustcodegraph's general
-  `require`-import + cross-file name resolution already handles it — telescope.nvim has **220 resolved imports
-  and 335 cross-file `module.fn` call edges**, and a flow traces end-to-end (`map_entries ← init.lua →
-  get_current_picker` in actions/state.lua). The Luau extractor already handles Roblox instance-path requires
-  (`require(game:GetService("ReplicatedStorage").Packages.Knit)`). **The assumed hole isn't real** — like
-  Svelte/NestJS. The genuine frontier is event-callback registration (`vim.keymap.set(mode, lhs, fn)`, autocmd
-  `{callback=fn}`, Roblox `signal:Connect(fn)`), but it's predominantly INLINE anonymous closures (corpus: ~12
-  inline `:Connect(function…)` vs ~2 named), and telescope's keymaps are inline functions or vim-command
-  STRINGS, not named refs. A named-only callback synthesizer would cover a tiny fraction, so per "measure before
-  building / partial coverage is worse than none", none was built — no code change; recorded as validated.
-  Agent A/B (actions.utils map flow, n=2/arm): rustcodegraph **0 read / 0 grep / 18–24s** vs without **1 read
-  (+glob) / 24–25s** — small flow so modest, but the 0-read confirms the module dispatch is navigable.
-- **Scala / Play (validated 2026-05-23, play-samples: computer-database / starter / rest-api) — Play conf/routes → controller.**
-  Scala's general dispatch (controller→DAO) already resolves, but Play declares routes in an EXTENSIONLESS
-  `conf/routes` file (`GET /computers controllers.Application.list(p: Int ?= 0)`) the file walk never indexed
-  (`isSourceFile` requires an extension). Added a narrow opt-in (`isPlayRoutesFile`: `conf/routes` / `*.routes`)
-  routed through the no-grammar (yaml-style) path, plus a Play resolver that parses each
-  `METHOD /path Controller.action(args)` line (dropping package prefix + args) and resolves `Controller.action`
-  to the action method in that controller class. computer-database **0→8 routes, 7/8** (the 1 unresolved is
-  `controllers.Assets.versioned` — Play's framework Assets controller, external), starter 0→4 (3/4). The flow
-  connects request→route→controller→DAO. A/B (list-computers, n=2/arm): rustcodegraph **0 read / 0 grep / 3
-  rustcodegraph / 17–22s** vs without **2–3 read / 1–2 grep + glob / 16–17s**. **No-regression:** the file-walk
-  change only ADDS Play routes files (narrow match) — excalidraw 9,290 and the full suite (800) unchanged.
-  **Residuals (frontier):** Play SIRD programmatic routers (`-> /v1 v1.PostRouter` include + `case GET(p"/x")`
-  in a Router class — rest-api-example) and Akka actor message→handler (`receive { case Msg => … }` /
-  `Behaviors.receiveMessage` — untyped, a synthesizer shape).
-- **C / C++ (validated 2026-05-23, redis C / leveldb C++) — general dispatch works; a C++ inheritance fix + override bridge.**
-  Measure-first: C/C++ DIRECT dispatch is excellent out of the box (redis **29,464 cross-file call edges**,
-  leveldb **1,462**) — the bulk of the value. The dynamic-dispatch frontier is two shapes: (1) C callback
-  structs (`struct {.proc=fn}` + `cmd->proc()`) — but in redis the `proc` field fans out to **422** command
-  functions, far too noisy to synthesize precisely, so deliberately skipped (per "partial coverage worse than
-  none"). (2) C++ vtables (`iter->Next()` → the subclass override). The override link was blocked upstream:
-  `extractInheritance` handled `base_clause` (PHP) but not C++'s `base_class_clause`, so C++ `extends` edges
-  were missing/partial (leveldb 219→**298** after the fix). Added a `cpp-override` synthesizer channel (the C++
-  analog of react-render): for each `extends` edge, link each base method → the subclass method of the same
-  name, so trace/callees from the interface method reach the implementation. leveldb **12 precise edges**
-  (`Iterator::Next/Seek/Prev → MergingIterator`), 0 on C (redis) and TS (excalidraw — gated to C++); the C++
-  override integration test passes. **Residual (frontier):** pure-virtual base methods (`virtual void Next() =
-  0;`) are declarations the extractor doesn't emit as nodes, so overrides of a purely-abstract interface can't
-  be bridged (only bases with a real method node — an inline default or non-pure virtual); plus the C
-  callback-struct fan-out. Relied on deterministic validation (no A/B): the cross-file-call counts + precise
-  override spot-check are conclusive.
-- **Frontier pass (2026-05-23) — tractable partials closed, noise/hard ones deliberately left.** After the main
-  sweep, swept the documented frontiers and triaged by precision/value. **DONE:** React Router object
-  data-router (literal `createBrowserRouter([{path, element}])`); Next.js route false-positives (config files +
-  `nextjs-pages/` substring → require a real page ext + path-segment match; bulletproof 4→0); Flask-RESTful
-  `add_resource`→Resource class (redash 6→**77**); Flask tuple `methods=(…)`; Flask detection broadened to
-  subdir/app-factory entrypoints (flask-realworld 0→**19**); gorilla/mux confirmed already covered (any-receiver
-  HandleFunc) + a test. **LEFT (with rationale, not punts):** C callback-struct dispatch (`cmd->proc()` →
-  422-way field fan-out = noise); metaprogramming finders (ActiveRecord/Eloquent/Spring-Data-JPA/EF — dynamic
-  naming, no static target); reactive runtimes (Vue Proxy / Compose recomposition — deep internals, no
-  setState-style gate); Akka actor message dispatch (untyped); pure anonymous inline closures (the def-use
-  frontier — no named target); React lazy data-router (variable paths + lazy imports); C++ pure-virtual base
-  methods (extracting bodyless decls risks duplicate decl/def nodes for modest gain). Forcing these would add
-  noise, violating "partial coverage worse than none."
-- **Difficulty gradient is real:** named-ref dispatch (resolver) is cheap; anonymous
-  callback dispatch (synthesizer) is medium; **anonymous-arrow handlers are the hard
-  remaining gap** (no identity → need synthesizer link-through-body, not yet built).
-- **Extraction changes are high blast radius.** The Phase-3 named-inline-callback
-  extraction is in the *shared* `tree_sitter.rs` walker — re-check **node counts across
-  several languages** after any extraction change (it held at +3 on excalidraw because
-  anonymous arrows are skipped).
-- **Synthesizer precision guards:** registrar-name uniqueness, named-only handlers, and
-  an event **fan-out cap** (skip generic events like `error`/`change`). Receiver-type
-  matching (via `type_of` edges) is the planned precision upgrade — deferred.
-- **As-built shortcuts** (callback synthesizer): pairs registrar/dispatcher by *file*+field
-  (class proxy), regex arg-recovery (named refs only), `provenance:'heuristic'` +
-  `metadata.synthesizedBy` (the enum has no `'callback-synthesis'`). See the design doc.
-- **Synthesizer runs only in `resolveAndPersistBatched`** (full index) — wire into
-  `resolveAndPersist` for incremental sync before shipping.
-- **Symbol ambiguity in `trace`:** common names (`render`, `execute_sql`) match many
-  nodes; trace picks among them and may start from the wrong one. Trace from the specific
-  method, not a class name.
+（根据 `src/extraction/languages/` 验证确切的支持集和
+开始之前的 `src/resolution/frameworks/` — 此表是一个起点。）
 
 ---
 
-## 8. Definition of done (the whole mission)
+## 7. 已知限制和陷阱（来自 excalidraw/django 工作）
 
-For each language × framework: the canonical flow `trace`s end-to-end, an agent can
-answer the flow question with Read 0 in at least some runs with the glue present, no node
-explosion, no regression — recorded in the matrix (§6) with the validating repo + numbers.
-Then ship-prep: tests per mechanism, CHANGELOG, wire incremental, commit.
+- **覆盖启用（但不强制）无读取路径。** 代理仍读取以*确认
+来源*有时；成本保持平稳（rustcodegraph 调用交易读取）。可靠的
+胜利是**完整性** + 使 Read-0 *成为可能*。不要指望成本一定会下降。
+- **Vue（2026 年 5 月 23 日验证，vitepress S / vben M / element-plus L）。** SFC `<template>`
+未被提取器解析，因此模板使用需要合成（`vueTemplateEdges`）：
+`@click="fn"` → 处理程序，烤肉串 `<el-button>` → `ElButton`。 PascalCase `<Child/>` 是
+已被 JSX 通道覆盖（SFC 组件节点跨越模板）。结果：
+代理读取每个大小都会下降（vben 登录 1-3 与 4-11），**在处理程序所在的位置最强
+本地函数** (vben `handleLogin`/`handleSubmit`)。
+**可组合解构处理程序已解决：** `@click="closeSidebar"` 其中
+`const { close: closeSidebar } = useSidebarControl()` 现在遵循别名 → 可组合 →
+返回的 `close` fn （当它在可组合文件中定义时）。维特新闻侧边栏
+流量下降**6 → 0 次读取**（最好情况）。仅限精确——没有可组合性的回退
+本身（静态 `useX()` 调用边缘已经涵盖了这一点），因此它在
+无法找到返回的 fn（例如重新导出/外部可组合）。剩余限制：
+**前缀约定 kebab** — 元素加上 `el-button` → `button.vue` （组件名为
+`button`，而不是 `ElButton`），所以烤肉串在那里仍未解决；和 **反应→渲染**
+(vue-core 代理运行时) — 深层框架内部前沿，延迟。
+- **Svelte / SvelteKit（于 2026 年 5 月 23 日验证，真实世界 S / 骷髅 M / shadcn L）— 已被充分覆盖。**
+与 Vue 不同的是，`.svelte` 提取器已经解析了模板：`extractTemplateCalls` (`{fn()}`)，
+`extractTemplateComponents`（`<Pascal/>` 合成 — 骨架 956 / shadcn 1610 参考边），
+加上 `import * as api` 命名空间 + `load`→api 解析都可以工作。代理 A/B（现实世界登录）：
+rustcodegraph **1 读** vs 没有 **4** — rustcodegraph 已经开箱即用。一个提取间隙
+是**函数对象**（`export const actions = { default: async () => {} }`；步行者
+故意跳过对象文字函数以避免内联对象噪音）。修复了 EXPORTED 常量
+（一般 — Redux/Express 处理程序映射也是如此）； `extractFunction` `nameOverride` 保留内联对象箭头
+跳过了。 **剩余：** 来自提取的操作节点的 `$lib` 别名命名空间调用 (`api.post`) 不会
+解析，即使相同的别名解析为 `load` — 更深层次的解析器交互，延迟
+（来自操作连接的本地/相对调用）。 **课程：在假设洞之前进行测量** — 现代 Svelte
+几乎不使用 `on:click={fn}` （改为表单操作/回调道具），因此假设的事件处理程序漏洞
+不是真的； Svelte 所需的资源远少于 Vue。
+- **Express / Koa（2026 年 5 月 23 日验证，真实世界 S / 解析 M / Ghost L）——高价值内联处理程序修复。**
+解析器已经处理了命名处理程序、中间件和 `XController.method`/`XService.method`。
+真正的漏洞是**内联箭头路由处理程序**（`router.post('/x', async (req,res) => {...})` -
+占主导地位的现代模式）：处理程序正则表达式 `[^)]+` 在箭头的 `)` 上中断，因此路线连接到
+什么都没有，匿名处理程序的主体（请求→服务流）丢失了。整个内联处理程序
+API 无法访问（现实世界 `POST /users/login` → 0 条边）。固定（`frameworks/express.ts`）：跨越
+使用字符串感知平衡扫描进行调用；对于内联箭头，提取主体的调用（保留过滤到
+删除 res/req/builtins) 并将它们归因于路由节点 → realworld **19** / Ghost **65** 精确
+路由→服务边缘（POST /users/login→登录，POST /articles→createArticle，...），无节点爆炸，
+框架范围（Express 之外的零爆炸半径）。 **确定性胜利是显而易见的；特工 A/B 浑浊
+按仓库特征** - 现实世界（39 个文件）的大小低于 rustcodegraph 击败阅读的大小，并且
+Ghost 的分层定制 API 架构让双臂都陷入困境。剩余：**自定义路由器** - 有效负载
+6.4k 文件代码库有 0 个路由（其路由器抽象不是 `app.get` 样式，因此未被检测到）。课
+Svelte 的反面：Express 的主导模式是未覆盖的模式，因此它需要像 Vue 这样的真正工作。
+- **NestJS（2026 年 5 月 23 日验证，现实世界 S / immich M-L / 放大 L）- 已经被很好地覆盖。**
+`nestjs` 解析器处理 @decorator 路由 (HTTP/GraphQL/microservice/WS)。 DI控制器→服务
+（`this.svc.method()`）正确解析**即使在规模** - 每个immich控制器→服务边缘命中
+正确的同模块服务（`addUsersToAlbum→addUsers`、`getMyApiKey→getMine`、`copyAsset→copy`）
+名称+共置，不需要边的类型。 Agent A/B（immich专辑流程）：rustcodegraph **消除了Grep
+(0 vs 3)** 追踪路由→控制器→服务。无动态调度孔。一个普遍的卫生差距浮出水面
+（不是 NestJS 特定的）：现实世界的示例 **提交其 `dist/`** 构建输出，其中 rustcodegraph 索引
+（246 个 dup 节点），因为文件遍历仅遵循 `.gitignore`，没有默认的构建目录忽略。真实的
+apps (immich/ampplication) gitignore `dist/` (0 个重复节点)，所以它很窄 - 默认忽略
+`dist/build/out/.next/coverage` 是一个干净的后续，延迟（核心索引器更改，用户的调用）。
+- **Rails（2026 年 5 月 23 日验证，现实世界 S / spree M / forem L）——高价值的 RESTful 路由修复。**
+`rails` 解析器只能看到显式的 `get '/x' => 'c#a'` 路由，因此资源路由应用程序（占主导地位的应用程序）
+模式）有零个路线节点（现实世界+狂欢）。固定（`frameworks/ruby.ts`）：展开`resources :x` /
+`resource :x` 进入其 RESTful 操作（仅/除了过滤器 + 单数 `resource` 的复数形式），
+引用精确的 `controller#action`，并将其解析为 `<ctrl>_controller.rb` 中的操作方法
+（显式路由也已修复——它们引用了一个模棱两可的 `action`）。现实世界**0→16**，前音
+**0→635**精确路线→动作边缘。代理 A/B（前评论创建，大）：rustcodegraph **1–4 读取 /
+0 grep / 47–53s** 与没有 **4–5 个读取 / 2–3 grep / 66–85s** — 读取更少，无 grep，速度更快。 **这
+`claims_reference` 预过滤器是陷阱：** `articles#index` 名称没有声明的符号，因此解决
+在 `resolve()` 运行之前删除它 - 需要与 django ORM 工作相同的声明钩子。残差：**导轨
+引擎路由**（狂欢仍然为0——它安装了一个引擎，而不是`config/routes.rb`资源）；活动记录
+动态查找器（`Article.find_by_slug` — 元编程前沿）。
+- **Spring/MyBatis 企业流程（2026 年 5 月 26 日验证，mall-tiny S — 关闭 #389）。** 剩下的三个漏洞
+规范的企业 Java 链（`HTTP 路由 → 控制器 → BO/Service → ServiceImpl → DAO/Mapper →
+MyBatis XML SQL`）在真实的 Spring 项目中在多个跃点处被破坏。
+  1. **字段注入的具体 bean 跟踪。** Java 的 `this.userbo.toLogin2()` 解析为 `method_inspiration(
+object=field_access(this, userbo))`. The extractor surfaced `this.userbo.toLogin2` 逐字记录
+名称匹配器的单点正则表达式无法解开它；即使有，`userbo` 也不能干净地大写
+到 `UserBO` （`matchMethodCall.Strategy2` 中的 JVM 命名启发式），因此接收者类型的查找也
+错过了。修复是在语言层，而不是 Spring 特定的：(a) 提取器解开 `field_access(this, X)`
+使用 `X` 作为接收器（`src/extraction/tree_sitter.rs`）； (b) `matchMethodCall` 学会向上看
+接收者名称作为封闭类中的字段声明，并使用该字段的 `signature` 存储
+声明类型（`src/resolution/name_matcher.rs` 中的 `infer_java_field_receiver_type`）。重现确认
+问题的确切示例：出现 `UserAction.toLogin2 → UserBO.toLogin2` 边缘（0 个传出边缘）。
+  2. **MyBatis XML 映射器索引 + Java↔XML 桥。** `*.xml` 现在是一种语言 (`xml`)，具有自定义
+提取器 (`src/extraction/mybatis_extractor.rs`)，每个 `<select|insert| 发出一个方法形状的节点
+更新|删除|sql id="X">` qualified as `<命名空间>::<id>`, plus `<include refid="X"/>` → `<sql>`
+片段参考。非映射器 XML（pom、log4j、web.xml）仅发出文件节点 — 无符号噪声。一个新的
+合成器（`callback_synthesizer.rs` 中的 `mybatis_java_xml_edges`）通过以下方式索引 Java 方法
+`<ClassName>::<methodName>` 并通过后缀匹配将它们连接到 XML 限定名称。模糊的
+简单名称冲突被丢弃（精确度高于召回率）。 mall-tiny：6/6 个自定义 SQL 映射器方法
+桥接到他们的 `<select>` 语句；全链 `trace(UmsRoleController.listResource → UmsResource
+Mapper::getResourceListByRoleId(xml))` 通过控制器/服务/impl/mapper/XML 以 4 个跃点进行连接。
+  3. **Spring 配置键链接。** `application.{yml,yaml,properties}` + 配置文件变体
+（`application-dev.yml`、`bootstrap.yml` 等）在框架路径上解析。叶 YAML 键 + every
+`.properties` 线成为由其虚线路径限定的 `constant` 节点。 `@Value("${k}")` /
+`@Value("${k:default}")` 和 `@ConfigurationProperties(prefix="X")` 发出解析为的绑定节点
+匹配的键（或者，对于前缀，其下最接近的键）。 **宽松的绑定**（烤肉串 `cache-list`
+↔ 骆驼 `cacheList` ↔ 蛇 `cache_list` ↔ `CACHE_LIST`) 通过规范形式匹配处理。小型购物中心：
+11/11 `@Value` 注释已解决（包括 `secure.ignored` `@ConfigurationProperties` 前缀）。
+覆盖边界：跨模块 XML 语句引用（`<include refid="other.X">` 到中的片段）
+另一个映射器文件 - 当包含使用点分命名空间形式时有效）； `@PropertySource` 外部
+财产档案； Spring Cloud Config（远程属性）；包之间不明确的映射器名称冲突
+（Java 映射器 `com.a.X` 和 `com.b.X` 均带有 `selectOne` — 目前已删除以避免错误解析）。
+- **Rust 端口框架/动态调度奇偶校验（2026 年 6 月 21 日验证，合成小型装置）。** Rust
+外观现在连接框架提取、本机解析器回退、引用解析和回调合成
+对于 TypeScript 套件涵盖的相同代表性流程：Django/Flask 路由、Flutter
+`setState→build`、C++ 类型指针调用和虚拟覆盖、JVM FQN 导入、Spring 字段/配置
+绑定、MyBatis Java↔XML、React Native 桥/事件/Fabric、Drupal 路由、Java 匿名类覆盖、
+和 Go gRPC generated-stub→handwriting-impl 调度。添加了新的 Rust 端 gRPC 覆盖范围
+从 `Unimplemented*Server` 生成方法到独特手写的 `go-grpc-stub-impl` 启发式边缘
+同名接收者方法，同时拒绝生成文件同级。验证：`frameworks_integration_test`
+18/18、`rn_event_channel_test` 3/3、`react_native_bridge_test` 16/16、`fabric_view_test` 4/4、
+`drupal_test` 30/30； Rust 奇偶校验忽略数下降至 318。
+- **Rust 检索验证检查点（2026-06-21，macOS 本地 + 合成 MCP 探针）。** Rust 是
+本地测试绿色（`cargo test -- --test-threads=1`；`cargo fmt --check`；Rust 忽略计数 318/318）。
+两个文件的 TypeScript 固定装置确认了基本的 MCP 源检索和调用图连接
+(`routeSave -> onSave -> processPayment -> settleInvoice`)，但 `rustcodegraph_explore` **还没有
+与 TypeScript 相当的多符号流提示**：符号包查询仅返回探索
+标题，而不是相关的来源/流程。代理 A/B 在验证策略下保持跳过状态，直到
+探索流程达到同等水平。 Linux Docker 被无响应的 Docker 守护进程阻止； Windows虚拟机
+验证因缺少 `.parallels` 连接文件而被阻止。
+- **Spring（2026 年 5 月 23 日验证，真实世界 S / mall M / halo L）——裸映射 + 类前缀路由修复。**
+解析器需要映射正则表达式中的字符串路径，因此 BARE 方法映射（`@PostMapping` 与
+类 `@RequestMapping` 上的路径）——主要的多方法控制器模式——被错过了（晕
+有28条路线，2444个文件；现实世界最喜欢的 2 动作控制器仅链接一个）。使固定
+(`frameworks/java.ts`)：将类 `@RequestMapping` 视为前缀（已加入，而不是虚假路由）；匹配
+特定于动词的映射 BARE-or-with-path；还处理方法级 `@RequestMapping(method=...)` （较旧的
+风格）。现实世界13→19，商城→246条精准路线→方法（加入类前缀）； DI控制器→服务
+解决（`article→findBySlug`）。代理 A/B（商城购物车流程）：使用 rustcodegraph 0 读取/0 grep 与不使用 2/2。
+**通过删除 `@RequestMapping`-on-method 首次切割回归购物中心 292→1** — *被交叉回购捕获
+路线计数检查*；剧本中的回归守卫是值得的。 Residuals：光环的自定义图案
+（9/29 决议）； Spring Data JPA 派生查询（元编程前沿）。
+- **Django / DRF（2026-05-23 验证，现实世界 S / wagtail M / saleor L） - 大部分覆盖 + DRF 路由器
+修复。** ORM（`_iterable_class`→ModelIterable，原始调查）和 URL 路由
+（`path`/`url`/`as_view`→查看）已经完成。第一个漏洞： **DRF `router.register(r'articles',
+ArticleViewSet)`** (the core CRUD endpoints) wasn't extracted — only `path()`/`url()` 是。使固定
+(`frameworks/python.rs`)：匹配 `router.register`（STRING 第一个参数将其与
+`admin.register(Model, Admin)`，其第一个参数是模型类）→路线→ViewSet类。狭隘于此
+语料库（现实世界有 1 个路由器；wagtail 使用 `path()`，saleor 是 GraphQL），但对于 DRF 路由器 API 来说是真实的。
+代理 A/B（wagtail 页面流，中）：rustcodegraph **4–7 个读取 / 1–4 grep / 58–81s** 对比没有 **7–9 个读取
+/ 6 grep / 82–86s** — 更少的读取，更少的 grep，更快。无回归（鹡鸰/卖家路线计数
+不变——纯累加）。残差：信号（`post_save`→接收器），DRF视图集CRUD操作
+（继承自基类，不在用户的ViewSet中），saleor的GraphQL解析器。
+- **Laravel（2026 年 5 月 23 日验证，realworld S / firefly M / bookstack L）- 路线精度修复。**
+解析器从处理程序中丢弃了控制器：`Route::get([UserController::class,'index'])` /
+`'UserController@index'` 发出了一个 BARE `index` 引用，该引用的名称匹配错误地解析为 WRONG
+控制器（每个 `index`/`show` → 以最先找到的为准；现实世界的 GET 用户 → ArticleController.index，
+应该是用户控制器）。修复（`frameworks/laravel.ts`）：发出精确的`Controller@method`（数组+字符串
+语法，命名空间剥离）+ `claims_reference` 它通过了预过滤器 → 现有的 Pattern-4
+`resolveControllerMethod`。现实世界中所有路线都是正确的；书架 267/332 精确（获取页面 →
+PageApiController.list）。代理 A/B（书库页面视图，大）：rustcodegraph **2–3 个读取 / 1–2 个 grep /
+51–60 秒** 对比没有 **4–6 / 3–5 / 60–74 秒**。没有节点爆炸。残差：萤火虫仅解析 3/568
+（其流畅的 `->uses()` / `['uses'=>...]` 处理程序格式未解析）；雄辩的动态发现者
+（元编程前沿）。
+- **Gin / chi（2026-05-23 验证，realworld S / gin-vue-admin M / gitness L）- group-var 路由修复。**
+路由正则表达式仅匹配 `(router|r|mux|app|e).METHOD(...)`，但实际应用程序在 GROUP vars 上路由
+（`v1.GET`、`PublicGroup.GET`、`userRouter.POST`），因此组路由应用程序几乎没有连接
+（gin-vue-admin：**4 个路由用于 625 个文件**）。修复（`frameworks/go.ts`）：将接收器扩展到任意
+标识符 — 动词 + 字符串路径 + 处理程序参数门使其保持特定于路由（`http.Get(url)` 没有
+处理程序 arg → 排除）。 gin-vue-admin **4→259** 路由（257 条精确解析：`POST createInfo →
+创建信息`);现实世界稳定（无回归）；没有垃圾。 **代理 A/B（创建用户流程）：rustcodegraph
+0 次读取 / 0 grep / 26–30 秒 vs 没有 3 / 3 / 52–53 秒 — 迄今为止最干净的后端胜利（0/0，快 2 倍）。**
+残差：内联 `func(c *gin.Context){}` 处理程序（匿名，主体丢失 - 就像修复之前的 Express）；
+gitness 的 chi 自定义处理程序 (26/321)。
+- **ASP.NET Core（2026 年 5 月 23 日验证，真实世界 S / eShopOnWeb M / jellyfin L）— 检测 + 裸属性
+修复。** 两个漏洞：(1) `detect()` 仅在 `/Controllers/` 目录或根 `Program.cs`/`.csproj` 上触发（其中
+通常不在索引源集中），因此功能文件夹应用程序（现实世界：`Features/*/FooController.cs`，
+尽管设置了完整的控制器，但从未检测到子目录 `Program.cs`） → 0 条路由。扩大：扫描
+用于 ASP.NET 签名的控制器/程序/启动 `.cs`。 (2) 属性正则表达式需要字符串路径→
+裸 `[HttpGet]`（`[Route("[controller]")]` 类上的路线）错过了（eShopOnWeb 为 24 裸/2
+细绳）。匹配 bare-or-path + 加入类 `[Route]` 前缀（如 Spring）。 **没有`claims_reference`
+需要** - ASP.NET 属性路由与操作位于控制器中，因此裸方法
+ref 解析同一文件（与 Rails/Laravel 不同，它们的路由位于单独的文件中）。现实世界0→19，
+eShopOnWeb 9→33，jellyfin 362→399，全部精确（`GET /articles → Get`，加入类前缀），无爆炸。
+代理 A/B（eShop 目录列表）：rustcodegraph **1–2 读取 / 0 grep / 63–75s** 对比没有 **6–7 / 1–6 /
+77–79 秒**。剩余：EF Core LINQ/DbSet（元编程前沿）。
+- **Flask / FastAPI（2026-05-23 验证，fastapi-realworld S / Flask-microblog S / Netflix 调度 L /
+redash L) — 装饰器提取 + 内置名称修复。** 路由已提取，但请求→路由→处理程序
+流程在两个正则表达式假设和一个解析器过滤器处中断。 (1) **之后立即需要烧瓶 `def`
+`@x.route(...)`**，因此任何中间装饰器（`@login_required`、`@cache.cached`）或**堆叠的 `@x.route`
+lines**（一个视图绑定到多个 URL）丢弃了路线 - 微博提取了 27 条真实路线中的 **6 条。
+将Flask切换为FastAPI的`findHandler`扫描（匹配装饰器，然后找到下一个`def`），跳过
+介入装饰器：**6→27**，全部解决。 (2) **FastAPI 的路径正则表达式 `[^'"]+` 拒绝了空路径**
+`@router.get("")`（路由器/前缀根路由，经常是多线）→现实世界丢失了8个端点（列出/创建
+文章、评论、登录/注册）。 `[^'"]+`→`[^'"]*` + 空路径名称保护：真实世界 **12→20**，Netflix
+调度 **290/290 (100%)**。 (3) **裸名内置防护** (`src/resolution/index.rs`)：名为的处理程序
+在Python内置*方法*（`index`、`get`、`update`、`count`…）被`isBuiltInOrExternal`过滤后
+并失去了它的路由→处理程序边缘 - 微博的 `index` 视图（其 `/` + `/index` 堆叠路由）解析为
+没有什么。点方法分支已经有一个 `knownNames` 保护；将其镜像到光秃秃的树枝上（一个名字
+声明的符号拥有不是内置调用）。 +2 现实世界中的合法边缘，** django 控件上的 0 变化**
+（302/373 相同 - 保持精度）。端到端的流跟踪（`login → get_user_by_email` 2 跳；
+`create_user → from_dict`）。代理 A/B（现实世界登录-身份验证流程，n=2/arm）：rustcodegraph **0–1 read / 0 grep /
+3–4 rustcodegraph / 30–39s**（上下文→[搜索]→trace→节点）与没有 **3 read / 2 grep / 33–36s** — 消除
+grep，将读数削减为 0-1（小型仓库，因此挂钟平局；工具数量下降是胜利）。残差： **Flask-RESTful** 基于类
+`api.add_resource(Resource,'/x')`（redash 的实际 API 形状 - 一个单独的类方法作为动词机制，而不是
+自述文件记录的装饰器/蓝图 Flask）和预先存在的 **JS 文件路由误报**
+redash 的 React 前端（来自 JS 解析器的 32 个伪造的 `.js`“路由”——与 Python 无关）。 **课程：
+内置名称过滤器是 Python** 中的无声精度税 - 任何名为 `get`/`index`/`update` 的视图​​/函数
+失去边缘；该修复是通用的（也有助于 Django/DRF 处理程序），而不是 Flask 特定的。
+- **Drupal（2026 年 5 月 23 日验证，admin_toolbar S / webform M / drupal-core L） - 预过滤 + 检测修复。**
+`*.routing.yml` 提取器和 `_controller`/`_form` 解析器已经存在，但仍存在两个差距
+路线未链接。 (1) **`claims_reference` 预过滤器陷阱（再次）：** Drupal 处理程序引用是 FQCN
+(`\Drupal\…\Class::method`)、裸形式类 (`\…\SettingsForm`) 或单冒号控制器服务
+(`\…\Controller:method`)。只有 `::method` 形状在 `resolveOne` 的预过滤器中幸存下来（其 `member` 是
+已知方法名称）；裸 FQCN 形式和单冒号控制器未命名任何声明的符号，并且是
+在 `resolve()` 运行之前下降。添加了 `claims_reference` (FQCN / `Class:method` / `hook_*`) + 单冒号
+控制器正则表达式中的分支 → 核心 **536→836 条路由中的 731 (87%)**；现在所有三个先前破碎的形状
+解析（`/admin/content/comment`→CommentAdminOverview 表单，`/big_pipe/no-js`→setNoJsCookie 控制器）。
+(2) **检测错过独立贡献模块：** `detect()` 只检查了 Composer `require` 的 a
+`drupal/*` dep，但 contrib 模块通常有一个 EMPTY `require` 并且仅由
+`"name":"drupal/<m>"` + `"type":"drupal-module"`（管理工具栏 → 0 条路线）。扩展到作曲家姓名/类型
+  + `*.info.yml` 后备 → admin_toolbar **0→14 (14/14)**。规范流遍历 (`getAnnouncements` ←
+`/admin/announcements_feed`）；节点数不变（仅分辨率）。代理 A/B（dblog 路由→控制器，
+n=2/arm): rustcodegraph **0 read / 1 grep / 20–22s** 与没有 **1 read / 2 grep + glob / 28–32s** — 更少
+工具，并且在约 10k 文件核心上速度更快。 **残差（前沿）：**
+实体注释处理程序（`_entity_form: comment.default` → 在实体的
+`#[ContentEntityType]` 注释，不是直接引用 — 核心的 ~78 部分 ~105 尚未解决）和 **OOP
+`#[Hook]` 属性** — Drupal 11 将几乎所有过程挂钩转换为 `#[Hook('event')]` 方法（核心：
+418 个属性文件 vs 3 个过程 `*.module` 挂钩），因此解析器的过程挂钩检测（docblock
+`@Implements` / `module_hook` 命名）在现代核心中基本上找不到任何内容（0 钩边）。两者都是真实的
+后续行动，而不是回归。
+- **Rust / Axum + Rocket + actix（2026 年 5 月 23 日验证，realworld-axum S / actix-examples + Rocket M / crates.io L）——Axum 链式方法 + 命名空间处理程序修复。**
+属性宏路径（`#[get("/x")] fn h`、actix/Rocket）和单个 Axum `.route("/x", get(h))` 已经
+有效，但 Axum 提取器使用平面正则表达式，仅捕获路线的第一个 `method(handler)`
+并且只有一个裸露的 `\w+` 处理程序。两个占主导地位的阿克苏姆习语打破了它：（1）**方法链**
+`.route("/user", get(get_current_user).put(update_user))` — `.put` 臂没有生成路线节点，所以一半
+缺少 API（realworld-axum 只有每个链的 GET）； (2) **命名空间处理程序**
+`get(listing::feed_articles)` — `\w+` 捕获了 `listing`（模块），因此该路由解析为空。
+使用每个 `.route(...)` 调用、每个方法节点和最后一个 `::` 段的平衡括号扫描进行重写
+处理程序名称 → realworld-axum **12→19 条路线，19/19 已解决**（现在存在每个链接的 PUT/DELETE/POST；
+`feed_articles` 解决）。 **火箭不需要什么**（550/556，99% - 属性宏）。 crates.io 确认
+命名空间 axum 处理程序解析 (router.rs 6/6)，但通过 `utoipa_axum` `routes!` 定义其大部分 API
+宏（前沿）并具有 SvelteKit 前端（其 50 条“路线”中的 42 条是 `+page.svelte`，正确地说
+归因于 SvelteKit）。代理 A/B（更新用户流程，
+n=2/arm): rustcodegraph **0–2 read / 0 grep / 32–40s** 与没有 **3 read / 0–1 grep + glob / 33–41s** — 适度
+（realworld-axum 位于小型仓库绑定区域）但一致，具有一次完全干净的 0-read/0-grep 运行。节点
+计数稳定； Axum 修复是 Axum 范围内的（attribute/actix/Rocket 路径未受影响）。
+- **Actix 运行时路由（2026 年 5 月 23 日验证，actix-examples）——构建器 API 是主导风格，完全被错过。**
+Actix 的属性宏 (`#[get("/x")] fn h`) 已被覆盖，但真正的 actix 应用程序通过构建器 API 进行路由：
+`web::resource("/path").route(web::get().to(handler))`、`web::resource("/").to(handler)`（所有方法）和
+应用级`.route("/path", web::get().to(handler))`。处理程序位于 `.to(handler)`，而不是 `get(handler)`，
+因此 Axum `.route` 扫描没有为他们提取任何内容 - actix-examples 有 **80 `web::resource` 调用** 所有
+未链接。添加了一个 actix 块：扫描每个 `web::resource("/path")`（在下一个边界处限制其方法链）
+对于 `web::METHOD().to(h)` 对，回退到直接 `.to(h)`（方法 `ANY`），加上
+应用程序级 `.route("/x", web::METHOD().to(h))` 形式。 actix-examples **51→128 条路线，35→112 条已解决
+(87.5%)** (`GET /user/{name}`→with_param, `POST /user`→add_user)。 Axum 上没有回归（现实世界-axum 仍然
+19/19) — actix 模式 (`web::resource`/`web::method().to()`) 不会出现在 Axum 代码中。 **残差
+（前沿）：** `web::scope("/api")` 前缀不会添加到嵌套资源路径和匿名 `.to(|req|
+...)` 闭包处理程序没有命名目标（~16 个仍未解决）。
+- **Swift / Vapor（2026 年 5 月 23 日验证，vapor-template S / SteamPress M / SwiftPackageIndex-Server L） - 解析器在真实应用程序上实际上已失效。**
+Vapor提取器仅匹配`(app|router|routes).METHOD("path", use: handler)`，但现代Vapor路线
+在 `RouteCollection.boot(routes:)` 内的分组构建器上： `let todos = paths.grouped("todos");
+todos.get(use: index)` — 任何 var 接收器，无路径 arg（路径是组前缀）。每个真实的应用程序都经过测试
+提取**0条路线**（模板、penny-bot、Feather、SteamPress、SPI）。重写提取器：（1）任意
+接收器 `\w+`（不仅仅是应用程序/路由器/路由）； (2) 可选的路径段，可以是非字符串
+(`User.parameter`, `:id`, 路径常量) — `use:` 关键字是将路由与
+`Environment.get("X")` / `req.parameters.get("X")`； (3) 来自 `let X = Y.grouped("a")` 的组前缀映射和
+`Y.group("a") { X in }` 因此分组/嵌套变量上的路由获得完整路径（`todo.delete(use: delete)` →
+`DELETE /todos/:todoID`）。结果：vapor-template **0→3（3/3**，嵌套路径精确），SteamPress **0→27
+（27/27**，包括 `BlogPost.parameter` 路由），SPI **0→14（14/14** 处理程序分辨率）。规范流
+遍历 (`createPostHandler` ← `GET /createPost`, → `createPostView`)。 **残差（前沿）：**
+类型化路由枚举（SPI 寄存器通过 `app.get(SiteURL.x.pathComponents, use:)` — 处理程序解析，但
+路径标签是 `/`，没有字符串文字）和闭包处理程序（`app.get("hello") { req in }` - 匿名，没有
+命名目标）。 penny-bot（Discord bot）和 Feather（自定义模块路由器）在以下位置没有标准 Vapor 路由
+所有 - Vapor 生态系统的路由风格差异很大。代理 A/B（创建发布流程，n=2/arm）：rustcodegraph
+**0 read / 0 grep / 4 rustcodegraph / 26–30s**（两者都完全干净地运行）与没有 **1–4 read / 0–2 grep +
+glob/bash，一次运行产生一个子代理 / 34–48s**。节点数量稳定；修复是 Vapor 范围内的（SwiftUI/UIKit
+未触及）。
+- **React Router 路由（2026 年 5 月 23 日验证，react-realworld S）——React 行的路由一半。**
+React 渲染（state→render、jsx-child）已经涵盖；路线→组件不是 - `react.ts` 提取
+Components/hooks 和 Next.js 文件路由但返回 `references: []`，因此生成了 `<Route>` 声明
+没有什么。添加了 `<Route>` JSX 提取：在每个 `<Route\b` 之后扫描一个窗口（因此嵌套的 `>`
+`element={<Comp/>}` 不会截断它），将 `path="…"` + `component={C}` (v5) 或 `element={<C/>}` (v6) 拉入
+任何属性顺序，发出路由节点 + 组件引用（通过现有的 PascalCase 解析
+`resolveComponent`）。 React-realworld **0→10, 10/10** (`/login`→登录，`/editor/:slug`→编辑器，
+`/@:username`→轮廓);通过 `\b` 边界排除 `<Routes>` 容器。 exalidraw 没有回归
+（9,290 个节点，46 个反应渲染合成边完好无损，0 个错误路由）。 🔬 对象 **数据路由器** API
+`createBrowserRouter([{ path, element }])`（现代 v6，由Bulletproof-react 使用）是基于对象的，而不是 JSX —
+单独的边界；加上预先存在的 Next.js 误报（`pages/` 应用程序目录中的 `*.config.mjs` 已处理）
+作为路线）。
+- **Dart / Flutter（2026-05-23 验证，flutter/samples：counter S / books S / compass_app M） - 合成器 + 基础提取器修复。**
+Flutter 的反应跳跃是 `setState(() {…})` 重新运行 `build(context)` — 框架内部，没有静态边缘，
+所以“tap → handler → setState → rebuilt UI”在 setState 处陷入死胡同（React 的 setState→render 的 Dart 模拟）。
+添加了 `flutter-build` 合成器通道（阶段 4b）：对于具有 `build` 方法的每个 Dart 类，链接每个
+同级方法，其主体调用 `setState(` → `build`（门控到 `.dart`）。 **但它被阻止了
+基本差距：** Dart 将方法体建模为 `method_signature` 节点的*同级*，因此每个 Dart
+方法节点有 `endLine == startLine` （仅签名） - `sliceLines(start,end)` 只看到 `void f() {`，从来没有
+身体。修复了共享 `createNode`：当函数/方法的解析主体位于节点之外时，
+将 `endLine` 扩展到它（受保护 - 子体语法是无操作；控制 excalidraw 9,290 / django 302
+不变）。这个修复是基础性的，不是 Flutter 特有的——每个 Dart 被调用者/上下文/主体扫描都是
+之前被截断。结果：计数器 `initState→build`，预订 `initState→build` + `build→BookDetail/BookForm`。
+**小部件组合不需要综合** - 与 JSX 不同，Dart 小部件是显式构造函数调用
+(`BookDetail(...)`)，已经静态(compass_app `build→ErrorIndicator/HomeButton/_Card`)。 **残差
+(前沿):** MVVM状态管理(compass_app使用Command/ChangeNotifier + ListenableBuilder, 0 setState —
+不同的调度形状）和 `Navigator.push(MaterialPageRoute(builder: (_) => DetailPage()))` 导航
+（路线作为小部件，未覆盖）。
+- **Kotlin / Spring Boot + Jetpack Compose（2026 年 5 月 23 日验证，spring-petclinic-kotlin S / compose-samples）——将 Spring 扩展到 Kotlin；撰写是免费的。**
+Kotlin 的框架覆盖率为零——没有列出 `kotlin` 解析器，Spring 解析器是“语言：
+['java']` with a `.java`-only extract gate and a Java-syntax handler regex (`public X name()`)。所以Spring Boot
+Kotlin 应用程序（相同的 `@GetMapping`/`@RestController` 注释、`.kt` 文件）提取了 0 个路由。扩展
+Spring 解析器：`['java','kotlin']`，接受 `.kt`，并添加一个 Kotlin `fun name(` 替代方案
+处理程序方法正则表达式（Kotlin 没有访问修饰符，返回类型位于名称后面）。 petclinic-kotlin
+**0→18, 18/18**;类 `@RequestMapping` 前缀连接，堆叠注释 (`@ResponseBody`) 被跳过，DI
+控制器→repo解析（`showOwner ← GET /owners/{ownerId}` → `OwnerRepository.findById` /
+`VisitRepository.findByPetId`）。 Java Spring 不变（现实世界 19/19 — Kotlin `fun` 和 Java `public X`
+每种语言的替代方案都是不相交的）。 **Jetpack Compose 组合不需要工作** — `@Composable`
+调用子 `@Composable` 的函数是普通的 Kotlin 函数调用，已经是静态的（Jetcaster
+`PodcastInformation→HtmlTextContainer`、`FollowedPodcastCarouselItem→PodcastImage`)，如 Dart 小部件
+构造函数。代理 A/B（视图所有者流程，n=2/arm）： rustcodegraph **0–1 read / 0 grep / 1 rustcodegraph / 11–18s** （a
+单个 `context` 调用即可回答它）与没有 **2 read / 0–1 grep + glob / 20–28s** 相比。 **残差（前沿）：**
+Ktor `routing { get("/x") { … } }` 内联 lambda 处理程序（匿名、
+无命名目标），Compose 重组（隐式 — 读取 `mutableStateOf` 触发重组，无
+`setState` 风格的门来锚定合成器），以及协程/流程调度。
+- **Lua / Luau（2026 年 5 月 23 日验证，telescope.nvim / lualine.nvim / Knit — 测量优先，已涵盖）。**
+矩阵猜测“事件/回调调度（合成器）”，但测量结果却不然：真正的 Neovim
+插件是 MODULE-dispatch-heavy (`local m = require('telescope.actions'); m.fn()`)，而 rustcodegraph 的一般
+`require`-导入 + 跨文件名解析已经处理它 - Telescope.nvim 有 **220 个已解析的导入
+和335个跨文件`module.fn`调用edges**，并且一个流程跟踪端到端（`map_entries ← init.lua →
+get_current_picker` 在 actions/state.lua 中）。 Luau 提取器已经处理 Roblox 实例路径要求
+(`require(game:GetService("ReplicatedStorage").Packages.Knit)`)。 **假设的洞不是真实的** - 就像
+Svelte/NestJS。真正的前沿是事件回调注册（`vim.keymap.set(mode, lhs, fn)`，autocmd
+`{callback=fn}`、Roblox `signal:Connect(fn)`），但它主要是内联匿名闭包（语料库：~12
+内联 `:Connect(function…)` 与 ~2 命名），望远镜的键盘映射是内联函数或 vim 命令
+字符串，未命名参考。仅命名回调合成器将覆盖一小部分，因此根据“之前的测量”
+构建/部分覆盖比没有更糟糕”，没有构建 - 没有代码更改；记录为已验证。
+代理 A/B（actions.utils 地图流程，n=2/arm）：rustcodegraph **0 读 / 0 grep / 18–24s** 对比没有 **1 读
+(+glob) / 24–25s** — 小流量如此适度，但 0 读取确认模块调度是可导航的。
+- **Scala / Play（2026 年 5 月 23 日验证，播放样本：计算机数据库/启动器/rest-api）- 播放 conf/routes → 控制器。**
+Scala 的通用调度（控制器→DAO）已经解析，但是 Play 在 EXTENSIONLESS 中声明路由
+`conf/routes` 文件 (`GET /computers controllers.Application.list(p: Int ?= 0)`) 文件行走从未索引
+（`isSourceFile` 需要扩展）。添加了狭窄的选择加入（`isPlayRoutesFile`：`conf/routes` / `*.routes`）
+通过无语法（yaml 样式）路径路由，加上解析每个路径的 Play 解析器
+`METHOD /path Controller.action(args)` 行（删除包前缀 + 参数）并解析 `Controller.action`
+到该控制器类中的操作方法。计算机数据库 **0→8 条路线，7/8** （未解决的 1 条是
+`controllers.Assets.versioned` — Play 的框架资源控制器，外部），启动器 0→4 (3/4)。流量
+连接请求→路由→控制器→DAO。 A/B（列表计算机，n=2/arm）：rustcodegraph **0 read / 0 grep / 3
+rustcodegraph / 17–22s** 对比没有 **2–3 read / 1–2 grep + glob / 16–17s**。 **无回归：** 文件遍历
+仅更改 ADDS Play 路线文件（窄匹配）- excalidraw 9,290 和全套 (800) 不变。
+**残差（前沿）：** 玩 SIRD 编程路由器（`-> /v1 v1.PostRouter` 包括 + `case GET(p"/x")`
+在 Router 类中 —rest-api-example）和 Akka actor 消息→处理程序（`receive { case Msg => … }` /
+`Behaviors.receiveMessage` — 无类型，合成器形状）。
+- **C / C++（2026-05-23 验证，redis C / leveldb C++）——一般调度工作； C++ 继承修复 + 覆盖桥。**
+测量优先：C/C++ DIRECT 调度非常出色，开箱即用（redis **29,464 跨文件调用边缘**，
+leveldb **1,462**) — 值的大部分。动态调度前沿有两种形状： (1) C 回调
+结构体 (`struct {.proc=fn}` + `cmd->proc()`) — 但在 Redis 中，`proc` 字段扇出到 **422** 命令
+函数，噪音太大而无法精确合成，因此故意跳过（每个“部分覆盖比
+无”）。（2）C++ vtable（`iter->Next()` → 子类覆盖）。覆盖链接被上游阻止：
+`extractInheritance` 处理 `base_clause` (PHP)，但不处理 C++ 的 `base_class_clause`，因此 C++ `extends` 边缘
+缺失/部分（修复后leveldb 219→**298**）。添加了 `cpp-override` 合成器通道（C++
+类似于react-render）：对于每个`extends`边，链接每个基本方法→相同的子类方法
+名称，以便跟踪/被调用者从接口方法到达实现。 leveldb **12条精确边缘**
+(`Iterator::Next/Seek/Prev → MergingIterator`)，C (redis) 和 TS 上为 0（excalidraw — 门控到 C++）； C++
+覆盖集成测试通过。 **剩余（前沿）：**纯虚拟基方法（`virtual void Next() =
+0;`) 是提取器不会作为节点发出的声明，因此无法覆盖纯抽象接口
+桥接（仅具有真实方法节点的基础 - 内联默认或非纯虚拟）；加上C
+回调结构扇出。依赖于确定性验证（无 A/B）：跨文件调用计数 + 精确
+覆盖抽查是结论性的。
+- **边境通行证（2026-05-23）-易于处理的部分关闭，噪音/困难的部分故意离开。** 在主要部分之后
+扫描，扫描记录的边界并按精度/值进行分类。 **完成：** React Router 对象
+数据路由器（字面值 `createBrowserRouter([{path, element}])`）； Next.js 路由误报（配置文件 +
+`nextjs-pages/` 子字符串→需要真实的页面分机+路径段匹配；防弹4→0); Flask-RESTful
+`add_resource`→资源类（红线6→**77**）；烧瓶元组 `methods=(…)`；烧瓶检测范围扩大到
+子目录/应用程序工厂入口点（flask-realworld 0→**19**）；大猩猩/多路复用器确认已覆盖（任何接收器
+HandleFunc) + 测试。 **左（有基本原理，而不是双关语）：** C 回调结构调度 (`cmd->proc()` →
+422 路场扇出 = 噪声）；元编程查找器（ActiveRecord/Eloquent/Spring-Data-JPA/EF — 动态
+命名，无静态目标）；反应式运行时（Vue Proxy / Compose 重组 - 深层内部结构，无
+setState 风格的门）； Akka actor 消息调度（无类型）；纯匿名内联闭包（def-use
+边界——没有指定目标）； React 惰性数据路由器（变量路径+惰性导入）； C++ 纯虚基
+方法（提取无体 decls 会冒重复 decl/def 节点以获得适度增益的风险）。强制这些会增加
+噪音，违反了“部分覆盖比没有覆盖更糟糕”的规定。
+- **难度梯度是真实的：**named-ref 调度（解析器）很便宜；匿名的
+回调调度（合成器）中等； **匿名箭头处理程序是困难的
+剩余间隙**（没有身份→需要合成器通过主体链接，尚未构建）。
+- **提取变化的影响范围很大。** 第 3 阶段命名内联回调
+提取位于 *共享* `tree_sitter.rs` walker 中 - 重新检查 **节点计数
+任何提取更改后的几种语言**（它在 exalidraw 上保持在 +3，因为
+匿名箭头被跳过）。
+- **合成器精度保护：** 注册商名称唯一性、仅命名处理程序和
+事件**扇出上限**（跳过 `error`/`change` 等通用事件）。接收器型
+匹配（通过 `type_of` 边缘）是计划中的精度升级 - 已推迟。
+- **内置快捷方式**（回调合成器）：通过*文件*+字段对注册器/调度器进行配对
+（类代理），正则表达式 arg-recovery（仅命名引用），`provenance:'heuristic'` +
+`metadata.synthesizedBy`（枚举没有 `'callback-synthesis'`）。请参阅设计文档。
+- **合成器仅在 `resolveAndPersistBatched` 中运行**（完整索引）- 连接到
+`resolveAndPersist` 用于发货前增量同步。
+- **`trace` 中的符号歧义：** 通用名称（`render`、`execute_sql`）与许多匹配
+节点；跟踪在其中进行选择，并且可能从错误的开始。从具体追踪
+方法，而不是类名。
+
+---
+
+## 8. 完成的定义（整个任务）
+
+对于每种语言 × 框架：端到端的规范流程 `trace`，代理可以
+至少在一些存在胶水、无节点的运行中使用 Read 0 回答流程问题
+爆炸，没有回归——记录在矩阵（§6）中，并带有验证回购+数字。
+然后发货准备：按机制进行测试、变更日志、增量传输、提交。

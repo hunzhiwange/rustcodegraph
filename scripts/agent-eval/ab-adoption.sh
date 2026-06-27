@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 比较新旧构建下，代理在读文件时会选择 `rustcodegraph_node` 还是内置 `Read`。
+# 主要输入是已索引仓库、任务和基线 ref；主要副作用是预热 daemon、运行多轮评估并把结果写到 `/tmp/ab-adoption`。
 # Does the agent PICK rustcodegraph_node to read a file, vs the built-in Read tool?
 # Build A/B: NEW build (HEAD, rustcodegraph_node has Read parity) vs BASELINE build
 # (a ref where it doesn't), BOTH codegraph-attached + pre-warmed, same task. The

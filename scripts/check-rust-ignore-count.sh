@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 统计 Rust 相关测试中的 `ignore` 债务，供 CI 阻止新增忽略项。
+# 主要输入是 `MAX_RUST_IGNORE_COUNT`；主要副作用是扫描 `tests/` 和 `src/`，超限时以非零状态退出。
 set -euo pipefail
 
 MAX_RUST_IGNORE_COUNT="${MAX_RUST_IGNORE_COUNT:-1}"

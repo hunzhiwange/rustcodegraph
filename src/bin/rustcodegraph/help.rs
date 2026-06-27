@@ -89,6 +89,23 @@ pub fn command_specs() -> Vec<CliCommandSpec> {
             responsibilities: vec!["open project", "run incremental sync"],
         },
         CliCommandSpec {
+            name: "watch [path]",
+            description: "Watch project files and auto-sync the index on changes",
+            options: vec![
+                opt("-p, --path <path>", "Project path", None),
+                opt(
+                    "--debounce-ms <number>",
+                    "Delay before auto-sync after a file change",
+                    Some("2000"),
+                ),
+            ],
+            responsibilities: vec![
+                "open project",
+                "run initial catch-up sync",
+                "watch files until interrupted",
+            ],
+        },
+        CliCommandSpec {
             name: "status [path]",
             description: "Show index status and statistics",
             options: vec![opt("-j, --json", "Output as JSON", None)],
@@ -103,7 +120,7 @@ pub fn command_specs() -> Vec<CliCommandSpec> {
                 opt("-k, --kind <kind>", "Filter by node kind", None),
                 opt("-j, --json", "Output as JSON", None),
             ],
-            responsibilities: vec!["search nodes", "render ranked results"],
+            responsibilities: vec!["mirror rustcodegraph_search MCP output"],
         },
         CliCommandSpec {
             name: "explore <query...>",
@@ -171,30 +188,33 @@ pub fn command_specs() -> Vec<CliCommandSpec> {
             description: "Find all functions/methods that call a specific symbol",
             options: vec![
                 opt("-p, --path <path>", "Project path", None),
+                opt("--file <file>", "Narrow to definition in file", None),
                 opt("-l, --limit <number>", "Maximum results", Some("20")),
                 opt("-j, --json", "Output as JSON", None),
             ],
-            responsibilities: vec!["resolve symbol", "render incoming call edges"],
+            responsibilities: vec!["mirror rustcodegraph_callers MCP output"],
         },
         CliCommandSpec {
             name: "callees <symbol>",
             description: "Find all functions/methods that a specific symbol calls",
             options: vec![
                 opt("-p, --path <path>", "Project path", None),
+                opt("--file <file>", "Narrow to definition in file", None),
                 opt("-l, --limit <number>", "Maximum results", Some("20")),
                 opt("-j, --json", "Output as JSON", None),
             ],
-            responsibilities: vec!["resolve symbol", "render outgoing call edges"],
+            responsibilities: vec!["mirror rustcodegraph_callees MCP output"],
         },
         CliCommandSpec {
             name: "impact <symbol>",
             description: "Analyze what code is affected by changing a symbol",
             options: vec![
                 opt("-p, --path <path>", "Project path", None),
+                opt("--file <file>", "Narrow to definition in file", None),
                 opt("-d, --depth <number>", "Traversal depth", Some("2")),
                 opt("-j, --json", "Output as JSON", None),
             ],
-            responsibilities: vec!["compute impact radius"],
+            responsibilities: vec!["mirror rustcodegraph_impact MCP output"],
         },
         CliCommandSpec {
             name: "affected [files...]",
@@ -298,8 +318,11 @@ const VISIBLE_COMMANDS: &[&str] = &[
     "uninit",
     "index",
     "sync",
+    "watch",
     "status",
     "query",
+    "explore",
+    "node",
     "files",
     "unlock",
     "callers",

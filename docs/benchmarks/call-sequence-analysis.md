@@ -1,66 +1,66 @@
-# Call-sequence analysis — why read savings don't convert to wall-clock
+# 调用序列分析——为什么读取节省不能转换为挂钟
 
-**Date:** 2026-05-23 · **Branch:** `architectural-improvements` · **Source data:** the surviving
-stream-json logs from the A/B matrix (`/tmp/ab-matrix/<Cell>/run-headless-{with,without}.jsonl`,
-37 cells × 2 arms). Re-mined — **no re-runs** — with `rustcodegraph agent-eval seq-matrix`.
+**日期：** 2026-05-23 · **分支：** `architectural-improvements` · **来源数据：** 尚存
+来自 A/B 矩阵的 Stream-json 日志（`/tmp/ab-matrix/<Cell>/run-headless-{with,without}.jsonl`，
+37 个细胞 × 2 个臂）。重新开采 — **不重新运行** — 使用 `rustcodegraph agent-eval seq-matrix`。
 
-## Why this exists
+## 为什么存在这个
 
-The [A/B matrix](rustcodegraph-ab-matrix.md) showed rustcodegraph cuts **reads 75%** but **wall-clock only
-~16%**, and 63% of the wall-clock win comes from just 3 large-repo cells. Reads are at the floor
-(~0), so the remaining wall-clock is **round-trips + the synthesis turn** — neither of which read
-count can explain. The matrix records tool *counts*, not the call **sequence** or per-call
-**payload size**. This analysis recovers both, to find where the wall-clock actually goes.
+[A/B矩阵](rustcodegraph-ab-matrix.md) 显示 rustcodegraph 削减 **读数 75%** 但 **仅限挂钟
+~16%**，63% 的胜利来自 3 个大型回购单元。阅读内容在地板上
+(~0)，所以剩余的挂钟是**往返 + 综合回合** - 两者都没有读取
+计数可以解释。矩阵记录工具*计数*，而不是调用**序列**或每次调用
+**有效负载大小**。该分析恢复了两者，以找出挂钟的实际位置。
 
-## TL;DR — the bottleneck is trace ADOPTION, not trace completeness
+## TL;DR — 瓶颈是跟踪采用，而不是跟踪完整性
 
-1. **Trace is called in 3 of 37 cells** — even though every question is a canonical flow question
-   ("trace the controller → service → repository", "how does X reach Y"). The agent overwhelmingly
-   reaches for **`context → search → search → explore`** instead — the exact path-reconstruction
-   anti-pattern the instructions tell it to avoid.
-2. **`explore` averages 17.9K chars/call; `trace` averages 0.8K** — a **22× payload difference**.
-   The path-scoped tool that solves the small-repo-bloat problem exists and is tiny. It's just not
-   being invoked.
-3. **Small repos still get bloated payloads** because of the explore-default: a **6-file** repo
-   (`flutter_module_books`) pulls **17.4K**; a 10-file repo pulls 18.0K. This is precisely the
-   "too much context on small codebases" failure mode — happening right now, via explore.
-4. **Round-trips are 25% fewer with rustcodegraph (283 vs 375 turns)** but wall-clock is only 16%
-   faster — because the with-arm's turns each carry a ~18K explore payload, inflating TTFT and
-   eroding the turn savings.
-5. **Root cause:** `src/mcp/server_instructions.rs` leads with *"answer directly … `context`
-   first, then ONE `rustcodegraph_explore`"* as the headline pattern. The trace-first guidance is buried
-   in a table + a chain list below it. Agents anchor on the prominent headline → context→explore.
+1. **在 37 个单元格中的 3 个单元格中调用跟踪** — 尽管每个问题都是规范流问题
+（“跟踪控制器→服务→存储库”，“X如何到达Y”）。代理占绝大多数
+相反，达到 **`context → search → search → explore`** — 精确的路径重建
+指令告诉它要避免的反模式。
+2. **`explore` 平均每次调用 17.9K 字符； `trace` 平均为 0.8K** — **22× 有效负载差异**。
+解决小型仓库膨胀问题的路径范围工具是存在的，而且很小。只是不是
+被调用。
+3. **小型存储库仍然会获得臃肿的有效负载**，因为探索默认：一个**6文件**存储库
+(`flutter_module_books`) 拉**17.4K**； 10 个文件的存储库需要 18.0K。这正是
+“小代码库上的上下文太多”故障模式——现在正在发生，通过探索。
+4. **使用 rustcodegraph 时，往返次数减少了 25%（283 次与 375 次相比）**，但挂钟次数仅为 16%
+更快——因为带臂的每个转动都携带约 18K 的探索有效载荷，膨胀 TTFT 和
+侵蚀回合储蓄。
+5. **根本原因：** `src/mcp/server_instructions.rs` 以*“直接回答... `context`
+首先，然后 ONE `rustcodegraph_explore`"* 作为标题模式。跟踪优先的指导被埋葬
+在一个表+它下面的链表中。特工锚定在显着的标题→上下文→探索。
 
-**Decision:** the next experiment is **trace-first steering / adoption**, not enriching trace. We
-can't evaluate trace's completeness when it's used 3/37 times. Get adoption up first, then measure
-whether the residual `node`/`explore` follow-ups need a richer trace.
+**决定：**下一个实验是**跟踪优先转向/采用**，而不是丰富跟踪。我们
+当使用 3/37 次时，无法评估跟踪的完整性。先采用，然后衡量
+残差`node`/`explore`后续是否需要更丰富的迹线。
 
-## Finding 1 — trace adoption: 3/37
+## 发现 1 — 跟踪采用情况：3/37
 
-| metric | value |
+| 公制 | 价值 |
 |---|---|
-| flow-question cells | 37 (all of them) |
-| cells that called `trace` | **3** (`cpp-leveldb`, `excalidraw`, `c-redis`) |
-| dominant pattern instead | `context` → `search`×N → `explore` |
+| 流动问题细胞 | 37（全部） |
+| 称为 `trace` 的单元格 | **3**（`cpp-leveldb`、`excalidraw`、`c-redis`） |
+| 代替主导模式 | `context` → `search`×N → `explore` |
 
-The 3 trace cells, and what followed the trace call:
+3 个跟踪单元，以及跟踪调用之后的内容：
 
-| repo | files | cg sequence | turns (with/without) |
-|---|--:|---|---|
+| 回购协议 | 文件 | CG序列 | 匝数（有/无） |
+|---|--：|---|---|
 | cpp-leveldb | 134 | `trace, node, node` | 5 / 8 |
-| excalidraw | 643 | `context, trace, trace, explore` | 6 / **19** |
-| c-redis | 884 | `context, trace, explore, node` | 10 / 15 |
+| 外画 | 第643章 | `context, trace, trace, explore` | 6 / **19** |
+| c-redis | 第884章 | `context, trace, explore, node` | 10 / 15 |
 
-Even when trace *is* used, the agent follows it with `node`/`explore` to fetch bodies — so a
-secondary lever (after adoption) is making one trace call self-sufficient enough to kill those
-follow-ups. But that's step 2.
+即使使用了跟踪，代理也会跟随 `node`/`explore` 来获取主体 - 所以
+第二个杠杆（采用后）正在使一个跟踪调用自给自足，足以杀死那些
+后续行动。但这是第 2 步。
 
-## Finding 2 — payload size: path-scoped trace (0.8K) vs breadth-scoped explore (17.9K)
+## 发现 2 — 有效负载大小：路径范围的跟踪 (0.8K) 与广度范围的探索 (17.9K)
 
-Across all cells, per rustcodegraph tool — call count and **average payload per call**:
+在所有单元格中，每个 rustcodegraph 工具 — 调用计数和**每次调用的平均负载**：
 
-| tool | calls | avg/call | total |
-|---|--:|--:|--:|
+| 工具 | 来电 | 平均/通话 | 全部的 |
+|---|--：|--：|--：|
 | `explore` | 32 | **17.9K** | 573K |
 | `context` | 36 | 4.3K | 156K |
 | `search` | 39 | 1.3K | 50K |
@@ -68,64 +68,64 @@ Across all cells, per rustcodegraph tool — call count and **average payload pe
 | `node` | 19 | 2.0K | 38K |
 | `trace` | 4 | **0.8K** | 3.4K |
 
-`context` (used in 36/37 cells) is the default opener; `explore` is the default closer. Together
-they are the ~22K breadth dump. `trace` — the tool that would replace that with the actual path —
-is 22× smaller and barely used. This is the user's premise confirmed in numbers: explore is
-breadth-scoped (returns the neighborhood), trace is path-scoped (returns the line).
+`context`（用于 36/37 单元）是默认开启器； `explore` 是默认的关闭器。一起
+它们是~22K 宽度的转储。 `trace` — 将其替换为实际路径的工具 —
+缩小了 22 倍并且几乎不被使用。这是用数字证实的用户前提：探索是
+宽度范围（返回邻域），跟踪是路径范围（返回行）。
 
-## Finding 3 — payload grows with repo size, and over-returns on small repos
+## 发现 3——有效负载随着回购规模的增加而增长，并且小型回购的超额回报
 
-With-arm **total** rustcodegraph payload by repo-size tier:
+With-arm **total** rustcodegraph 有效负载（按存储库大小层）：
 
-| tier | cells | avg total payload | range |
-|---|--:|--:|--:|
-| S (<200 files) | 19 | 12.7K | 3.0–31.2K |
-| M (<2000) | 9 | 32.4K | 5.4–58.2K |
-| L (≥2000) | 9 | 34.0K | 20.2–43.1K |
+| 层 | 细胞 | 平均总负载 | 范围 |
+|---|--：|--：|--：|
+| S（<200 个文件） | 19 | 12.7K | 3.0–31.2K |
+| 中号（<2000） | 9 | 32.4K | 5.4–58.2K |
+| 长（≥2000） | 9 | 34.0K | 20.2–43.1K |
 
-The small-repo waste is concrete — these all have a 2–3 file flow but pull a full neighborhood:
+小型仓库的浪费是具体的——这些都有 2-3 个文件流，但拉动了一个完整的邻居：
 
-| repo | files | with-arm payload | sequence |
-|---|--:|--:|---|
+| 回购协议 | 文件 | 带臂有效载荷 | 顺序 |
+|---|--：|--：|---|
 | flutter_module_books | 6 | 17.4K | `context, explore` |
-| computer-database | 10 | 18.0K | `context, search, status, explore` |
-| aspnet-realworld | 78 | 22.2K | `context, explore` |
-| django-realworld | 44 | 14.8K | `context, explore` |
+| 计算机数据库 | 10 | 18.0K | `context, search, status, explore` |
+| aspnet-真实世界 | 78 | 22.2K | `context, explore` |
+| Django-真实世界 | 44 | 14.8K | `context, explore` |
 
-`explore`'s per-call budget is already adaptive (#185), but it doesn't help here because the agent
-isn't choosing the path-scoped tool — it's choosing breadth.
+`explore` 的每次呼叫预算已经是自适应的（#185），但它在这里没有帮助，因为代理
+不是选择路径范围的工具——而是选择广度。
 
-## Finding 4 — round-trips, and the ToolSearch tax
+## 发现 4 — 往返和 ToolSearch 税
 
-| metric | with | without |
-|---|--:|--:|
-| total turns (37 cells) | 283 | 375 |
-| avg turns / cell | 7.6 | 10.1 |
+| 公制 | 和 | 没有 |
+|---|--：|--：|
+| 总匝数（37 个电池） | 第283章 | 第375章 |
+| 平均匝数/单元 | 7.6 | 10.1 |
 
-25% fewer turns, but only ~16% faster wall-clock — the gap is the per-turn cost of the big explore
-payloads. Also: **every with-arm run opens with a `ToolSearch` round-trip** (MCP tools are deferred
-in this harness), a fixed 1-turn tax before any rustcodegraph call. Worth confirming whether the
-production install defers rustcodegraph tools the same way.
+回合数减少了 25%，但挂钟仅快了 16%——差距就是大探索的每回合成本
+有效负载。另外：**每次手臂运行都以 `ToolSearch` 往返开始**（MCP 工具被推迟
+在此工具中），在任何 rustcodegraph 调用之前固定的 1 回合税。值得确认的是
+生产安装以同样的方式推迟 rustcodegraph 工具。
 
-## Conclusion → the experiment to run next
+## 结论 → 接下来要进行的实验
 
-Measure-first changed the plan. The hypothesis was "enrich trace so one call is self-sufficient."
-The data says trace is **used 3/37 times**, so completeness is moot until adoption is fixed.
+措施优先改变了计划。这一假设是“丰富痕迹，因此一次呼叫是自给自足的”。
+数据显示，跟踪被**使用了 3/37 次**，因此在采用率得到修复之前，完整性是没有意义的。
 
-**Experiment: trace-first steering A/B.**
-- **Change:** rewrite the `server_instructions.rs` headline so a *flow* question (how does X reach Y
-  / trace / from→to) routes to `trace` **first**, demoting the context→explore pattern to
-  non-flow/onboarding questions. Mirror into `instructions_template.rs` + `.cursor/rules/rustcodegraph.mdc`.
-- **Metric:** trace-adoption rate (target ≫ 3/37), with-arm total payload (expect ↓ sharply,
-  especially small repos), turns (expect ↓), wall-clock (expect the 16% gap to widen toward the
-  25% turn gap as 18K explore payloads are replaced by <1K traces).
-- **Control:** a non-flow "what's the deal with module X" question must still go context→explore —
-  don't over-steer everything to trace.
-- **Then, step 2:** with adoption up, measure the `node`/`explore` follow-ups after trace
-  (cpp-leveldb/excalidraw/c-redis all had them). If they're frequent, enrich trace (per-hop body
-  snippet, capped per hop) so one trace call ends the flow investigation.
+**实验：轨迹优先转向 A/B。**
+- **更改：**重写 `server_instructions.rs` 标题，因此是一个*流程*问题（X 如何到达 Y
+/trace/from→to) 路由到 `trace` **first**，将 context→explore 模式降级为
+非流程/入职问题。镜像为 `instructions_template.rs` + `.cursor/rules/rustcodegraph.mdc`。
+- **指标：** 跟踪采用率（目标 ≫ 3/37），带臂总有效负载（预计 ↓ 急剧变化，
+特别是小型回购）、周转（预计 ↓）、挂钟（预计 16% 的差距将向
+25% 的转弯间隙，因为 18K 探索有效负载被 <1K 迹线取代）。
+- **控制：** 非流程“模块 X 是怎么回事”问题仍然必须进入上下文→探索 —
+不要过度引导一切来追踪。
+- **然后，第 2 步：** 采用后，跟踪后测量 `node`/`explore` 后续结果
+（cpp-leveldb/excalidraw/c-redis 都有它们）。如果它们很频繁，请丰富跟踪（每跳主体
+片段，每跳上限），因此一次跟踪调用结束流调查。
 
-## Reproduce
+## 复制
 
 ```bash
 rustcodegraph agent-eval seq-matrix            # regenerates every table above from /tmp/ab-matrix
@@ -133,69 +133,69 @@ rustcodegraph agent-eval seq-matrix            # regenerates every table above f
 
 ---
 
-# Ablation experiment — do `context`, `explore`, and `trace` compete? Is `trace` enough?
+# 消融实验——`context`、`explore` 和 `trace` 竞争吗？ `trace`够了吗？
 
-**Date:** 2026-05-23 · 52 runs, ~$20. Tool surface trimmed **server-side** via the new
-`RUSTCODEGRAPH_MCP_TOOLS` allowlist (so an ablated tool is genuinely absent from ListTools, not
-denied-on-call); trace-first steering injected with `--append-system-prompt`. 6 repos (2 S / 2 M /
-2 L) × 2 runs; arm E is a **non-flow** survey question on 2 repos. Driver `arms-matrix.sh`,
-analysis `rustcodegraph agent-eval parse-arms`.
+**日期：** 2026-05-23 · 52 次运行，约 20 美元。通过新的工具表面修剪**服务器端**
+`RUSTCODEGRAPH_MCP_TOOLS` 白名单（因此 ListTools 中确实不存在被删减的工具，而不是
+拒绝接听电话）；轨迹优先转向注入 `--append-system-prompt`。 6 个存储库（2 S / 2 M /
+2 L) × 2 次； arm E 是关于 2 个存储库的 **非流程** 调查问题。驱动器`arms-matrix.sh`，
+分析`rustcodegraph agent-eval parse-arms`。
 
-| arm | tools | steering | adoption | reads | cgOut | turns | dur |
-|---|---|---|--:|--:|--:|--:|--:|
-| **A** control | all | none | 2/12 | 1.25 | 28.8K | 7.6 | 38s |
-| **B** steer | all | trace-first | **8/12** | 1.00 | **32.0K** | 7.9 | 43s |
-| **C** no-explore | hide explore | trace-first | 8/12 | **2.08** | **9.2K** | 9.0 | 44s |
-| **D** trace-centric | hide explore+context | trace-first | 8/12 | 2.00 | 6.6K | 10.5 | 46s |
-| **E** control-probe | hide explore+context | trace-first | 0/4 | 2.50 | 27.8K | **20.0** | **72s** |
+| 手臂 | 工具 | 转向 | 采用 | 读 | 输出 | 轮流 | 杜尔 |
+|---|---|---|--：|--：|--：|--：|--：|
+| **A** 控制 | 全部 | 没有任何 | 2/12 | 1.25 | 28.8K | 7.6 | 38秒 |
+| **B** 转向 | 全部 | 跟踪优先 | **8/12** | 1.00 | **32.0K** | 7.9 | 43秒 |
+| **C** 无探索 | 隐藏探索 | 跟踪优先 | 8/12 | **2.08** | **9.2K** | 9.0 | 44秒 |
+| **D** 以跟踪为中心 | 隐藏探索+上下文 | 跟踪优先 | 8/12 | 2.00 | 6.6K | 10.5 | 46秒 |
+| **E** 控制探头 | 隐藏探索+上下文 | 跟踪优先 | 0/4 | 2.50 | 27.8K | **20.0** | **72秒** |
 
-## What it says
+## 它说了什么
 
-1. **Steering works for adoption, not for payload.** B lifted trace use **2/12 → 8/12** (and 4/4 on
-   the genuinely path-shaped questions — the 2 non-adopters, flutter "what widgets" and vapor "name
-   the route", aren't from→to questions). But B's payload (32.0K) is *bigger* than control (28.8K)
-   and it's slightly slower — because the agent calls trace **and still calls explore**. Steering
-   adds a trace hop without displacing the explore dump.
-2. **`explore` is the payload, and it's load-bearing — but 3–5× too heavy.** Removing it (C) cuts
-   payload **71%** (32K→9.2K) — confirming it's the bloat. But reads **double** (1.0→2.1) and turns
-   rise: the agent Reads files to recover the bodies explore had inlined. So explore isn't
-   redundant; it's the only one-call body-supplier, just delivered with a 32K sledgehammer.
-3. **`context` is the most redundant of the three — as a body-supplier.** Removing it on top of
-   explore (D vs C) left reads flat (2.08→2.00) but raised turns (9.0→10.5). It supplies no unique
-   bodies; it earns its keep only as a round-trip-saver (the composed orient call).
-4. **Removing tools makes flow questions SLOWER, not faster.** Turns climb monotonically
-   A→D (7.6→10.5) and duration with them — the Read + trace-follow-up round-trips cost more
-   wall-clock than the saved payload. Leaner payload ≠ faster.
-5. **`trace` is definitively NOT sufficient.** The non-flow probe (E) thrashed without the survey
-   tools — **20 turns, 72s** reconstructing an overview from search/node/files. Survey questions
-   need a survey tool; trace can't substitute.
+1. **转向适用于采用，而不是有效负载。** B 提升跟踪使用 **2/12 → 8/12**（以及 4/4
+真正的路径型问题——两个非采用者，flutter“什么小部件”和vapor“名称
+路线”，不是从→到问题）。但是 B 的有效负载（32.0K）比对照（28.8K）*大*
+而且速度稍微慢一些——因为代理调用trace **并且仍然调用explore**。转向
+添加跟踪跳跃而不取代探索转储。
+2. **`explore` 是有效载荷，它可以承重，但重了 3-5 倍。** 移除它 (C) 切割
+有效负载 **71%** (32K→9.2K) — 确认它是膨胀的。但读取 **double** (1.0→2.1) 并转动
+上升：代理读取文件以恢复已内联的主体探索。所以探索不是
+多余的;它是唯一一家一次性车身供应商，刚刚交付了一把 32K 大锤。
+3. **`context` 是三者中最多余的——作为车身供应商。** 将其删除
+探索（D vs C）左侧读数平坦（2.08→2.00）但升高转弯（9.0→10.5）。它不提供独特的
+尸体；它只有作为往返旅行的节省者（沉着的东方呼叫）才能获得生存。
+4. **移除工具会使流程问题变慢，而不是更快。** 转弯单调攀升
+A→D (7.6→10.5) 以及它们的持续时间 — 读取 + 跟踪跟踪往返成本更高
+挂钟比保存的有效负载。更精简的有效负载≠更快。
+5. **`trace` 绝对是不够的。** 非流量探头 (E) 在没有进行测量的情况下就受到了影响
+工具 — **20 轮，72 秒** 从搜索/节点/文件重建概述。调查问题
+需要一个调查工具；痕迹无法替代。
 
-## Verdict on the three design questions
+## 对三个设计问题的判决
 
-- **Do we need all three?** Yes — but for different reasons. trace = flow tool (real, under-adopted).
-  explore = the one-call body-supplier (load-bearing, over-heavy). context = round-trip-saving
-  opener (redundant for bodies, useful for orientation).
-- **Are they competing?** Yes: explore competes with trace and *wins by default* — even when steered,
-  the agent traces **and** explores, so the payload win never lands until explore is displaced.
-- **Could trace be all we need?** No. E rules it out for non-flow questions; C/D rule it out even
-  for flow (reads double without explore's bodies).
+- **我们需要全部三个吗？** 是的 - 但出于不同的原因。跟踪 = 流程工具（真实的，未充分采用）。
+explore = 一次性身体供应者（承重、超重）。上下文 = 往返节省
+开启者（对于身体来说是多余的，对于定向很有用）。
+- **他们在竞争吗？** 是的：探索与跟踪竞争并*默认获胜* - 即使在被引导时，
+代理跟踪**和**探索，因此有效负载获胜永远不会落地，直到探索被替换。
+- **trace 是否就是我们所需要的？** 不。E 排除了非流程问题； C/D 甚至排除它
+对于流程（在没有探索主体的情况下读取双倍）。
 
-**Three cheap fixes are now ruled out by data:** "trace is all we need" (false), "just steer to
-trace" (B: slower + bigger than control), and "remove explore" (C/D: more reads/turns, slower).
+**现在数据排除了三个廉价的修复方法：**“跟踪就是我们所需要的”（错误），“只需转向
+跟踪”（B：比控制更慢+更大）和“删除探索”（C/D：更多读取/转动，更慢）。
 
-## The fix the data points to → next experiment
+## 将数据点修复到→下一个实验
 
-The only path that wins: **make `trace` self-sufficient by inlining per-hop bodies** (capped per
-hop → still path-scoped) so one trace call supplies what explore does *and* what the Read fallback
-recovers — displacing both for flow questions. Keep **one** survey tool (context; demote explore to
-deep-survey, not the flow default) for the non-flow class E proved is load-bearing.
+唯一获胜的路径：**通过内联每跳主体使 `trace` 自给自足**（上限为每跳主体）
+hop → 仍然是路径范围），因此一个跟踪调用提供了 explore 的功能*以及 Read 后备的功能
+恢复——在心流问题上取代两者。保留 **一个** 调查工具（上下文；将探索降级为
+深度调查，不是流量默认）对于非流量E级证明是承重的。
 
-- **Experiment:** enriched body-inlining `trace` + steering vs control.
-- **Target:** C/D's lean payload (~7–9K, not 32K) **without** C/D's extra reads/turns, and **beat A
-  on wall-clock** (the bar B/C/D all failed).
-- **Metric:** payload, reads (must stay ≈ A's ~1.0, not rise to 2.0), turns, duration.
+- **实验：**丰富的车身内衬`trace` +转向与控制。
+- **目标：** C/D 的精简有效负载（~7–9K，而不是 32K）**没有** C/D 的额外读取/转动，并且 **击败 A
+挂钟**（B/C/D 条全部失败）。
+- **指标：** 有效负载、读取次数（必须保持 ≈ A 的 ~1.0，而不是升至 2.0）、匝数、持续时间。
 
-## Reproduce (ablation)
+## 再现（消融）
 
 ```bash
 bash scripts/agent-eval/arms-matrix.sh     # 52 runs into /tmp/arms (RUNS=2 default)
@@ -204,57 +204,57 @@ rustcodegraph agent-eval parse-arms     # the arm-comparison tables above
 
 ---
 
-# Validation — body-inlining trace (arm F)
+# 验证——身体内联轨迹（F 臂）
 
-The ablation pointed to one fix: make `trace` self-sufficient by inlining per-hop **bodies**
-(capped per hop → still path-scoped) so one trace call displaces both the explore dump and the
-Read fallback. Implemented in `handleTrace` (`sourceRangeAt`, 28 lines / 1200 chars per hop, with a
-`… (+N more lines)` marker). Arm **F** = arm B's surface (all tools + trace-first steering) run on
-the body-inlining build, so **F vs B isolates the enrichment**.
+消融指向一个修复：通过内联每跳**主体**使 `trace` 自给自足
+（每一跳上限 → 仍然是路径范围），因此一个跟踪调用会取代探索转储和
+阅读后备。以 `handleTrace`（`sourceRangeAt`，28 行/每跳 1200 个字符）实现，
+`… (+N more lines)` 标记）。手臂 **F** = 手臂 B 的表面（所有工具 + 轨迹优先转向）运行
+身体内联构建，因此 **F 与 B 隔离了丰富**。
 
-| arm | adoption | reads | cgOut | turns | dur | cost |
-|---|--:|--:|--:|--:|--:|--:|
-| A all/none | 2/12 | 1.25 | 28.8K | 7.6 | 38s | $0.390 |
-| B all/steer (thin trace) | 8/12 | 1.00 | 32.0K | 7.9 | 43s | $0.411 |
-| **F all/steer (body trace)** | 5/12 | **1.17** | **25.1K** | **6.8** | **37s** | **$0.348** |
-| C no-explore | 8/12 | 2.08 | 9.2K | 9.0 | 44s | $0.356 |
-| D trace-centric | 8/12 | 2.00 | 6.6K | 10.5 | 46s | $0.368 |
+| 手臂 | 采用 | 读 | 输出 | 轮流 | 杜尔 | 成本 |
+|---|--：|--：|--：|--：|--：|--：|
+| 全部/无 | 2/12 | 1.25 | 28.8K | 7.6 | 38秒 | 0.390 美元 |
+| B 全部/转向（细迹） | 8/12 | 1.00 | 32.0K | 7.9 | 43秒 | 0.411 美元 |
+| **全速/转向（车身轨迹）** | 5/12 | **1.17** | **25.1K** | **6.8** | **37秒** | **0.348 美元** |
+| C 无探索 | 8/12 | 2.08 | 9.2K | 9.0 | 44秒 | $0.356 |
+| D 以跟踪为中心 | 8/12 | 2.00 | 6.6K | 10.5 | 46秒 | $0.368 |
 
-**F is the best-balanced arm:** lowest turns (6.8), fastest (37s), cheapest, payload leaner than
-A/B — and it hits the target the ablation set: **C/D-class efficiency without C/D's Read penalty**
-(F reads 1.17 vs C/D's ~2.0). It gets there not by *removing* a tool but by giving the agent a
-complete trace so it *stops early*.
+**F 是最佳平衡臂：** 最低转弯 (6.8)、最快 (37 秒)、最便宜、有效负载比
+A/B — 并且达到了消融设定的目标：**C/D 级效率，没有 C/D 的读取惩罚**
+（F 读数为 1.17，而 C/D 读数约为 2.0）。它不是通过“移除”工具而是通过给代理一个
+完整的跟踪，因此它*提前停止*。
 
-**The win is clearest where trace connects** — excalidraw (the validated 6-hop path):
+**在跟踪连接处，胜利最为明显** — excalidraw（经过验证的 6 跳路径）：
 
-| arm | sequence | turns | reads | dur |
-|---|---|--:|--:|--:|
-| B (thin) | `trace → context → explore → Grep → Read` | 7 | 1 | 47s |
-| **F (body) r1** | `trace → context` | **4** | **0** | **31s** |
-| F (body) r2 | `trace → trace → explore` | 5 | 0 | 42s |
+| 手臂 | 顺序 | 轮流 | 读 | 杜尔 |
+|---|---|--：|--：|--：|
+| B（薄） | `trace → context → explore → Grep → Read` | 7 | 1 | 47秒 |
+| **F（主体）r1** | `trace → context` | **4** | **0** | **31秒** |
+| F（主体）r2 | `trace → trace → explore` | 5 | 0 | 42秒 |
 
-The body-trace ended the investigation in `trace → context` (run 1) — 0 reads, 0 grep, 0 explore.
+body-trace 结束了 `trace → context` 的调查（运行 1）——0 次读取、0 次 grep、0 次探索。
 
-**Connectivity is the cap.** On flows that break at *unbridged* dynamic dispatch — aspnet-realworld
-(MediatR `_mediator.Send → Handle`), vapor-spi (closure routing) — trace returns "no path" and the
-agent falls back to explore, so F ≈ B (no regression, no gain). F's aggregate lift is therefore
-**gated by dynamic-dispatch coverage**: the more flows the graph connects end-to-end, the more often
-the self-sufficient trace fires. (n=2/arm — adoption and per-repo numbers are noisy; excalidraw and
-spring-halo, the connecting repos, are 2/2 trace in both B and F.)
+**连接性是上限。** 在*未桥接*动态调度时中断的流 — aspnet-realworld
+(MediatR `_mediator.Send → Handle`)、vapor-spi (闭包路由) — 跟踪返回“无路径”并且
+代理回退探索，因此 F ≈ B（没有回归，没有增益）。因此 F 的总升力为
+**由动态调度覆盖率控制**：图表端到端连接的流量越多，频率越高
+自给自足的微火。 （n=2/arm — 采用率和每个回购协议的数​​字很嘈杂；excaldraw 和
+spring-halo，连接存储库，在 B 和 F 中都是 2/2 迹线。）
 
-## Verdict & ship list
+## 判决及发货清单
 
-1. **Ship the body-inlining trace** — strict improvement (best-balanced arm; clean 0-read/4-turn win
-   on connecting traces; no regression on non-connecting ones).
-2. **Strengthen the steering.** Arm A (shipped server-instructions, which *already* say "trace first
-   for flow") adopted trace only 2/12 — the guidance is too buried. The explicit
-   `--append-system-prompt` used in B–F lifted it. Port that into `server_instructions.rs` +
-   `instructions_template.rs` + `.cursor/rules/rustcodegraph.mdc` (house rule: all three together),
-   flow-gated so non-flow survey questions still go context/explore (arm E proved they must).
-3. **Next frontier to widen F's reach:** bridge more dynamic dispatch (MediatR/.NET, Vapor routing) —
-   every newly-connected flow converts an F≈B repo into an F-win repo.
+1. **交付身体内联轨迹** - 严格改进（最佳平衡手臂；干净的0读/4转获胜
+关于连接迹线；对非连接的没有回归）。
+2. **加强转向。** Arm A（已发送服务器指令，其中*已经*说“首先跟踪
+for flow”）只采用了trace 2/12——指导太隐蔽了。显式的
+B–F 中使用的 `--append-system-prompt` 将其举起。将其移植到 `server_instructions.rs` +
+`instructions_template.rs` + `.cursor/rules/rustcodegraph.mdc`（内部规则：三者一起），
+流程门控，因此非流程调查问题仍然需要进行上下文/探索（E 臂证明它们必须这样做）。
+3. **扩大 F 影响范围的下一个前沿：**桥接更加动态的调度（MediatR/.NET、Vapor 路由）—
+每个新连接的流都会将 F≈B 存储库转换为 F-win 存储库。
 
-## Reproduce (arm F)
+## 再现（F 臂）
 
 ```bash
 bash scripts/agent-eval/arms-F.sh          # 12 runs (RUNS=2); needs the body-inlining build
@@ -263,77 +263,77 @@ rustcodegraph agent-eval parse-arms     # F appears alongside A/B/C/D/E
 
 ---
 
-# Steering port — the negative result (arm G)
+# 转向端口 — 负结果（G 臂）
 
-F's win used `--append-system-prompt`, which real users don't get. Arm **G** = arm A's invocation
-(NO append-prompt) on a build where the steering was ported into the production channels
-(`server_instructions.rs` + the `context`/`trace` tool descriptions + `instructions_template.rs` +
-`.cursor/rules`). Three wording iterations, 12 runs each:
+F的胜利使用了`--append-system-prompt`，而真实用户是不会得到的。 Arm **G** = Arm A 的调用
+（无附加提示）在将转向系统移植到生产渠道的构建上
+（`server_instructions.rs` + `context`/`trace` 工具说明 + `instructions_template.rs` +
+`.cursor/rules`）。三个措辞迭代，每个运行 12 次：
 
-| arm | adoption | reads | payload | turns | dur |
-|---|--:|--:|--:|--:|--:|
-| A (shipped instructions) | 2/12 | 1.25 | 28.8K | 7.6 | **38s** |
-| F (body-trace + append-prompt) | 5/12 | **1.17** | 25.1K | 6.8 | **37s** |
-| G v1 — anti-explore wording | 6/12 | 2.08 | 13.8K | 8.8 | 46s |
-| G v2 — restore explore as fallback | 6/12 | 1.67 | 22.0K | 7.8 | 46s |
-| G v3 — restore context as opener | 6/12 | 2.08 | 11.7K | 8.9 | 46s |
+| 手臂 | 采用 | 读 | 有效负载 | 轮流 | 杜尔 |
+|---|--：|--：|--：|--：|--：|
+| A（发货说明） | 2/12 | 1.25 | 28.8K | 7.6 | **38秒** |
+| F（主体跟踪 + 附加提示） | 5/12 | **1.17** | 25.1K | 6.8 | **37秒** |
+| G v1 — 反探索措辞 | 6/12 | 2.08 | 13.8K | 8.8 | 46秒 |
+| G v2 — 恢复探索作为后备 | 6/12 | 1.67 | 22.0K | 7.8 | 46秒 |
+| G v3 — 恢复上下文作为开场白 | 6/12 | 2.08 | 11.7K | 8.9 | 46秒 |
 
-**Production-instruction steering does not reproduce F, and regresses the A baseline.** All three G
-variants pin at **~46s** (slower than A's 38s and F's 37s) with reads at 1.7–2.1 (vs A 1.25, F 1.17).
-Wording only shuffled the slack between Read and explore — v1 suppressed explore → Read; v2/v3
-restored explore → over-investigation — never landing F's lean `trace → context`.
+**生产指令指导不会重现 F，并回归 A 基线。** 所有三个 G
+变体固定在 **~46s**（比 A 的 38s 和 F 的 37s 慢），读数为 1.7–2.1（相对于 A 1.25、F 1.17）。
+措辞只是打乱了“阅读”和“探索”之间的间隙——v1 抑制了“探索”→“阅读”； v2/v3
+恢复探索→过度调查——从未登陆F的精益`trace → context`。
 
-**Two root causes:**
-1. **Salience.** The same trace-first wording works as a top-of-prompt `--append-system-prompt` (F)
-   but not as an MCP `initialize` instruction / tool description (G). An MCP server has no
-   higher-salience channel — this is an architectural limit, not a wording bug.
-2. **Forcing trace-first backfires where trace doesn't connect.** Steering pushed trace onto
-   MediatR (`_mediator.Send`) and Spring interface-DI (`@Autowired` iface → impl) flows, where trace
-   returns no-path; the forced trace is then a wasted round-trip *before* the fallback → slower.
-   The **unsteered** agent (A) is better-calibrated: it traces only when trace will obviously
-   connect (2/12) and explores otherwise.
+**两个根本原因：**
+1. **显着性。** 相同的跟踪优先措辞用作提示顶部 `--append-system-prompt` (F)
+但不作为 MCP `initialize` 指令/工具描述 (G)。 MCP 服务器没有
+更高显着性的通道——这是一个架构限制，而不是一个措辞错误。
+2. **在跟踪未连接的情况下强制跟踪优先会适得其反。**转向将跟踪推到
+MediatR (`_mediator.Send`) 和 Spring 接口-DI (`@Autowired` iface → impl) 流程，其中跟踪
+返回无路径；那么，在回退之前，强制跟踪就是一次浪费的往返→较慢。
+**非转向**代理（A）经过更好的校准：仅当跟踪明显时才进行跟踪
+连接 (2/12) 并探索其他方式。
 
-## Arm H — body-trace alone (the ship candidate) regresses
+## Arm H — 仅身体痕迹（候选舰船）回归
 
-The clean ship test: body-inlining trace + ORIGINAL instructions + no steering (= A's invocation,
-only the trace *tool* changed). H vs A isolates the body-trace feature with nothing else moving.
+干净的船测试：身体内联跟踪 + 原始指令 + 无转向（= A 的调用，
+仅跟踪*工具*发生了变化）。 H 与 A 隔离了身体痕迹特征，没有其他任何移动。
 
-| arm | adoption | reads | payload | turns | dur |
-|---|--:|--:|--:|--:|--:|
-| A (no body-trace) | 2/12 | 1.25 | 28.8K | 7.6 | **38s** |
-| H (body-trace, no steering) | 3/12 | 1.50 | 29.7K | 8.0 | **45s** |
-| F (body-trace + append-prompt) | 5/12 | 1.17 | 25.1K | 6.8 | 37s |
+| 手臂 | 采用 | 读 | 有效负载 | 轮流 | 杜尔 |
+|---|--：|--：|--：|--：|--：|
+| A（无尸体痕迹） | 2/12 | 1.25 | 28.8K | 7.6 | **38秒** |
+| H（车身轨迹，无转向） | 3/12 | 1.50 | 29.7K | 8.0 | **45秒** |
+| F（主体跟踪 + 附加提示） | 5/12 | 1.17 | 25.1K | 6.8 | 37秒 |
 
-**Body-trace alone does NOT beat A — it mildly regresses** (45s vs 38s). The sequences show why:
-unsteered, the agent treats trace as just one more call in its usual loop — excalidraw H was
-`context → trace → explore → node×3 → Grep → Read` (77s) — so the bigger body-trace payload is pure
-added cost, not offset by fewer follow-ups. The body-trace only pays off when the agent **leads with
-trace and stops after it**, which only the append-prompt (F) achieved.
+**单独的身体痕迹并不能击败 A——它会轻微退化**（45 秒与 38 秒）。序列显示了原因：
+在不受控制的情况下，代理将跟踪视为其通常循环中的又一个调用 - exalidraw H 是
+`context → trace → explore → node×3 → Grep → Read` (77s) — 因此更大的人体痕迹有效负载是纯粹的
+增加的成本，并不能被更少的后续行动所抵消。只有当特工 ** 领导时，身体追踪才会有回报
+跟踪并在它之后停止**，这只有附加提示（F）才能实现。
 
-## Final verdict
+## 最终判决
 
-The body-inlining trace is a real win (F) but its value is **entirely contingent on
-lead-with-and-stop-after-trace steering we cannot deliver through any production MCP channel**
-(append-prompt salience ≫ server-instructions / tool-descriptions; G failed three times). On its own
-(H) it regresses. So:
+身体内联跟踪是一个真正的胜利（F），但它的价值**完全取决于
+我们无法通过任何生产 MCP 渠道提供先导后停止转向**
+（附加提示显着性≫服务器指令/工具描述；G失败3次）。就其本身而言
+(H)它倒退。所以：
 
-- **SHIP: the `RUSTCODEGRAPH_MCP_TOOLS` allowlist** — independent, clean, validated.
-- **DON'T ship the body-inlining trace or the steering as-is** — measured neutral-to-negative
-  without a steering channel we don't have.
-- **The real lever is connectivity, not steering** — trace earns its keep only when flows connect
-  end-to-end; dynamic-dispatch synthesizers (MediatR/.NET, Spring interface-DI, Vapor closures) help
-  the *unsteered* agent, which already traces when trace will connect.
-- **One untested lever** to rescue the body-trace: steer via the trace tool's OWN OUTPUT (the
-  highest-salience channel — the agent reads it fresh, right at the decision point) with a strong
-  leading "complete flow — answer from this, don't explore" banner. Instructions/descriptions are
-  too far from the action; the tool result is not. Unproven; the only remaining shot at making the
-  body-trace pay off in production.
+- **SHIP：`RUSTCODEGRAPH_MCP_TOOLS` 白名单** — 独立、干净、经过验证。
+- **请勿按原样运送车身内衬迹线或转向装置** — 测量中性至负值
+如果没有转向通道，我们就没有。
+- **真正的杠杆是连接，而不是转向**——只有当流量连接时，跟踪才能发挥作用
+端到端；动态调度合成器（MediatR/.NET、Spring 接口-DI、Vapor 闭包）帮助
+*unsteered* 代理，它已经在跟踪何时连接。
+- **一个未经测试的杠杆**用于拯救身体追踪：通过追踪工具自己的输出（
+最显着的通道——智能体在决策点新鲜地读取它）具有很强的
+领先的“完整流程——从这里回答，不要探索”横幅。说明/描述是
+距离行动太远；工具结果不是。未经证实；剩下的唯一机会
+生产中的人体痕迹回报。
 
-measure-first paid off three times: it killed three cheap fixes in the ablation, stopped a steering
-change that would have shipped an ~8s/query regression (G), and stopped shipping the body-trace
-itself on a confounded assumption (H showed it needs steering we can't deliver).
+“措施优先”获得了三次回报：它在消融中消除了三个廉价的修复方法，停止了转向
+原本会发送约 8 秒/查询回归 (G) 的更改，并停止发送 body-trace
+本身基于一个令人困惑的假设（H表明它需要我们无法提供的指导）。
 
-## Reproduce (arm G)
+## 再现（G臂）
 
 ```bash
 ARM=G bash scripts/agent-eval/arms-F.sh    # production-instruction steering, no append-prompt
@@ -342,45 +342,45 @@ rustcodegraph agent-eval parse-arms
 
 ---
 
-# Arm I — sufficiency, not steering (the shippable win)
+# 第一臂——充足性，而不是转向（可交付的胜利）
 
-An LLM stops investigating when its context is *sufficient*, not when it's told to stop. So arm I
-makes the trace OUTPUT complete instead of steering — same invocation as H (original instructions,
-**no steering**), only the trace tool changed:
-1. **Hop bodies no longer clipped** at 28 lines (that clip is why H re-fetched `mutateElement`).
-2. **The destination's own callees are inlined** — the "last mile" the agent otherwise explores/Reads
-   for (excalidraw: `renderStaticScene → _renderStaticScene / renderStaticSceneThrottled`).
+法学硕士在其背景“足够”时停止调查，而不是在被告知停止时。所以手臂我
+使跟踪输出完成而不是转向 - 与 H 相同的调用（原始指令，
+**无转向**），仅跟踪工具发生了变化：
+1. **跳体不再在 28 行处被剪裁**（该剪裁就是 H 重新获取 `mutateElement` 的原因）。
+2. **目的地自己的被调用者是内联的** - 代理探索/读取的“最后一英里”
+对于（excalidraw：`renderStaticScene → _renderStaticScene / renderStaticSceneThrottled`）。
 
-| arm | adoption | reads | greps | payload | turns | dur | cost |
-|---|--:|--:|--:|--:|--:|--:|--:|
-| A baseline | 2/12 | 1.25 | 1.17 | 28.8K | 7.6 | 38s | $0.390 |
-| H body-trace alone | 3/12 | 1.50 | 0.42 | 29.7K | 8.0 | 45s | $0.398 |
-| **I body-trace + dest callees** | 2/12 | **1.17** | **0.25** | 27.2K | **7.0** | 39s | **$0.359** |
-| F body-trace + append-steer | 5/12 | 1.17 | 0.17 | 25.1K | 6.8 | 37s | $0.348 |
+| 手臂 | 采用 | 读 | 格雷普斯 | 有效负载 | 轮流 | 杜尔 | 成本 |
+|---|--：|--：|--：|--：|--：|--：|--：|
+| 基线 | 2/12 | 1.25 | 1.17 | 28.8K | 7.6 | 38秒 | 0.390 美元 |
+| H 单独体迹 | 3/12 | 1.50 | 0.42 | 29.7K | 8.0 | 45秒 | $0.398 |
+| **I body-trace + 目标被调用者** | 2/12 | **1.17** | **0.25** | 27.2K | **7.0** | 39秒 | **0.359 美元** |
+| F 身体追踪 + 追加转向 | 5/12 | 1.17 | 0.17 | 25.1K | 6.8 | 37秒 | $0.348 |
 
-**I ≥ A on every axis** (reads, greps, turns, cost down; wall-clock flat) and **≈ F on outcomes with
-zero steering** — despite *lower* trace adoption (2/12 vs F's 5/12). The destination-callees fix
-turned the body-trace from a net-negative (H, 45s) into a net-positive (I, 39s): one richer trace
-call now displaces the explore+node+Read follow-ups it used to trigger. excalidraw I-r2 was
-`context → trace → explore` — **0 reads, 5 turns**, stopped because the data was present. The residual
-reads (I-r1) are the `canvasNonce` data-flow — the def-use frontier the graph deliberately omits.
+**每个轴上的 I ≥ A**（读取、greps、转动、成本下降；挂钟平坦）并且 **≈ F 的结果
+零转向**——尽管跟踪采用率*较低（2/12 vs F 的 5/12）。目的地被调用者修复
+将身体痕迹从净负（H，45s）转变为净正（I，39s）：一种更丰富的痕迹
+现在调用取代了它用来触发的 explore+node+Read 后续操作。 exalidraw I-r2 是
+`context → trace → explore` — **0 次读取，5 圈**，因数据存在而停止。残差
+读取 (I-r1) 是 `canvasNonce` 数据流 - 图故意省略的默认使用边界。
 
-This confirms the thesis: **completeness stops the agent; steering doesn't.** Every steering arm
-(B/F append-prompt, G instructions) was either unshippable or a regression; the sufficiency arm (I)
-ships and needs no steering.
+这证实了这个论点：**完整性停止了代理；转向则不然。** 每个转向臂
+（B/F 追加提示，G 指令）要么无法发货，要么出现回归；充足臂（I）
+船舶无需操舵。
 
-## Revised final verdict (supersedes the arm-G/H verdict above)
+## 修订后的最终裁决（取代上面的 arm-G/H 裁决）
 
-- **SHIP: body-inlining trace + destination callees** (arm I) — ≥ A on all axes, no steering, no
-  regression; makes the self-sufficient-trace property real (one trace call answers the flow).
-- **SHIP: the `RUSTCODEGRAPH_MCP_TOOLS` allowlist** — independent, validated.
-- **DON'T ship steering** (instructions or tool descriptions) — three variants regressed; MCP can't
-  deliver append-prompt salience, and forcing trace where it doesn't connect backfires.
-- **Connectivity is the multiplier** — arm I helps most where the trace connects; MediatR/.NET,
-  Spring interface-DI, and Vapor closures are the next synthesizers, and they help the *unsteered*
-  agent (which already traces when trace will connect).
+- **SHIP：身体内联跟踪 + 目标被调用者**（臂 I）- ≥ 所有轴上的 A，无转向，无
+回归；使 self-sufficient-trace 属性成为真实的（一个跟踪调用应答流程）。
+- **SHIP：`RUSTCODEGRAPH_MCP_TOOLS` 白名单** — 独立、经过验证。
+- **不要运送转向**（说明或工具描述）- 三个变体回归； MCP不能
+提供附加提示显着性，并在不连接的地方强制跟踪会适得其反。
+- **连接性是乘数** — I 臂在走线连接处帮助最大； MediatR/.NET,
+Spring 接口-DI 和 Vapor 闭包是下一个合成器，它们帮助*unsteered*
+代理（当跟踪连接时它已经进行跟踪）。
 
-## Reproduce (arm I)
+## 复制（第一臂）
 
 ```bash
 ARM=I bash scripts/agent-eval/arms-F.sh    # body-trace + destination callees, no steering
@@ -389,37 +389,37 @@ rustcodegraph agent-eval parse-arms
 
 ---
 
-# Current-build with/without A/B — the 7 README repos (2026-05-24)
+# 当前版本包含/不包含 A/B — 7 个自述文件存储库 (2026-05-24)
 
-Re-ran the published README benchmark on the **current build** (all 7 repos freshly reindexed),
-same queries, **median of 4 runs/arm** (headless: rustcodegraph-only MCP vs empty MCP):
+在 **当前版本** 上重新运行已发布的 README 基准（所有 7 个存储库均已重新索引），
+相同的查询，**4 次运行/臂的中位数**（无头：仅限 rustcodegraph 的 MCP 与空 MCP）：
 
-| repo | time with→without | tools w→wo | tokens w→wo (saved) | cost w→wo (saved) |
-|---|---|--:|--:|--:|
-| vscode | 1m10s→2m26s | 8→55 | 601k→2.8M (78%) | $0.60→$0.80 (26%) |
-| excalidraw | 48s→2m58s | 3→79 | 344k→3.5M (90%) | $0.43→$0.90 (52%) |
-| django | 1m19s→1m38s | 9→19 | 739k→1.2M (36%) | $0.59→$0.67 (12%) |
-| tokio | 53s→3m2s | 4→53 | 379k→2.6M (86%) | $0.42→$2.41 (82%) |
-| okhttp | 42s→1m1s | 6→11 | 636k→730k (13%) | $0.47→$0.47 (2%) |
-| gin | 44s→1m0s | 6→10 | 444k→675k (34%) | $0.37→$0.47 (21%) |
-| alamofire | 1m17s→2m27s | 12→69 | 1.0M→2.8M (64%) | $0.61→$1.14 (47%) |
+| 回购协议 | 有→无的时间 | 工具 w→wo | 标记 w→wo （已保存） | 成本 w→wo （已保存） |
+|---|---|--：|--：|--：|
+| VSCode | 1米10秒→2米26秒 | 8→55 | 601k→280万（78%） | 0.60 美元→0.80 美元 (26%) |
+| 外画 | 48秒→2分58秒 | 3→79 | 344k→3.5M (90%) | 0.43 美元→0.90 美元 (52%) |
+| 姜戈 | 1分19秒→1分38秒 | 9→19 | 739k→120万（36%） | 0.59 美元→0.67 美元 (12%) |
+| 东京 | 53秒→3平方米 | 4→53 | 37.9万→260万（86%） | 0.42 美元→2.41 美元 (82%) |
+| 好的http | 42秒→1米1秒 | 6→11 | 636k→730k (13%) | 0.47 美元→0.47 美元 (2%) |
+| 杜松子酒 | 44s→1m0s | 6→10 | 444k→675k (34%) | 0.37 美元→0.47 美元 (21%) |
+| 阿拉莫费尔 | 1分17秒→2分27秒 | 12→69 | 100万→280万（64%） | 0.61 美元→1.14 美元 (47%) |
 
-**Average saved: 35% cost · 57% tokens · 46% time · 71% tool calls** — reproduces the published
-README headline (35% / 59% / 49% / 70%); the current build holds the benchmark with no regression.
+**平均节省：35% 成本 · 57% 代币 · 46% 时间 · 71% 工具调用** — 复制已发布的内容
+自述文件标题 (35% / 59% / 49% / 70%)；当前版本保持了基准，没有回归。
 
-**Cost is lower, not "flat"** (corrects the earlier note). But the **mechanism is volume, not
-cache-ability**: rustcodegraph answers in far fewer turns over a much smaller accumulated context, while
-the without-arm fans out across many more turns (55–79 tool calls on the big repos), each
-re-processing a large, growing context. The without-arm's token volume is *mostly* cheap cache-reads,
-which is why **token-count savings (57%) look bigger than cost savings (35%)**. Per-repo margin tracks
-how hard the without-arm thrashes that run (tokio blew up to $2.41/3m; django thrashed less).
+**成本较低，而不是“持平”**（更正之前的注释）。但**机制是数量，而不是
+缓存能力**：rustcodegraph 在较小的累积上下文中以更少的轮次回答，而
+没有手臂的人会在更多的回合中展开（55-79 个工具调用大型仓库），每个回合
+重新处理一个庞大的、不断增长的上下文。无臂的令牌量*大部分*是廉价的缓存读取，
+这就是为什么**令牌数量节省（57%）看起来比成本节省（35%）更大**。每个回购保证金跟踪
+无臂跑动的难度有多大（tokio 涨到了 2.41 美元/300 万美元；django 跑得更少）。
 
-**Measurement gotcha:** `result.usage` in this Claude Code version is the **last turn only**, not
-cumulative — using it under-counts tokens badly (an earlier excalidraw cut reported "−34% tokens"
-off this bug; the real figure is ~90%). Sum **per-turn assistant `usage`** for the true total.
-`total_cost_usd` and `duration_ms` are already cumulative/correct.
+**测量陷阱：** 此克劳德代码版本中的 `result.usage` 是 **仅最后一回合**，而不是
+累积 — 使用它会严重低估代币数量（早期的 exalidraw 削减报告称“−34% 代币”）
+关闭这个错误；实际数字约为 90%）。 **每回合助手 `usage`** 的总和为真实总数。
+`total_cost_usd` 和 `duration_ms` 已经累积/正确。
 
-Reproduce:
+复制：
 ```bash
 bash scripts/agent-eval/bench-readme.sh      # 7 repos × with/without × 4 runs (RUNS=4) → /tmp/ab-readme
 rustcodegraph agent-eval parse-bench-readme   # medians + % saved (summed per-turn tokens)

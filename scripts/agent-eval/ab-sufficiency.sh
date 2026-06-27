@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 针对真实理解问题做 with/without RustCodeGraph A/B，检验 explore/node 是否足够替代 `Read`。
+# 主要输入是已索引仓库和问题；主要副作用是复制仓库、运行多轮代理评估，并记录 WITH 分支实际读取了哪些文件。
 # Sufficiency A/B: on a real understanding/flow question, WHEN the agent uses
 # codegraph (explore/node), does it still Read? Premise under test: explore/node
 # return source WITH line numbers, so a Read should not be needed.

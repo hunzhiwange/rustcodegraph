@@ -4,6 +4,10 @@
 //! caller/callee/impact 和 affected files 都走同一份 SQLite 索引数据。
 
 use std::io::{self, Read};
+use std::path::Path;
+
+use rustcodegraph::mcp::tools::{ToolHandler, ToolResult};
+use serde_json::{Map, Value, json};
 
 use super::super::args::{
     command_path_arg, has_flag, option_value, path_option, positional_args, query_arg,
@@ -12,16 +16,16 @@ use super::super::args::{
 use super::super::storage::{
     EdgeDirection, QueryMatch, affected_files_for_changes, edge_matches_for_symbol,
     find_symbol_nodes, is_test_file, normalize_index_path, open_sqlite_database, query_nodes,
-    read_files, read_node_source, read_numbered_file_range,
+    read_files,
 };
 
 pub(crate) fn command_files(args: &[String]) -> Result<(), String> {
     let project_root = resolve_project_path(path_option(args).or_else(|| command_path_arg(args)));
-    let conn = open_sqlite_database(&project_root)?;
     let filter = option_value(args, "--filter").or_else(|| option_value(args, "-f"));
-    let files = read_files(&conn, filter.as_deref())?;
 
     if has_flag(args, "-j", "--json") {
+        let conn = open_sqlite_database(&project_root)?;
+        let files = read_files(&conn, filter.as_deref())?;
         println!(
             "{}",
             serde_json::to_string_pretty(&files).map_err(|err| err.to_string())?
@@ -29,10 +33,25 @@ pub(crate) fn command_files(args: &[String]) -> Result<(), String> {
         return Ok(());
     }
 
-    for file in &files {
-        println!("{}", file.path);
+    let mut tool_args = Map::new();
+    if let Some(filter) = filter.or_else(|| command_path_arg(args)) {
+        tool_args.insert("path".to_string(), json!(filter));
     }
-    Ok(())
+    if let Some(pattern) = option_value(args, "--pattern") {
+        tool_args.insert("pattern".to_string(), json!(pattern));
+    }
+    if let Some(format) = option_value(args, "--format") {
+        tool_args.insert("format".to_string(), json!(format));
+    }
+    if has_flag(args, "--no-metadata", "--no-metadata") {
+        tool_args.insert("includeMetadata".to_string(), json!(false));
+    }
+    insert_u64_arg(
+        &mut tool_args,
+        "maxDepth",
+        option_value(args, "--max-depth"),
+    );
+    print_mcp_tool_text("rustcodegraph_files", &project_root, tool_args)
 }
 
 pub(crate) fn command_query(args: &[String]) -> Result<(), String> {
@@ -40,15 +59,15 @@ pub(crate) fn command_query(args: &[String]) -> Result<(), String> {
         return Err("missing required <search> argument".to_owned());
     };
     let project_root = resolve_project_path(path_option(args));
-    let conn = open_sqlite_database(&project_root)?;
     let limit = option_value(args, "-l")
         .or_else(|| option_value(args, "--limit"))
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(10);
     let kind_filter = option_value(args, "-k").or_else(|| option_value(args, "--kind"));
-    let matches = query_nodes(&conn, &search, kind_filter.as_deref(), limit)?;
 
     if has_flag(args, "-j", "--json") {
+        let conn = open_sqlite_database(&project_root)?;
+        let matches = query_nodes(&conn, &search, kind_filter.as_deref(), limit)?;
         println!(
             "{}",
             serde_json::to_string_pretty(&matches).map_err(|err| err.to_string())?
@@ -56,58 +75,65 @@ pub(crate) fn command_query(args: &[String]) -> Result<(), String> {
         return Ok(());
     }
 
-    if matches.is_empty() {
-        println!("No symbols found for \"{search}\"");
-        return Ok(());
+    let mut tool_args = Map::new();
+    tool_args.insert("query".to_string(), json!(search));
+    tool_args.insert("limit".to_string(), json!(limit));
+    if let Some(kind) = kind_filter {
+        tool_args.insert("kind".to_string(), json!(kind));
     }
-    for node in &matches {
-        println!(
-            "{}  {}  {}:{}",
-            node.kind, node.name, node.file_path, node.start_line
-        );
-    }
-    Ok(())
+    print_mcp_tool_text("rustcodegraph_search", &project_root, tool_args)
 }
 
 pub(crate) fn command_node(args: &[String]) -> Result<(), String> {
     let project_root = resolve_project_path(path_option(args));
-    if let Some(file) = option_value(args, "-f").or_else(|| option_value(args, "--file")) {
-        // `node --file` 是调试索引内容的逃生口：绕过符号匹配，只按索引路径打印带行号源码。
-        let offset = option_value(args, "--offset")
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(1);
-        let limit = option_value(args, "--limit")
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(120);
-        let text = read_numbered_file_range(&project_root, &file, offset, limit)?;
-        println!("{text}");
-        return Ok(());
+    let file_hint = option_value(args, "-f").or_else(|| option_value(args, "--file"));
+    let symbol = query_arg(args).unwrap_or_default();
+    if symbol.trim().is_empty()
+        && let Some(file) = file_hint.as_deref()
+    {
+        let mut tool_args = Map::new();
+        tool_args.insert("file".to_string(), json!(file));
+        if has_flag(args, "--symbols-only", "--symbols-only") {
+            tool_args.insert("symbolsOnly".to_string(), json!(true));
+        }
+        insert_u64_arg(&mut tool_args, "offset", option_value(args, "--offset"));
+        insert_u64_arg(&mut tool_args, "limit", option_value(args, "--limit"));
+        if has_flag(args, "-j", "--json") {
+            let result = execute_mcp_tool("rustcodegraph_node", &project_root, tool_args);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&result).map_err(|err| err.to_string())?
+            );
+            return Ok(());
+        }
+        return print_mcp_tool_text("rustcodegraph_node", &project_root, tool_args);
     }
 
-    let Some(symbol) = query_arg(args) else {
+    if symbol.trim().is_empty() {
         return Err("missing required <name> argument".to_owned());
-    };
-    let conn = open_sqlite_database(&project_root)?;
-    let matches = find_symbol_nodes(&conn, &symbol)?;
+    }
     if has_flag(args, "-j", "--json") {
+        let conn = open_sqlite_database(&project_root)?;
+        let matches = find_symbol_nodes(&conn, &symbol)?;
         println!(
             "{}",
             serde_json::to_string_pretty(&matches).map_err(|err| err.to_string())?
         );
         return Ok(());
     }
-    if matches.is_empty() {
-        println!("No symbol found for \"{symbol}\"");
-        return Ok(());
+
+    let mut tool_args = Map::new();
+    tool_args.insert("symbol".to_string(), json!(symbol));
+    tool_args.insert("includeCode".to_string(), json!(true));
+    if let Some(file) = file_hint {
+        tool_args.insert("file".to_string(), json!(file));
     }
-    for node in matches.iter().take(result_limit(args, 5)) {
-        println!(
-            "{}  {}  {}:{}",
-            node.kind, node.name, node.file_path, node.start_line
-        );
-        println!("{}", read_node_source(&project_root, node, 20)?);
+    if has_flag(args, "--symbols-only", "--symbols-only") {
+        tool_args.insert("symbolsOnly".to_string(), json!(true));
     }
-    Ok(())
+    insert_u64_arg(&mut tool_args, "offset", option_value(args, "--offset"));
+    insert_u64_arg(&mut tool_args, "limit", option_value(args, "--limit"));
+    print_mcp_tool_text("rustcodegraph_node", &project_root, tool_args)
 }
 
 pub(crate) fn command_explore(args: &[String]) -> Result<(), String> {
@@ -120,34 +146,27 @@ pub(crate) fn command_explore(args: &[String]) -> Result<(), String> {
         return Err("missing required <query> argument".to_owned());
     }
     let project_root = resolve_project_path(path_option(args));
-    let conn = open_sqlite_database(&project_root)?;
     let limit = option_value(args, "--max-files")
         .or_else(|| option_value(args, "--limit"))
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(5);
-    // CLI explore 是 MCP explore 的轻量近似：先做符号搜索，再把命中的源码片段直接展开。
-    let matches = query_nodes(&conn, &terms, None, limit.max(1))?;
     if has_flag(args, "-j", "--json") {
+        let result = execute_mcp_tool(
+            "rustcodegraph_explore",
+            &project_root,
+            mcp_explore_args(&terms, limit),
+        );
         println!(
             "{}",
-            serde_json::to_string_pretty(&matches).map_err(|err| err.to_string())?
+            serde_json::to_string_pretty(&result).map_err(|err| err.to_string())?
         );
         return Ok(());
     }
-    if matches.is_empty() {
-        println!("No symbols found for \"{terms}\"");
-        return Ok(());
-    }
-    println!("# RustCodeGraph Explore: {terms}");
-    for node in &matches {
-        println!();
-        println!(
-            "## {} `{}` at {}:{}",
-            node.kind, node.name, node.file_path, node.start_line
-        );
-        println!("{}", read_node_source(&project_root, node, 30)?);
-    }
-    Ok(())
+    print_mcp_tool_text(
+        "rustcodegraph_explore",
+        &project_root,
+        mcp_explore_args(&terms, limit),
+    )
 }
 
 pub(crate) fn command_callers(args: &[String]) -> Result<(), String> {
@@ -155,10 +174,17 @@ pub(crate) fn command_callers(args: &[String]) -> Result<(), String> {
         return Err("missing required <symbol> argument".to_owned());
     };
     let project_root = resolve_project_path(path_option(args));
-    let conn = open_sqlite_database(&project_root)?;
     let limit = result_limit(args, 20);
-    let matches = edge_matches_for_symbol(&conn, &symbol, EdgeDirection::Incoming, 1, limit)?;
-    print_symbol_graph_matches(args, &matches, &symbol, "callers")
+    if has_flag(args, "-j", "--json") {
+        let conn = open_sqlite_database(&project_root)?;
+        let matches = edge_matches_for_symbol(&conn, &symbol, EdgeDirection::Incoming, 1, limit)?;
+        return print_symbol_graph_matches(args, &matches, &symbol, "callers");
+    }
+    print_mcp_tool_text(
+        "rustcodegraph_callers",
+        &project_root,
+        mcp_symbol_args(args, &symbol, limit, None),
+    )
 }
 
 pub(crate) fn command_callees(args: &[String]) -> Result<(), String> {
@@ -166,10 +192,17 @@ pub(crate) fn command_callees(args: &[String]) -> Result<(), String> {
         return Err("missing required <symbol> argument".to_owned());
     };
     let project_root = resolve_project_path(path_option(args));
-    let conn = open_sqlite_database(&project_root)?;
     let limit = result_limit(args, 20);
-    let matches = edge_matches_for_symbol(&conn, &symbol, EdgeDirection::Outgoing, 1, limit)?;
-    print_symbol_graph_matches(args, &matches, &symbol, "callees")
+    if has_flag(args, "-j", "--json") {
+        let conn = open_sqlite_database(&project_root)?;
+        let matches = edge_matches_for_symbol(&conn, &symbol, EdgeDirection::Outgoing, 1, limit)?;
+        return print_symbol_graph_matches(args, &matches, &symbol, "callees");
+    }
+    print_mcp_tool_text(
+        "rustcodegraph_callees",
+        &project_root,
+        mcp_symbol_args(args, &symbol, limit, None),
+    )
 }
 
 pub(crate) fn command_impact(args: &[String]) -> Result<(), String> {
@@ -177,14 +210,22 @@ pub(crate) fn command_impact(args: &[String]) -> Result<(), String> {
         return Err("missing required <symbol> argument".to_owned());
     };
     let project_root = resolve_project_path(path_option(args));
-    let conn = open_sqlite_database(&project_root)?;
     let depth = option_value(args, "-d")
         .or_else(|| option_value(args, "--depth"))
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(2);
     let limit = result_limit(args, 50);
-    let matches = edge_matches_for_symbol(&conn, &symbol, EdgeDirection::Incoming, depth, limit)?;
-    print_symbol_graph_matches(args, &matches, &symbol, "impact")
+    if has_flag(args, "-j", "--json") {
+        let conn = open_sqlite_database(&project_root)?;
+        let matches =
+            edge_matches_for_symbol(&conn, &symbol, EdgeDirection::Incoming, depth, limit)?;
+        return print_symbol_graph_matches(args, &matches, &symbol, "impact");
+    }
+    print_mcp_tool_text(
+        "rustcodegraph_impact",
+        &project_root,
+        mcp_symbol_args(args, &symbol, limit, Some(depth)),
+    )
 }
 
 pub(crate) fn command_affected(args: &[String]) -> Result<(), String> {
@@ -282,4 +323,72 @@ fn print_symbol_graph_matches(
         );
     }
     Ok(())
+}
+
+fn mcp_explore_args(query: &str, max_files: usize) -> Map<String, Value> {
+    let mut args = Map::new();
+    args.insert("query".to_string(), json!(query));
+    args.insert("maxFiles".to_string(), json!(max_files.max(1)));
+    args
+}
+
+fn mcp_symbol_args(
+    cli_args: &[String],
+    symbol: &str,
+    limit: usize,
+    depth: Option<usize>,
+) -> Map<String, Value> {
+    let mut args = Map::new();
+    args.insert("symbol".to_string(), json!(symbol));
+    args.insert("limit".to_string(), json!(limit.max(1)));
+    if let Some(file) = option_value(cli_args, "--file").or_else(|| option_value(cli_args, "-f")) {
+        args.insert("file".to_string(), json!(file));
+    }
+    if let Some(depth) = depth {
+        args.insert("depth".to_string(), json!(depth.max(1)));
+    }
+    args
+}
+
+fn insert_u64_arg(args: &mut Map<String, Value>, name: &str, raw: Option<String>) {
+    if let Some(value) = raw.and_then(|value| value.parse::<u64>().ok()) {
+        args.insert(name.to_string(), json!(value));
+    }
+}
+
+fn print_mcp_tool_text(
+    tool_name: &str,
+    project_root: &Path,
+    args: Map<String, Value>,
+) -> Result<(), String> {
+    let result = execute_mcp_tool(tool_name, project_root, args);
+    let text = tool_result_text(&result);
+    if result.is_error == Some(true) {
+        return Err(text
+            .strip_prefix("Error: ")
+            .unwrap_or(text.as_str())
+            .to_string());
+    }
+    println!("{text}");
+    Ok(())
+}
+
+fn execute_mcp_tool(tool_name: &str, project_root: &Path, args: Map<String, Value>) -> ToolResult {
+    let root = project_root.to_string_lossy().into_owned();
+    let mut handler = ToolHandler::new(true);
+    handler.set_default_project_hint(root.clone());
+    handler.set_default_project_root(root);
+    let result = handler.execute_for_cli(tool_name, &args);
+    handler.close_all();
+    result
+}
+
+fn tool_result_text(result: &ToolResult) -> String {
+    result
+        .content
+        .iter()
+        .filter(|content| content.content_type == "text")
+        .map(|content| content.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
 }

@@ -8,7 +8,7 @@
 
 **100% 本地 · Rust 原生 · 面向 AI 编程代理的代码知识图谱**
 
-RustCodeGraph 基于 [hunzhiwange/rustcodegraph](https://github.com/hunzhiwange/rustcodegraph) 的思路和使用经验，并用 Rust 重新实现。它保留了“让 AI 代理直接查询代码结构，而不是反复 grep/Read 探索文件”的核心目标，同时把解析、索引、CLI、MCP 服务和本地数据库运行时迁移为原生 Rust 实现。
+这个仓库里的 RustCodeGraph 是基于 CodeGraph 修改而来，并围绕当前的 Rust CLI 与 MCP 工作流继续演进。它保留了“让 AI 代理直接查询代码结构，而不是反复 grep/Read 探索文件”的核心思路，但这里的文档、安装方式和产品说明都以当前 `rustcodegraph` 项目为准，不再沿用旧的 CodeGraph 描述。
 
 [英文文档](docs/user/README.md)
 

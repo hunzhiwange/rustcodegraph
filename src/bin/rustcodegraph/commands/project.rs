@@ -6,15 +6,17 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use rustcodegraph::directory::{get_code_graph_dir, remove_directory};
 use rustcodegraph::extraction::index::{hash_content, scan_directory};
+use rustcodegraph::mcp::engine::parse_debounce_env;
 use serde_json::json;
 
 use super::super::args::{
-    CLI_NAME, command_path_arg, guard_safe_root, has_flag, print_index_summary, print_sync_summary,
-    resolve_init_path, resolve_project_path,
+    CLI_NAME, command_path_arg, guard_safe_root, has_flag, option_value, path_option,
+    print_index_summary, print_sync_summary, resolve_init_path, resolve_project_path,
 };
 use super::super::indexer::build_sqlite_index;
 use super::super::storage::{
@@ -123,6 +125,86 @@ pub(crate) fn command_sync(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn command_watch(args: &[String]) -> Result<(), String> {
+    let project_root = resolve_project_path(path_option(args).or_else(|| command_path_arg(args)));
+    guard_safe_root(&project_root, args)?;
+
+    if !is_sqlite_initialized(&project_root) {
+        return Err(format!(
+            "RustCodeGraph not initialized in {}. Run \"{CLI_NAME} init -i\" first.",
+            project_root.display()
+        ));
+    }
+
+    let debounce_ms = watch_debounce_ms(args)?;
+    let mut graph = rustcodegraph::CodeGraph::open(
+        &project_root,
+        rustcodegraph::OpenOptions {
+            sync: false,
+            read_only: false,
+        },
+    )
+    .map_err(|err| err.message().to_owned())?;
+
+    let sync_result = graph.sync(rustcodegraph::IndexOptions::default());
+    print_sync_summary(&sync_result);
+
+    let started = graph.watch(rustcodegraph::WatchOptions { debounce_ms });
+    graph.wait_until_watcher_ready(Some(10_000));
+    if !started {
+        let reason = graph
+            .get_watcher_degraded_reason()
+            .unwrap_or_else(|| "watcher backend failed to start".to_owned());
+        graph.close();
+        return Err(format!("failed to start file watcher: {reason}"));
+    }
+
+    let debounce_ms = debounce_ms.unwrap_or(2000);
+    println!(
+        "Watching {} for changes (debounce {}ms). Press Ctrl-C to stop.",
+        project_root.display(),
+        debounce_ms
+    );
+
+    let mut last_degraded_reason = None::<String>;
+    let mut last_pending_paths = Vec::<String>::new();
+    loop {
+        let degraded_reason = graph.get_watcher_degraded_reason();
+        if degraded_reason != last_degraded_reason {
+            if let Some(reason) = &degraded_reason {
+                eprintln!("warning: file watcher degraded: {reason}");
+            }
+            last_degraded_reason = degraded_reason;
+        }
+        let pending_paths = graph
+            .get_pending_files()
+            .into_iter()
+            .map(|pending| pending.path)
+            .collect::<Vec<_>>();
+        if pending_paths != last_pending_paths {
+            if pending_paths.is_empty() && !last_pending_paths.is_empty() {
+                println!("Auto-sync caught up.");
+            } else if !pending_paths.is_empty() {
+                let preview = pending_paths
+                    .iter()
+                    .take(3)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let suffix = if pending_paths.len() > 3 { ", ..." } else { "" };
+                println!(
+                    "Detected {} pending file(s): {}{}",
+                    pending_paths.len(),
+                    preview,
+                    suffix
+                );
+            }
+            last_pending_paths = pending_paths;
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+}
+
 pub(crate) fn command_uninit(args: &[String]) -> Result<(), String> {
     let project_root = resolve_project_path(command_path_arg(args));
     if !has_flag(args, "-f", "--force") {
@@ -200,6 +282,22 @@ fn detect_cli_sync_changes(project_root: &Path) -> Result<rustcodegraph::Changed
     changes.modified.sort();
     changes.removed.sort();
     Ok(changes)
+}
+
+fn watch_debounce_ms(args: &[String]) -> Result<Option<u64>, String> {
+    if let Some(raw) = option_value(args, "--debounce-ms") {
+        let Some(parsed) = parse_debounce_env(Some(raw.as_str())) else {
+            return Err(format!(
+                "invalid --debounce-ms value `{raw}`; expected an integer between 100 and 60000"
+            ));
+        };
+        return Ok(Some(parsed));
+    }
+    Ok(parse_debounce_env(
+        std::env::var("RUSTCODEGRAPH_WATCH_DEBOUNCE_MS")
+            .ok()
+            .as_deref(),
+    ))
 }
 
 pub(crate) fn command_status(args: &[String]) -> Result<(), String> {

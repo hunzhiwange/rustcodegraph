@@ -1,155 +1,155 @@
-# Scope: Template-markup parser (Razor / Blazor / Thymeleaf)
+# 范围：模板标记解析器（Razor / Blazor / Thymeleaf）
 
-Status: **P1+P2+@code IMPLEMENTED** (commits 59b8de2 directives/tags, 90c5f39 @code
-delegation) on `feat/cross-language-impact-coverage`. Razor/Blazor markup is parsed
-(`src/extraction/razor-extractor.ts`). Remaining: `@using` namespace disambiguation
-for DTO-vs-entity name collisions (the residual ASP.NET gap), and Thymeleaf/Django
-(P4, deferred — weak code links). Authored 2026-06-04.
+状态：**P1+P2+@code 已实施**（提交 59b8de2 指令/标签、90c5f39 @code
+代表团）在 `feat/cross-language-impact-coverage` 上。 Razor/Blazor 标记已解析
+(`src/extraction/razor-extractor.ts`)。剩余：`@using` 命名空间消歧
+对于 DTO-vs-entity 名称冲突（剩余的 ASP.NET 间隙）和 Thymeleaf/Django
+（P4，延迟 - 弱代码链接）。作者于 2026 年 6 月 4 日。
 
-## Problem
+## 问题
 
-The impact graph is built from code the engine parses. **Template markup is not
-parsed**, so any code-behind, component, view-model, or DTO that is referenced
-*only* from markup looks like it has no in-repo dependent. On convention-heavy
-frameworks this is the dominant residual gap after framework-entry exclusions:
+影响图是根据引擎解析的代码构建的。 **模板标记不是
+已解析**，因此引用的任何代码隐藏、组件、视图模型或 DTO
+*仅*从标记看来它没有依赖于回购协议。注重惯例
+框架这是排除框架条目后的主要剩余差距：
 
-| Framework | App | FAIR coverage (entries excluded) | Residual cause |
+| 框架 | 应用程序 | FAIR 覆盖范围（不包括条目） | 残留原因 |
 |---|---|---|---|
-| ASP.NET | eShopOnWeb | **77.2%** (115/149) | Razor `.cshtml` + Blazor `.razor` reference `.cs` we don't parse |
-| Spring | petclinic | 65.2% | mostly Spring Data proxies + JPA, **not** templates (Thymeleaf links are weak) |
-| Django | django-realworld | 74.1% | signals / DRF / string-config, **not** templates |
+| 网络平台 | 网上网上商店 | **77.2%** (115/149) | Razor `.cshtml` + Blazor `.razor` 参考 `.cs` 我们不解析 |
+| 春天 | 宠物诊所 | 65.2% | 主要是 Spring Data 代理 + JPA，**不是**模板（Thymeleaf 链接很弱） |
+| 姜戈 | Django-真实世界 | 74.1% | 信号/DRF/字符串配置，**不是**模板 |
 
-**This feature is primarily an ASP.NET (Razor + Blazor) win.** Thymeleaf and Django
-templates link to code only weakly (template→template fragments + fuzzy
-model-attribute strings), and those frameworks' real gaps are elsewhere — so they
-are explicitly lower priority here.
+**此功能主要是 ASP.NET (Razor + Blazor) 的胜利。** Thymeleaf 和 Django
+模板仅弱链接到代码（模板→模板片段+模糊
+模型属性字符串），而这些框架的真正差距在其他地方 - 所以它们
+这里的优先级明显较低。
 
-### Quantified target (eShopOnWeb, the 34 residual zeros after entry-exclusion)
+### 量化目标（eShopOnWeb，排除进入后的34个剩余零）
 
-- **~20 markup-coverable** by this feature:
-  - 5 MVC `ViewModels/*` ← Razor `@model X`
-  - 7 `BlazorShared/Models/*` (DTOs) ← Blazor `@bind` / component params
-  - 6 `BlazorAdmin/*` C# components ← Blazor `<Component/>` tags
-  - 1 `BasketComponent` ViewComponent ← `<vc:basket>` / `Component.InvokeAsync`
-  - 1 Razor page helper
-- **~13 NOT covered** (separate frontier — reflection/proxy + value-reads): AutoMapper
-  `MappingProfile`, Swagger `CustomSchemaFilters`/`ImageValidators`, `ExceptionMiddleware`,
-  health checks, `Constants` (static-member reads), `Buyer` entity.
+- **~20 个标记可通过此功能覆盖**：
+  - 5 MVC `ViewModels/*` ← 剃刀 `@model X`
+  - 7 `BlazorShared/Models/*` (DTO) ← Blazor `@bind` / 组件参数
+  - 6 `BlazorAdmin/*` C# 组件 ← Blazor `<Component/>` 标签
+  - 1 `BasketComponent` 视图组件 ← `<vc:basket>` / `Component.InvokeAsync`
+  - 1 Razor 页面助手
+- **~13 未涵盖**（单独的边界 - 反射/代理 + 值读取）：AutoMapper
+`MappingProfile`、招摇 `CustomSchemaFilters`/`ImageValidators`、`ExceptionMiddleware`、
+运行状况检查、`Constants`（静态成员读取）、`Buyer` 实体。
 
-**Honest ceiling: ASP.NET ~77% → ~90%**, not 95%. The last ~10% is reflection/proxy
-(AutoMapper, Swagger, DI/middleware registration) + C# static-const reads — a
-*separate* feature (reflection modeling + extending the static-member pass to C#).
+**诚实的上限：ASP.NET ~77% → ~90%**，而不是 95%。最后~10% 是反射/代理
+（AutoMapper、Swagger、DI/中间件注册）+ C# static-const 读取 — a
+*单独的*功能（反射建模+将静态成员传递扩展到C#）。
 
-## Reference patterns to extract (prioritized)
+## 要提取的参考模式（优先）
 
-| Pri | Format | Markup construct | Edge to emit | Resolves to |
+| 普里 | 格式 | 标记构造 | 边缘发射 | 决心 |
 |---|---|---|---|---|
-| P1 | Razor `.cshtml`/`.razor` | `@model Foo` / `@inherits X<Foo>` | `references` | the model/VM class `Foo` |
-| P1 | Razor/Blazor | `@inject IBar bar` | `references` | the service type `IBar` |
-| P2 | Blazor `.razor` | `<MyComponent .../>` (PascalCase element) | `references` | component class (`.razor` or `.cs : ComponentBase`) |
-| P2 | Blazor `.razor` | `@typeof(MainLayout)`, `@inherits LayoutBase` | `references` | the type |
-| P3 | Razor `.cshtml` | `<partial name="_X"/>`, `<vc:basket>`, `Component.InvokeAsync("X")` | `references` | the partial view / `XViewComponent` |
-| P3 | Razor `.cshtml` | `asp-page="./Register"`, `asp-controller`/`asp-action` | `references` | the page / controller action |
-| P4 (defer) | Thymeleaf `.html` | `th:replace="~{frag :: x}"` | `references` | template fragment (template→template only) |
-| P4 (defer) | Django `.html` | `{% extends %}` / `{% include %}` / `{% url 'n' %}` | `references` | template / named route |
+| P1 | 剃须刀 `.cshtml`/`.razor` | `@model Foo` / `@inherits X<Foo>` | `references` | 型号/VM 类别 `Foo` |
+| P1 | 剃刀/刀片 | `@inject IBar bar` | `references` | 服务类型 `IBar` |
+| P2 | 开拓者`.razor` | `<MyComponent .../>`（帕斯卡命名法元素） | `references` | 组件类别（`.razor` 或 `.cs : ComponentBase`） |
+| P2 | 开拓者`.razor` | `@typeof(MainLayout)`、`@inherits LayoutBase` | `references` | 类型 |
+| P3 | 剃须刀`.cshtml` | `<partial name="_X"/>`、`<vc:basket>`、`Component.InvokeAsync("X")` | `references` | 局部视图 / `XViewComponent` |
+| P3 | 剃须刀`.cshtml` | `asp-page="./Register"`、`asp-controller`/`asp-action` | `references` | 页面/控制器操作 |
+| P4（推迟） | 百里香叶 `.html` | `th:replace="~{frag :: x}"` | `references` | 模板片段（模板→仅模板） |
+| P4（推迟） | 姜戈 `.html` | `{% extends %}` / `{% include %}` / `{% url 'n' %}` | `references` | 模板/命名路线 |
 
-`asp-for="Prop"`, `th:field="*{prop}"` (property-string bindings) are the data-flow
-frontier — **out of scope** (would need model-type inference; low value, high noise).
+`asp-for="Prop"`、`th:field="*{prop}"`（属性字符串绑定）是数据流
+前沿——**超出范围**（需要模型类型推理；低值，高噪声）。
 
-## Architecture — follow the existing standalone-extractor pattern
+## 架构——遵循现有的独立提取器模式
 
-The engine already has non-tree-sitter extractors (`svelte-extractor.ts`,
-`vue-extractor.ts`, `liquid-extractor.ts`): a class taking `(filePath, source)`,
-returning `{ nodes, references }`, wired in two places. Mirror exactly:
+该引擎已经具有非树木保护提取器（`svelte-extractor.ts`，
+`vue-extractor.ts`、`liquid-extractor.ts`)：采用 `(filePath, source)` 的类，
+返回 `{ nodes, references }`，在两个地方接线。准确镜像：
 
-1. **`src/extraction/grammars.ts`** — map extensions to a synthetic language:
-   `.cshtml`/`.razor` → `'razor'`, (later) `.html` under `templates/` → `'thymeleaf'`.
-   (Django `.html` is ambiguous with plain HTML — gate on a `templates/` path or a
-   `{% %}`/`{{ }}` content sniff, like the framework resolvers do.)
-2. **`src/extraction/tree-sitter.ts`** — dispatch by extension to a new
-   `RazorExtractor` (and `ThymeleafExtractor`), exactly as `SvelteExtractor` is
-   dispatched (~line 4025).
-3. **`src/extraction/razor-extractor.ts`** (new) — regex/line scan (markup is
-   highly stylized; no grammar needed, same as Liquid/Svelte template scanning):
-   - Emit ONE `component` node for the file (so `.razor` components are linkable as
-     `<X/>` targets and the file is a graph citizen).
-   - Emit `references` per the P1–P3 patterns above, `fromNodeId` = the file/component
-     node, `referenceKind: 'references'`, `language: 'razor'`.
-   - **Code-behind link:** a `Foo.razor` + `Foo.razor.cs` (partial class) — emit a
-     `references` (or rely on same-basename) so the markup's refs also credit the
-     code-behind. (eShop's Blazor components are plain `.cs : ComponentBase`, named
-     `<ToastComponent/>` → resolves by class name; the `.razor.cs` partial case is
-     the other shape.)
+1. **`src/extraction/grammars.ts`** — 将扩展映射到合成语言：
+`.cshtml`/`.razor` → `'razor'`，（稍后）`templates/` 下的 `.html` → `'thymeleaf'`。
+（Django `.html` 与纯 HTML 不明确 — `templates/` 路径上的门或
+`{% %}`/`{{ }}` 内容嗅探，就像框架解析器所做的那样。）
+2. **`src/extraction/tree-sitter.ts`** — 通过扩展分派到新的
+`RazorExtractor`（和 `ThymeleafExtractor`），与 `SvelteExtractor` 完全相同
+已发送（~第 4025 行）。
+3. **`src/extraction/razor-extractor.ts`**（新） - 正则表达式/行扫描（标记为
+高度风格化；不需要语法，与 Liquid/Svelte 模板扫描相同）：
+   - 为文件发出一个 `component` 节点（因此 `.razor` 组件可链接为
+`<X/>` 目标并且该文件是图公民）。
+   - 根据上面的 P1–P3 模式发出 `references`，`fromNodeId` = 文件/组件
+节点，`referenceKind: 'references'`，`language: 'razor'`。
+   - **代码隐藏链接：** a `Foo.razor` + `Foo.razor.cs`（部分类） - 发出
+`references`（或依赖相同的基本名称），因此标记的参考文献也相信
+代码隐藏。 （eShop 的 Blazor 组件是普通的 `.cs : ComponentBase`，名为
+`<ToastComponent/>` → 按类名解析； `.razor.cs` 部分情况是
+另一种形状。）
 
-**Resolution: no new resolver needed.** The emitted refs are ordinary `references`
-to a class/component by name; the existing name-matcher resolves them (`@model
-RegisterModel` → class `RegisterModel`; `<ToastComponent/>` → class `ToastComponent`).
-Apply the **same cross-family language gate** already in place — a `razor` ref must
-resolve to a `csharp` symbol, so add `razor` to the `web`/dotnet family or treat
-`razor`↔`csharp` as same-family (otherwise the gate from commit 082353e drops it).
-**This is the one resolver-side change** and must be done or every edge is gated away.
+**分辨率：不需要新的解析器。**发出的引用是普通的 `references`
+按名称到类/组件；现有的名称匹配器可以解析它们（`@model
+RegisterModel` → class `RegisterModel`; `<ToastComponent/>` → class `ToastComponent`)。
+应用已经到位的**相同的跨家庭语言门** - 必须有 `razor` 参考
+解析为 `csharp` 符号，因此将 `razor` 添加到 `web`/dotnet 系列或处理
+`razor`↔`csharp` 作为同族（否则来自提交 082353e 的门会丢弃它）。
+**这是一个解析器端的更改**，必须完成，否则每个边缘都会被关闭。
 
-## Node/edge shape & invariants
+## 节点/边形状和不变量
 
-- +1 `component` node per template file (real new symbol — like `.svelte`/`.vue`).
-  Node count grows by the template-file count only; **no per-tag node explosion**
-  (component tags become `references` edges, not nodes).
-- All edges are `references` (counted by impact / `affected` / `getFileDependents`,
-  not by `callers`/`callees` — matches how `route`/`component` edges already behave).
-- Idempotent re-index; node count stable across re-runs.
+- 每个模板文件 +1 `component` 节点（真正的新符号 — 如 `.svelte`/`.vue`）。
+节点数量仅随模板文件数量增长； **没有每个标签节点爆炸**
+（组件标签变成 `references` 边，而不是节点）。
+- 所有边均为`references`（按冲击力计算/`affected`/`getFileDependents`，
+不是由 `callers`/`callees` — 匹配 `route`/`component` 边已经表现的方式）。
+- 幂等重新索引；重新运行后节点数保持稳定。
 
-## Phasing
+## 定相
 
-- **P1 (highest value/effort ratio):** Razor `@model` + `@inject` for `.cshtml` AND
-  `.razor`. Covers the 5 ViewModels + injected services. + the resolver family-gate fix.
-- **P2:** Blazor `<PascalComponent/>` tags + `@typeof`/`@inherits` + code-behind link.
-  Covers the 6 Blazor `.cs` components + the 7 DTOs (via component params/`@bind`).
-- **P3:** Razor `<partial>` / `<vc:>` / `Component.InvokeAsync` / `asp-page`.
-- **P4 (defer / probably skip):** Thymeleaf + Django templates — weak code links,
-  low coverage payoff; revisit only if a Thymeleaf/Django app is a priority.
+- **P1（最高价值/努力比）：** Razor `@model` + `@inject` for `.cshtml` AND
+`.razor`。涵盖 5 个 ViewModel + 注入服务。 + 解析器家族门修复。
+- **P2：** Blazor `<PascalComponent/>` 标签 + `@typeof`/`@inherits` + 代码隐藏链接。
+涵盖 6 个 Blazor `.cs` 组件 + 7 个 DTO（通过组件 params/`@bind`）。
+- **P3：** 剃须刀 `<partial>` / `<vc:>` / `Component.InvokeAsync` / `asp-page`。
+- **P4（推迟/可能跳过）：** Thymeleaf + Django 模板 - 弱代码链接，
+低覆盖回报；仅当 Thymeleaf/Django 应用程序优先时才重新访问。
 
-## Edge cases & risks
+## 边缘案例和风险
 
-- **PascalCase tag vs HTML element:** only `[A-Z]`-initial tags are Blazor components
-  (HTML is lowercase) — safe discriminator. Skip known framework components
-  (`<Router>`, `<Found>`, `<LayoutView>`, `<RouteView>`, `<CascadingValue>`) via a
-  builtin set, or just let them fail to resolve (no false edge — they're not in-repo).
-- **`_Imports.razor` `@using`:** namespace imports, not code refs — ignore (or emit
-  `imports` to the namespace, low value).
-- **Generic components `<Grid TItem="CatalogItem">`:** capture the type-arg as a
-  `references` to `CatalogItem` (bonus DTO coverage).
-- **Name collisions:** component/model names are usually unique; rely on the
-  name-matcher's existing proximity scoring. Same-named class in another language is
-  blocked by the family gate.
-- **Razor `@{ ... }` C# blocks:** contain real C# (calls, `new`) — P-future; regex
-  scanning the C# inside markup is noisy. Defer (the directives above are the wins).
-- **`.razor` is NOT `.cs`:** must add to `grammars.ts` + the indexer's include globs
-  (verify `.razor`/`.cshtml` aren't in a default-exclude).
+- **PascalCase 标签与 HTML 元素：** 只有 `[A-Z]`-初始标签是 Blazor 组件
+（HTML 为小写）— 安全鉴别器。跳过已知的框架组件
+（`<Router>`、`<Found>`、`<LayoutView>`、`<RouteView>`、`<CascadingValue>`）通过
+内置集，或者只是让它们无法解析（没有错误边缘 - 它们不在回购中）。
+- **`_Imports.razor` `@using`:** 命名空间导入，而不是代码引用 — 忽略（或发出
+`imports` 到命名空间，低值）。
+- **通用组件 `<Grid TItem="CatalogItem">`:** 将 type-arg 捕获为
+`references` 到 `CatalogItem`（额外的 DTO 覆盖范围）。
+- **名称冲突：**组件/模型名称通常是唯一的；依靠
+名称匹配器现有的邻近度评分。另一种语言的同名类是
+被家族大门挡住。
+- **Razor `@{ ... }` C# 块：** 包含真正的 C#（调用，`new`） — P-future；正则表达式
+扫描 C# 内部标记很嘈杂。推迟（上面的指令是胜利）。
+- **`.razor` 不是 `.cs`：** 必须添加到 `grammars.ts` + 索引器的包含 glob
+（验证 `.razor`/`.cshtml` 不在默认排除中）。
 
-## Validation (per the engine's methodology)
+## 验证（根据引擎的方法）
 
-1. Build `RazorExtractor`; unit tests in `__tests__/extraction.test.ts` (a `.cshtml`
-   with `@model X` covers `X`; a `.razor` with `<ToastComponent/>` covers it; an HTML
-   `<div>` does NOT create an edge).
-2. Re-measure eShopOnWeb FAIR coverage before/after (`/tmp/faircov.cjs`): target
-   77% → ~90%; **node count stable** (only +template-file component nodes); residual
-   zeros are the reflection/value-read set only.
-3. No regression on a non-.NET control (gin/requests) and on the Razor-free C#
-   repos (cs-mediatr/cs-polly unchanged).
-4. Record in this doc + the coverage handoff.
+1. 构建`RazorExtractor`； `__tests__/extraction.test.ts` 中的单元测试（`.cshtml`
+其中 `@model X` 覆盖 `X`； `.razor` 和 `<ToastComponent/>` 覆盖它；一个 HTML
+`<div>` 不会创建边缘）。
+2. 重新测量之前/之后的 eShopOnWeb FAIR 覆盖率 (`/tmp/faircov.cjs`)：目标
+77%→~90%； **节点数稳定**（仅+模板文件组件节点）；残差
+零仅是反射/值读取集。
+3. 非 .NET 控件 (gin/requests) 和无 Razor C# 上没有回归
+存储库（cs-mediatr/cs-polly 不变）。
+4. 在此文档中记录 + 覆盖范围交接。
 
-## Effort
+## 努力
 
-- P1: ~0.5 day (extractor skeleton + `@model`/`@inject` scan + family-gate fix + tests).
-- P2: ~1 day (Blazor tags + code-behind + generic type-args).
-- P3: ~0.5 day. P4 (Thymeleaf/Django): ~1–2 days, low ROI — defer.
-- **Total for the ASP.NET win (P1+P2+P3): ~2 days → ASP.NET ~90%.**
+- P1：~0.5 天（提取器骨架 + `@model`/`@inject` 扫描 + 家庭门修复 + 测试）。
+- P2：~1 天（Blazor 标签 + 代码隐藏 + 通用类型参数）。
+- P3：~0.5 天。 P4 (Thymeleaf/Django)：约 1-2 天，投资回报率低 — 推迟。
+- **ASP.NET 获胜总计 (P1+P2+P3)：~2 天 → ASP.NET ~90%。**
 
-## Non-goals (and what's still needed for 95% on convention apps)
+## 非目标（以及 95% 的会议应用程序仍然需要的内容）
 
-This feature does NOT close: reflection/proxy registration (Spring Data repository
-proxies, AutoMapper profiles, Swagger filters, DI container / middleware), property-
-string data bindings (`asp-for`/`th:field`), or C# static-const value reads
-(`Constants.X`). Convention apps reaching literal 95% additionally need a **reflection/
-DI-registration modeling** pass and **extending the static-member pass to C#/TS** —
-tracked separately. Markup parsing is the single biggest, most self-contained step.
+此功能不会关闭：反射/代理注册（Spring数据存储库
+代理、AutoMapper 配置文件、Swagger 过滤器、DI 容器/中间件）、属性 -
+字符串数据绑定 (`asp-for`/`th:field`)，或 C# 静态常量值读取
+(`Constants.X`)。达到字面上 95% 的常规应用程序还需要 **反思/
+DI 注册建模** 传递和**将静态成员传递扩展到 C#/TS** —
+分别跟踪。标记解析是最大、最独立的步骤。

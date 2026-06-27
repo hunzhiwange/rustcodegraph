@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 把当前分支构建后临时链接成全局 `rustcodegraph`，便于本机手动验证。
+# 主要输入是可选的 `--undo`；主要副作用是执行全局 `npm link/unlink` 并可能恢复已发布版本。
 # Build the current branch and link it as the global `rustcodegraph` for
 # hands-on testing. Replaces any existing global install for as long
 # as the symlink is in place.

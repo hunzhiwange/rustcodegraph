@@ -1,10 +1,8 @@
-# Get Started
+# 开始使用
 
-Get up and running with RustCodeGraph in seconds.
+只需几秒钟即可启动并运行 RustCodeGraph。
 
-Get up and running with RustCodeGraph in seconds.
-
-## No Node.js required — one command grabs the right build for your OS
+## 无需 Node.js — 一个命令即可为您的操作系统获取正确的版本
 
 ```bash
 # macOS / Linux
@@ -17,24 +15,24 @@ brew install hunzhiwange/tap/rustcodegraph
 irm https://raw.githubusercontent.com/hunzhiwange/rustcodegraph/main/install.ps1 | iex
 ```
 
-## Already have Node? Use npm instead (works on any version)
+## 已经有节点了吗？ 使用 npm 代替（适用于任何版本）
 
 ```bash
 npm i -g rustcodegraph
 ```
 
-RustCodeGraph ships native Rust binaries — nothing to compile, no Node runtime needed
-after install. Then run `rustcodegraph install` to auto-configure your agent(s):
-Claude Code, Cursor, Codex CLI, opencode, Hermes Agent, Gemini CLI,
-Antigravity IDE, Kiro.
+RustCodeGraph 提供原生 Rust 二进制文件——无需编译，无需 Node 运行时
+ 安装后。 然后运行 `rustcodegraph install` 自动配置您的代理：
+ 克劳德代码、光标、Codex CLI、opencode、Hermes Agent、Gemini CLI、
+ 反重力 IDE，Kiro。
 
-## Initialize Projects
+## 初始化项目
 
 ```bash
 cd your-project
 rustcodegraph init -i
 ```
 
-That's it — your agent will use RustCodeGraph tools automatically when a `.rustcodegraph/` directory exists.
+就是这样——当 `.rustcodegraph/` 目录存在时，您的代理将自动使用 RustCodeGraph 工具。
 
-Next: build [Your First Graph](./your-first-graph.md), or see the full [Installation](./installation.md) options.
+接下来：构建 [Your First Graph](./your-first-graph.md)，或查看完整的 [Installation](./installation.md) 选项。

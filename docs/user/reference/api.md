@@ -1,10 +1,10 @@
-# API
+# 应用程序编程接口
 
-Use RustCodeGraph from Rust, or invoke the installed `rustcodegraph` CLI from another
-runtime. npm packages are distribution packages only; they do not expose a
-JavaScript API.
+使用 Rust 中的 RustCodeGraph，或从另一个调用已安装的 `rustcodegraph` CLI
+运行时。 npm 包只是分发包；他们不暴露
+JavaScript API。
 
-Rust callers can embed the library directly:
+Rust 调用者可以直接嵌入该库：
 
 ```rust
 use rustcodegraph::{RustCodeGraph, IndexOptions};

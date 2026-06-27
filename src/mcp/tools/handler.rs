@@ -143,13 +143,30 @@ impl ToolHandler {
         tool_name: &str,
         args: &serde_json::Map<String, Value>,
     ) -> ToolResult {
+        self.execute_inner(tool_name, args, true)
+    }
+
+    pub fn execute_for_cli(
+        &mut self,
+        tool_name: &str,
+        args: &serde_json::Map<String, Value>,
+    ) -> ToolResult {
+        self.execute_inner(tool_name, args, false)
+    }
+
+    fn execute_inner(
+        &mut self,
+        tool_name: &str,
+        args: &serde_json::Map<String, Value>,
+        enforce_tool_allowlist: bool,
+    ) -> ToolResult {
         // catch-up gate 在首个上下文工具调用前执行一次，用于测试/运行时等待 watcher
         // 把刚写入的索引状态追上。status 是诊断工具，必须保持只读、低成本。
         if should_catch_up_before_tool(tool_name) {
             self.await_catch_up_gate();
         }
 
-        if !is_tool_allowed(tool_name) {
+        if enforce_tool_allowlist && !is_tool_allowed(tool_name) {
             return error_result(&format!(
                 "Tool {tool_name} is disabled via RUSTCODEGRAPH_MCP_TOOLS"
             ));

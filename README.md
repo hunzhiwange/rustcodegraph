@@ -4,11 +4,11 @@
 
 English · [简体中文](README.zh-CN.md)
 
+RustCodeGraph in this repository is based on CodeGraph and adapted for our current Rust-first CLI and MCP workflow. It keeps the original local-first code intelligence direction, while the documentation, packaging, and product description here reflect the current `rustcodegraph` project rather than the older CodeGraph branding.
+
 ## 🎉 1.0 Released!
 
 Already installed? Run `rustcodegraph upgrade` to update in place.
-
-Follow [@getcodegraph](https://x.com/getcodegraph) on X for updates.
 
 ### Supercharge Claude Code, Cursor, Codex, OpenCode, Hermes Agent, Gemini, Antigravity, and Kiro with Semantic Code Intelligence
 
@@ -34,8 +34,6 @@ Follow [@getcodegraph](https://x.com/getcodegraph) on X for updates.
 [![Kiro](https://img.shields.io/badge/Kiro-supported-blueviolet.svg)](#supported-agents)
 
 <br>
-
-**The RustCodeGraph platform is coming** — for every PR, know exactly what to test, what could break, which flows are affected, and whether business logic is compromised.
 
 </div>
 

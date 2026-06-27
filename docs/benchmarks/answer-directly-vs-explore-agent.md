@@ -1,88 +1,88 @@
-# Answer directly vs. delegate to an Explore agent (interactive A/B)
+# 直接回答与委托给探索代理（交互式 A/B）
 
-**Question:** Does answering a "how does X work?" question *directly* with RustCodeGraph in the
-main session bloat main-session context — and would Claude Code be better off delegating that
-exploration to a disposable **Explore agent** (which keeps main context lean by absorbing the
-file reads in a sub-transcript)? And critically: **does the answer change at scale**, on a
-codebase far larger than Excalidraw?
+**问题：** 回答“X 是如何工作的？”是否有效？ *直接*使用 RustCodeGraph 中的问题
+主会话会导致主会话上下文膨胀——如果克劳德代码将其委托给其他人会更好吗？
+对一次性**探索代理**的探索（通过吸收
+文件读取子转录本）？至关重要的是：**答案是否会大规模改变**，在
+代码库远大于 Excalidraw？
 
-**Short answer:** No. With RustCodeGraph, main-session context is roughly **scale-invariant (~50k)**
-because the retrieval is targeted and the `explore` payload is budget-capped — it does not
-balloon on a 16× larger repo. Answering directly wins at **every** scale: same-or-leaner main
-context than the delegation path, **zero file reads**, and ~28% fewer tokens. The
-delegation-for-hygiene advantage stays marginal even on a large codebase.
+**简短的回答：** 不。使用 RustCodeGraph，主会话上下文大致是 **规模不变 (~50k)**
+因为检索是有针对性的，并且 `explore` 有效负载是有预算上限的 - 它不
+16 倍大的 repo 上的气球。直接回答在**每个**规模上获胜：相同或更精简的主要内容
+上下文比委托路径少，**零文件读取**，并且令牌少约 28%。这
+即使在大型代码库上，卫生委托的优势仍然很小。
 
-## Methodology
+## 方法论
 
-- **Harness:** interactive Claude Code TUI driven via `scripts/agent-eval/itrun.sh` (tmux),
-  **not** headless `claude -p`. This matters: headless spawns **0** Explore agents, so it cannot
-  measure delegation behavior at all; only the interactive TUI does.
-- **Arms:** `WITH` = RustCodeGraph in the MCP config; `WITHOUT` = empty MCP config (`--strict-mcp-config`).
-- **Model:** `opus`. **n = 3 runs per arm.** Main **and** sub-agent transcripts parsed
-  (`rustcodegraph agent-eval parse-session`); reads/bash are summed across main + sub-agents.
-- **Repos:** Excalidraw (643 files, medium) and VS Code (~10.7k files, large — ~16× Excalidraw).
-- **Build:** 0.9.4. **Date:** 2026-05-24.
-- "main-session context" is the TUI's reported `Context X/Y` for the *main* thread (sub-agent
-  context does not count against it). "billable tokens" = summed per-turn assistant usage
-  (input + output + cache read + cache creation).
+- **线束：**通过 `scripts/agent-eval/itrun.sh` (tmux) 驱动的交互式 Claude Code TUI，
+**不是**无头 `claude -p`。这很重要：无头生成 **0** 探索代理，所以它不能
+衡量授权行为；只有交互式 TUI 可以。
+- **武器：** `WITH` = MCP 配置中的 RustCodeGraph； `WITHOUT` = 空 MCP 配置 (`--strict-mcp-config`)。
+- **型号：** `opus`。 **n = 每臂运行 3 次。** 解析主 ** 和 ** 子代理转录本
+(`rustcodegraph agent-eval parse-session`);读取/bash 跨主代理和子代理求和。
+- **存储库：** Excalidraw（643 个文件，中）和 VS Code（约 10.7k 文件，大 — 约 16× Excalidraw）。
+- **版本：** 0.9.4。 **日期：** 2026 年 5 月 24 日。
+- “主会话上下文”是 TUI 报告的 *主* 线程（子代理）的 `Context X/Y`
+上下文不影响它）。 “可计费代币” = 每回合助理使用情况总和
+（输入+输出+缓存读取+缓存创建）。
 
-## Excalidraw (643 files, medium)
+## Excalidraw（643 个文件，中）
 
-Question: *"How does Excalidraw render and update canvas elements?"*
+问题：*“Excalidraw 如何渲染和更新画布元素？”*
 
-| metric | WITH rustcodegraph | WITHOUT |
+| 公制 | 带有 rustcodegraph | 没有 |
 |---|---|---|
-| Explore agents spawned | 0 / 0 / 0 | 0 / 1 / 1 (delegated 2 of 3) |
-| main-session context | 51k / 49k / 50k (~50k) | 48k / 34k / 26k (~36k) |
-| total tool calls | 4 / 4 / 4 | 16 / 55 / 37 |
-| Reads (main+sub) | 0 / 0 / 0 | 6 / 25 / 16 |
-| billable tokens | ~127k | ~175k |
+| 探索特工的产生 | 0 / 0 / 0 | 0 / 1 / 1（委派 3 中的 2） |
+| 主要会话上下文 | 51k / 49k / 50k (~50k) | 48k / 34k / 26k (~36k) |
+| 工具调用总数 | 4 / 4 / 4 | 16 / 55 / 37 |
+| 读取（主+子） | 0 / 0 / 0 | 6 / 25 / 16 |
+| 计费代币 | 〜127k | 〜175k |
 
-## VS Code (~10.7k files, large — ~16× Excalidraw)
+## VS Code（~10.7k 文件，大 — ~16× Excalidraw）
 
-Question: *"How does the extension host communicate with the main process?"*
+问题：*“扩展主机如何与主进程通信？”*
 
-| metric | WITH rustcodegraph | WITHOUT |
+| 公制 | 带有 rustcodegraph | 没有 |
 |---|---|---|
-| main-session context | 47k / 43k / 50k (~47k) | 54k / 29k / 31k (~38k) |
-| Explore agents | 0 / 0 / 0 | 0 / 1 / 1 (delegated 2/3) |
-| rustcodegraph calls | ~8 (search + explore×2–3 + context) | 0 |
-| Reads (main+sub) | 0 / 1 / 0 | 6 / 26 / 19 |
-| billable tokens | ~126k | ~176k |
+| 主要会话上下文 | 47k / 43k / 50k (~47k) | 54k / 29k / 31k (~38k) |
+| 探索代理商 | 0 / 0 / 0 | 0 / 1 / 1（委托 2/3） |
+| rustcodegraph 调用 | ~8（搜索+探索×2-3+上下文） | 0 |
+| 读取（主+子） | 0 / 1 / 0 | 6 / 26 / 19 |
+| 计费代币 | 〜126k | 〜176k |
 
-## Findings
+## 发现
 
-**Main-session context is scale-invariant with RustCodeGraph.** With rustcodegraph, main-session
-context was **~47k on VS Code — essentially identical to Excalidraw's ~50k**, despite a 16×
-bigger repo. It didn't balloon. Reason: rustcodegraph's `explore` payload is **budget-capped** and
-retrieval is **targeted** — answering one question pulls in the relevant *flow/area*, not more
-just because the repo is huge. So rustcodegraph makes main-session context roughly scale-invariant
-(~50k). The delegation-for-hygiene advantage stays marginal even on a large codebase — exactly
-the opposite of "it gets significant at scale."
+**主会话上下文对于 RustCodeGraph 来说是比例不变的。**对于 rustcodegraph，主会话
+VS Code 上的上下文是 **~47k — 与 Excalidraw 的 ~50k** 基本相同，尽管是 16×
+更大的回购。它没有气球。原因：rustcodegraph 的 `explore` 有效负载是**预算上限**并且
+检索是**有针对性的**——回答一个问题会拉入相关的*流程/区域*，而不是更多
+只是因为回购规模巨大。因此 rustcodegraph 使主会话上下文大致具有比例不变性
+（~50k）。即使在大型代码库上，卫生委托的优势仍然微乎其微——确切地说
+与“它在规模上变得重要”相反。
 
-The thing that *would* balloon at scale is reading many big files directly into main — and
-Claude Code avoids that **without** rustcodegraph by delegating to an Explore agent (29–31k main),
-but at the cost of **17–26 reads** and ~28% more tokens. RustCodeGraph keeps main lean a *better*
-way: a capped, targeted payload — no delegation, **0 reads**.
+*将*大规模扩展的事情是将许多大文件直接读取到主文件中 - 并且
+Claude Code 通过委托给 Explore 代理（29-31k main）来避免**没有** rustcodegraph，
+但代价是 **17-26 次读取**和约 28% 的额外令牌。 RustCodeGraph 保持主要精益*更好*
+方式：有上限的、有针对性的有效负载——无委托，**0 读取**。
 
-**On "the Explore agents use rustcodegraph."** I couldn't reproduce it: across **6/6**
-with-rustcodegraph runs (both repos), Claude Code **never delegated** — it answered directly every
-time. The Explore-agent path only appeared in the `without` arm (using grep/read, since rustcodegraph
-wasn't in that config). So with the current instructions + rustcodegraph present, Claude Code stays
-in the main session — the lean-main-via-Explore-agent best case simply isn't what happens;
-lean-main-via-capped-rustcodegraph is, and it's cheaper.
+**关于“探索代理使用 rustcodegraph。”** 我无法重现它：**6/6**
+with-rustcodegraph 运行（两个存储库），克劳德代码 **从未委托** - 它直接回答每个
+时间。 Explore-agent 路径仅出现在 `without` 臂中（使用 grep/read，因为 rustcodegraph
+不在该配置中）。因此，在当前指令 + rustcodegraph 存在的情况下，Claude Code 仍然存在
+在主要会议中——精益主要通过探索代理的最佳情况根本不会发生；
+Lean-main-via-capped-rustcodegraph 是，而且它更便宜。
 
-## Verdict
+## 判决
 
-**"Answer directly with rustcodegraph" wins for Claude Code too — at every scale.** No per-agent
-split is needed; the unified "answer directly" instruction is right for Claude Code *and* for
-Codex / Cursor / opencode (which have no Explore-agent mechanism and would otherwise read files
-directly). This conclusion drove updating the README's `## RustCodeGraph` example block, which
-previously told agents to "NEVER call `rustcodegraph_explore` directly / ALWAYS spawn an Explore
-agent" — i.e., it steered Claude Code toward the *worse* (17–26 read, ~28%-more-token) path.
+**“用 rustcodegraph 直接回答”对于 Claude Code 来说也是胜利——在各个层面上。** 没有每个代理
+需要拆分；统一的“直接回答”指令适用于 Claude Code *和*
+Codex / Cursor / opencode （没有 Explore-agent 机制，否则会读取文件
+直接地）。这个结论推动了自述文件的 `## RustCodeGraph` 示例块的更新，其中
+之前告诉特工“永远不要直接调用 `rustcodegraph_explore` / 总是生成一个 Explore
+代理”——也就是说，它引导 Claude Code 走向*更糟糕的*（17-26 次读取，约 28%-更多令牌）路径。
 
-**Caveat / future work (not a blocker):** an Explore agent that *itself uses rustcodegraph* could in
-principle get lean-main *and* low-work. But the "answer directly" instruction prevents delegation
-in practice (0 delegations observed across 6 runs), the main-context gain would be marginal
-(~50k → ~30k, both a few percent of a 1M window), and it adds a sub-agent round-trip. Worth a
-future experiment, not a default.
+**警告/未来的工作（不是拦截器）：** *本身使用 rustcodegraph* 的 Explore 代理可以在
+原则是精益为主*和*低工作量。但“直接回答”指令阻止了授权
+在实践中（在 6 次运行中观察到 0 个代表团），主要背景增益将是边际的
+（~50k → ~30k，都是 1M 窗口的百分之几），并且它添加了子代理往返。值得一去
+未来的实验，而不是默认。

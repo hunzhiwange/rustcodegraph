@@ -15,6 +15,7 @@ mod storage;
 
 use commands::project::{
     command_index, command_init, command_status, command_sync, command_uninit, command_unlock,
+    command_watch,
 };
 use commands::query::{
     command_affected, command_callees, command_callers, command_explore, command_files,
@@ -81,6 +82,7 @@ pub fn run_cli(args: &[String]) -> Result<(), String> {
         "init" => command_init(args),
         "index" => command_index(args),
         "sync" => command_sync(args),
+        "watch" => command_watch(args),
         "status" => command_status(args),
         "files" => command_files(args),
         "query" => command_query(args),

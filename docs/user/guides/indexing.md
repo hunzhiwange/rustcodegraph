@@ -1,100 +1,53 @@
-# Indexing a Project
+# 索引项目
 
-Full index, incremental sync, and the file watcher.
+完整索引、增量同步和索引新鲜度。
 
-## Initialize and index
+## 初始化和索引
 
 ```bash
 cd your-project
-rustcodegraph init -i      # initialize + full index
+rustcodegraph init -i      # 初始化并完整索引
 ```
 
-`init` creates `.rustcodegraph/`; `-i`/`--index` builds the index immediately. To initialize without indexing, drop the flag and run `rustcodegraph index` later.
+`init` 创建 `.rustcodegraph/`；`-i`/`--index` 会立即构建索引。只想先初始化时，可以省略该标志，稍后再运行 `rustcodegraph index`。
 
-## Full vs. incremental
+## 完整与增量
 
 ```bash
-rustcodegraph index           # full index of the whole project
-rustcodegraph index --force   # re-index from scratch
-rustcodegraph sync            # incremental — only changed files
+rustcodegraph index           # 完整索引整个项目
+rustcodegraph index --force   # 从头重建索引
+rustcodegraph sync            # 增量同步，只处理变更文件
 ```
 
-`sync` is fast because it only reparses what changed. Use it after a branch switch or a batch of edits.
+`sync` 速度很快，因为它只修复更改的内容。在分支切换或批量编辑后使用它。
 
-## Stay fresh automatically
+## 保持索引新鲜
 
-**You don't need to run `rustcodegraph sync` by hand during an agent session.** When your agent (Claude Code, Cursor, Codex, opencode, Hermes, Gemini, Antigravity, Kiro) launches `rustcodegraph serve --mcp`, three layers cooperate to keep the index in step with your code — and to never give the agent a quiet wrong answer in the small window between an edit and the next sync.
+RustCodeGraph 的 CLI 不会假设有长期运行的后台服务。代码变更后，先运行一次增量同步，再依赖搜索、调用关系或影响分析结果：
 
-### 1. File watcher with debounced auto-sync (always on)
-
-`serve --mcp` spins up a native file watcher (FSEvents on macOS, inotify on Linux, ReadDirectoryChangesW on Windows) over the project root. Every source-file create / modify / delete is captured. A debounce timer collapses bursts of edits into a single sync.
-
-```
-agent writes src/Widget.ts
-  → watcher fires (event delivery: typically <100ms)
-  → 2000ms debounce
-  → sync runs; Widget.ts's nodes + edges are in the index
-  → next agent query sees it
+```bash
+rustcodegraph sync
 ```
 
-**Tunable**: `RUSTCODEGRAPH_WATCH_DEBOUNCE_MS` overrides the default 2000ms, clamped to `[100ms, 60s]`. Useful when a build step or formatter writes many files in a tight burst — bump it to `5000` or `10000` so the watcher coalesces them into one sync.
+建议在这些时机同步：
 
-### 2. Per-file staleness banner — covers the debounce window
+- **切换分支或执行 `git pull` 后。** 工作树可能已经和索引不一致。
+- **批量编辑、代码生成或格式化后。** 一次 `sync` 会合并处理所有变化。
+- **让代理继续分析前。** 如果你知道刚刚改过代码，先同步能避免代理基于旧图回答。
+- **CI 或脚本开始时。** 脚本里第一步运行 `rustcodegraph sync`，后续 `query`、`explore`、`affected` 才会看见当前工作树。
 
-The watcher debounce introduces a small window (typically 2s) where a freshly-edited file is on disk but not yet in the index. RustCodeGraph closes that window with a per-file staleness banner: if any MCP tool response would reference a file that's currently pending re-index, the response prepends a `⚠️` banner naming the stale file:
+`sync` 会扫描文件状态并只更新发生变化的部分；需要完全重建时才使用 `rustcodegraph index --force`。
 
-```
-⚠️ Some files referenced below were edited since the last index sync —
-their RustCodeGraph entries may be stale:
-  - src/Widget.ts (edited 800ms ago, pending sync)
-For accurate content of those specific files, Read them directly.
-The rest of this response is fresh.
+当前推荐路径是直接使用 CLI 和本技能：初始化一次，代码变化后运行 `rustcodegraph sync`，再调用 `explore`、`node`、`query`、`callers`、`callees`、`impact` 或 `affected`。
 
-## Code Context
-…
-```
-
-Agents read this and follow up with a direct `Read` on the named file — validated end-to-end with Claude Code, where the agent literally says "Reading the file directly for the live content" before opening it. So even during the 2-second debounce window, the agent never gets a silent wrong answer.
-
-Pending files **not** referenced by the response surface as a small footer instead (`(Note: N file(s) elsewhere in this project are pending index sync but were not referenced above: …)`). Either way, the signal is explicit.
-
-### 3. Connect-time catch-up — covers gaps when the MCP server wasn't running
-
-When your editor / agent (re)connects to the MCP server, RustCodeGraph runs a fast filesystem-based reconciliation (a `(size, mtime)` stat pre-filter, then a content hash on the rest) before answering the first query. So files changed while no MCP server was running — a `git pull` from the terminal, an edit from another editor, an agent that finished and exited — are caught up automatically on the next session's first tool call.
-
-### Verify what the watcher sees
-
-`rustcodegraph_status` exposes the pending set first-class — useful for an agent asking "is the index caught up?" in one call:
-
-```
-rustcodegraph_status →
-  ## RustCodeGraph Status
-  …
-  ### Pending sync:
-  - src/Widget.ts (edited 1200ms ago)
-```
-
-If `### Pending sync:` isn't in the response, nothing is in flight.
-
-### When manual `rustcodegraph sync` makes sense
-
-Almost never. The edge cases:
-
-- **The watcher is disabled.** Sandboxes that block local fs watchers, or you've set `RUSTCODEGRAPH_NO_DAEMON=1` to opt out of the shared daemon. In those cases `rustcodegraph sync` is the manual fallback.
-- **Pre-flight before a CI run.** If you're scripting against the index outside an agent session, a single `rustcodegraph sync` at the start of the script guarantees the index reflects the current working tree.
-
-Otherwise: just use it. The watcher + banner + connect-sync covers the AI-assisted workflow end-to-end. If you're seeing files genuinely missed after the debounce window has passed, that's a bug — please file an issue with a reproduction.
-
-> See the v0.9.5 release notes for the [staleness banner (#403)](https://github.com/hunzhiwange/rustcodegraph/releases/tag/v0.9.5) and the connect-time catch-up (#414); both shipped together.
-
-## Check status
+## 检查状态
 
 ```bash
 rustcodegraph status
 ```
 
-Reports node/edge/file counts, the active SQLite backend, and the journal mode. In an agent session, the MCP-side `rustcodegraph_status` additionally surfaces the `### Pending sync:` block described above.
+报告节点、边、文件计数、活动 SQLite 后端和日志模式。`status` 只读取当前索引状态，不会替你同步；如果刚改过代码，请先运行 `rustcodegraph sync`。
 
-## What gets indexed
+## 什么被索引
 
-Every file whose extension maps to a [supported language](../reference/languages.md), minus dependency/build directories excluded by default (`node_modules`, `vendor`, `dist`, …), anything your `.gitignore` excludes, and files over 1 MB. See [Configuration](../getting-started/configuration.md).
+每个扩展名映射到[受支持语言](../reference/languages.md)的文件都会被索引，但默认排除依赖/构建目录（`node_modules`、`vendor`、`dist` 等）、`.gitignore` 排除的内容以及超过 1 MB 的文件。请参阅[配置](../getting-started/configuration.md)。

@@ -1,34 +1,34 @@
-# Introduction
+# 介绍
 
-What RustCodeGraph is, and why it makes AI coding agents faster and cheaper.
+RustCodeGraph 是什么，以及为什么它使 AI 编码代理更快、更便宜。
 
-RustCodeGraph is a **local-first code-intelligence tool**. It parses your codebase with [tree-sitter](https://tree-sitter.github.io/), stores every symbol, edge, and file in a local SQLite database, and exposes the result as a queryable **knowledge graph** — over the [Model Context Protocol (MCP)](../reference/mcp-server.md), a CLI, and a Rust library.
+RustCodeGraph 是一个**本地优先的代码智能工具**。 它使用 [[[tree-sitter]]]（https://tree-sitter.github.io/), 将每个符号、边和文件存储在本地 SQLite 数据库中）解析您的代码库，并将结果公开为可查询的**知识图** — 通过 [Model Context Protocol (MCP)](../reference/mcp-server.md)、CLI 和 Rust 库。
 
-It exists to make AI coding agents — Claude Code, Cursor, Codex CLI, opencode, Hermes Agent, Gemini CLI, Antigravity IDE, and Kiro — **answer structural questions without scanning files**. Instead of fanning out across `grep`, `glob`, and `Read` to reconstruct how code fits together, an agent queries a pre-built index and gets the answer in a handful of calls.
+它的存在是为了让 AI 编码代理 — Claude Code、Cursor、Codex CLI、opencode、Hermes Agent、Gemini CLI、Antigravity IDE 和 Kiro — **无需扫描文件即可回答结构问题**。 代理无需在 `grep`、`glob` 和 `Read` 上散开来重建代码如何组合在一起，而是查询预先构建的索引并在几次调用中获得答案。
 
-## Why it matters
+## 为什么这很重要
 
-When an agent explores a codebase, it spends most of its budget on *discovery* — finding the right files before it can read them. RustCodeGraph removes that step: symbol relationships, call graphs, and structure are already indexed.
+当代理探索代码库时，它会将大部分预算花在“发现”上——在读取正确的文件之前找到它们。 RustCodeGraph 删除了该步骤：符号关系、调用图和结构已经索引。
 
-Tested across 7 real-world open-source codebases (median of 4 runs per arm), giving an agent RustCodeGraph was on average:
+在 7 个真实世界的开源代码库中进行了测试（每组运行的中位数为 4 次），给出的代理 RustCodeGraph 的平均结果为：
 
-- **35% cheaper**
-- **57% fewer tokens**
-- **46% faster**
-- **71% fewer tool calls**
+- **便宜35%**
+-  **代币减少 57%**
+-  **快 46%**
+-  **工具调用减少 71%**
 
-The gains scale with codebase size — on large repos the agent answers from the index with **zero file reads**.
+增益随代码库大小而变化——在大型存储库上，代理从索引中以**零文件读取**回答。
 
-## What's in the graph
+## 图中有什么
 
-- **Symbols** — functions, classes, methods, types, routes, components, and more.
-- **Edges** — calls, imports, inheritance, references, and framework-specific relationships.
-- **Files** — structure plus full-text search (FTS5).
+- **符号** — 函数、类、方法、类型、路由、组件等。 
+- **边缘** — 调用、导入、继承、引用和特定于框架的关系。 
+- **文件** — 结构加全文搜索 (FTS5)。
 
-Extraction is **deterministic** — derived from the AST, never LLM-summarized.
+提取是**确定性的**——源自 AST，从未经过 LLM 总结。
 
-## 100% local
+## 100%本地化
 
-No data leaves your machine. No API keys, no external services — just a SQLite database in `.rustcodegraph/`.
+没有数据离开您的机器。 没有 API 密钥，没有外部服务——只有 `.rustcodegraph/` 中的 SQLite 数据库。
 
-Ready to try it? Head to the [Quickstart](./quickstart.md).
+准备好尝试了吗？ 前往[Quickstart](./quickstart.md)。

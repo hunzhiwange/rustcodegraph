@@ -1,23 +1,23 @@
-# Installation
+# 安装
 
-Install RustCodeGraph and configure your AI coding agents.
+安装 RustCodeGraph 并配置您的 AI 编码代理。
 
-## 1. Run the installer
+## 1.运行安装程序
 
 ```bash
 rustcodegraph install
 ```
 
-The installer will:
+安装程序将：
 
-- Ask which agent(s) to configure — auto-detecting installed ones from **Claude Code**, **Cursor**, **Codex CLI**, **opencode**, **Hermes Agent**, **Gemini CLI**, **Antigravity IDE**, and **Kiro**.
-- Prompt to install `rustcodegraph` on your `PATH` (so agents can launch the MCP server).
-- Ask whether configs apply to all your projects or just this one.
-- Write each chosen agent's MCP server config plus an instructions file (e.g. `CLAUDE.md`, `.cursor/rules/rustcodegraph.mdc`, `~/.codex/AGENTS.md`).
-- Set up auto-allow permissions when Claude Code is one of the targets.
-- Initialize your current project (local installs only).
+- 询问要配置哪些代理 - 自动检测来自 **Claude Code**、**Cursor**、**Codex CLI**、**opencode**、**Hermes Agent**、**Gemini CLI**、**Antigravity IDE** 和 **Kiro** 的已安装代理。 
+- 提示在您的 `PATH` 上安装 `rustcodegraph`（以便代理可以启动 MCP 服务器）。 
+- 询问配置是否适用于您的所有项目或仅适用于这个项目。 
+- 编写每个选定代理的 MCP 服务器配置以及说明文件（例如 `CLAUDE.md`、`.cursor/rules/rustcodegraph.mdc`、`~/.codex/AGENTS.md`）。 
+- 当 Claude Code 是目标之一时设置自动允许权限。 
+- 初始化当前项目（仅限本地安装）。
 
-## Non-interactive (scripting / CI)
+## 非交互式（脚本/CI）
 
 ```bash
 rustcodegraph install --yes                              # auto-detect agents, install global
@@ -26,45 +26,45 @@ rustcodegraph install --target=auto --location=local     # detected agents, proj
 rustcodegraph install --print-config codex               # print snippet, no file writes
 ```
 
-| Flag | Values | Default |
+| 旗帜 | 价值观 | 默认 |
 |---|---|---|
-| `--target` | `auto`, `all`, `none`, or csv (`claude,cursor,…`) | prompt |
-| `--location` | `global`, `local` | prompt |
-| `--yes` | (boolean) | prompt every step |
-| `--no-permissions` | (boolean) skip Claude auto-allow list | permissions on |
-| `--print-config <id>` | dump snippet for one agent and exit | — |
+| `--target` | `auto`、`all`、`none` 或 csv (`claude,cursor,…`) | 迅速的 |
+| `--location` | `global`、`local` | 迅速的 |
+| `--yes` | （布尔值） | 提示每一步 |
+| `--no-permissions` | （布尔值）跳过 Claude 自动允许列表 | 的权限 |
+| `--print-config <id>` | 转储一个代理的片段并退出 | — |
 
-## 2. Restart your agent
+## 2. 重新启动代理
 
-Restart your agent (Claude Code / Cursor / Codex CLI / opencode / Hermes Agent / Gemini CLI / Antigravity IDE / Kiro) for the MCP server to load.
+重新启动代理（Claude Code / Cursor / Codex CLI / opencode / Hermes Agent / Gemini CLI / Antigravity IDE / Kiro）以加载 MCP 服务器。
 
-## 3. Initialize projects
+## 3. 初始化项目
 
 ```bash
 cd your-project
 rustcodegraph init -i
 ```
 
-This builds the per-project knowledge graph index and wires up any project-local agent surfaces, so a single global `rustcodegraph install` works in every project you open.
+这会构建每个项目的知识图索引并连接任何项目本地代理表面，因此单个全局 `rustcodegraph install` 在您打开的每个项目中都有效。
 
-## Supported platforms
+## 支持的平台
 
-Every release ships a self-contained native build for all three desktop OSes,
-on both x64 and arm64. Use the standalone installer, Homebrew on macOS/Linux,
-or `npm i -g rustcodegraph` if you prefer npm.
+每个版本都为所有三个桌面操作系统提供独立的本机构建，
+ 在 x64 和 arm64 上。 在 macOS/Linux 上使用独立安装程序 Homebrew，
+ 或者 `npm i -g rustcodegraph` 如果你更喜欢 npm。
 
-| Platform | Architectures | Install |
+| 平台 | 架构 | 安装 |
 |---|---|---|
-| Windows | x64, arm64 | PowerShell installer or npm |
-| macOS | x64, arm64 | shell installer, Homebrew, or npm |
-| Linux | x64, arm64 | shell installer, Homebrew, or npm |
+| 视窗 | x64、arm64 | PowerShell 安装程序或 npm |
+| macOS | x64、arm64 | shell 安装程序、Homebrew 或 npm |
+| Linux | x64、arm64 | shell 安装程序、Homebrew 或 npm |
 
-## Uninstall
+## 卸载
 
-Changed your mind? One command removes RustCodeGraph from every agent it configured:
+改变主意了吗？ 一个命令可以从它配置的每个代理中删除 RustCodeGraph：
 
 ```bash
 rustcodegraph uninstall
 ```
 
-This reverses the installer — stripping RustCodeGraph's MCP server config, instructions, and permissions from each configured agent. Your project indexes (`.rustcodegraph/`) are left untouched; remove those per-project with `rustcodegraph uninit`. Use `--target` to remove from specific agents, or `--yes` to run non-interactively.
+这会反转安装程序 — 从每个配置的代理中剥离 RustCodeGraph 的 MCP 服务器配置、指令和权限。 您的项目索引（`.rustcodegraph/`）保持不变； 使用 `rustcodegraph uninit` 删除每个项目的那些。 使用 `--target` 从特定代理中删除，或使用 `--yes` 以非交互方式运行。

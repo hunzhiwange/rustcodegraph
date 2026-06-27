@@ -396,13 +396,29 @@ fn platform_process_alive(pid: u32) -> bool {
 
 #[cfg(windows)]
 fn platform_process_alive(pid: u32) -> bool {
-    let Ok(output) = std::process::Command::new("cmd")
-        .args(["/C", &format!("tasklist /FI \"PID eq {pid}\" /NH")])
-        .output()
-    else {
+    use std::ffi::c_void;
+
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const STILL_ACTIVE: u32 = 259;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut c_void;
+        fn GetExitCodeProcess(hProcess: *mut c_void, lpExitCode: *mut u32) -> i32;
+        fn CloseHandle(hObject: *mut c_void) -> i32;
+    }
+
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
         return false;
-    };
-    String::from_utf8_lossy(&output.stdout).contains(&pid.to_string())
+    }
+
+    let mut exit_code = 0;
+    let ok = unsafe { GetExitCodeProcess(handle, &mut exit_code) != 0 };
+    unsafe {
+        let _ = CloseHandle(handle);
+    }
+    ok && exit_code == STILL_ACTIVE
 }
 
 #[cfg(all(not(unix), not(windows)))]

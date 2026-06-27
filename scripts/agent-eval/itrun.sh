@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 在 `tmux` 中驱动一次交互式 Claude 会话，发送提示词并汇总工具调用情况。
+# 主要输入是仓库路径、标签和提示词；主要副作用是创建 `tmux` 会话、写出日志文件，并依赖已登录的 `claude` CLI。
 # Drive an INTERACTIVE Claude Code session in tmux, send a prompt, wait for the
 # agent to finish, then print the tool-call breakdown from the session logs.
 #

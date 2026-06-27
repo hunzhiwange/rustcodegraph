@@ -1,146 +1,146 @@
-# Design + status: chained static-factory / fluent call resolution
+# 设计+状态：链式静态工厂/流畅的调用解析
 
-**Status:** SHIPPED for **13 languages** (C++, C, PHP, Java, Kotlin, C#, Swift, Rust,
-Go, Scala, Dart, Objective-C, Pascal/Delphi) + a conformance pass. **TypeScript and Luau
-were evaluated and intentionally skipped** (both gradually typed → the mechanism is +0 /
-regresses on real code). See "Full README classification" below. Tracking issue:
-**#750** (which began as "the statically-typed README languages" but that enumeration was
-incomplete — it missed ObjC / Pascal / Luau).
+**状态：** 已支持 **13 种语言**（C++、C、PHP、Java、Kotlin、C#、Swift、Rust、
+Go、Scala、Dart、Objective-C、Pascal/Delphi）+ 一致性检查。 **TypeScript 和 Luau
+被评估并故意跳过**（都逐渐键入→机制为+0 /
+回归真实代码）。请参阅下面的“完整自述文件分类”。追踪问题：
+**#750** （最初是“静态类型自述语言”，但该枚举是
+不完整——它错过了 ObjC / Pascal / Luau）。
 
-**Motivation:** a call whose **receiver is itself a call** — a factory / singleton /
-builder that returns an object — should produce a `calls` edge to the chained method:
+**动机：**一个调用，其**接收者本身就是一个调用** - 工厂/单例/
+返回对象的构建器 - 应该为链接方法生成 `calls` 边：
 
 ```java
 Foo.getInstance().bar();   // bar() should resolve to Foo::bar, never a same-named decoy
 ```
 
-Before this work, every statically-typed language **dropped the receiver** and
-name-matched the bare method (`bar`), so in 7 of 9 languages it silently attached to a
-**same-named method on an unrelated type** — a correctness bug, not just missing coverage.
+在这项工作之前，每种静态类型语言都**放弃了接收器**并且
+名称与裸方法 (`bar`) 匹配，因此在 9 种语言中的 7 种中，它默默地附加到
+**不相关类型上的同名方法** - 正确性错误，而不仅仅是缺少覆盖范围。
 
 ---
 
-## The 3-part mechanism (per language)
+## 三部分机制（每种语言）
 
-1. **Capture the factory's declared return type** — a per-language `getReturnType`
-   hook writes `nodes.return_type` (schema v5). `*Foo`→`Foo`, `List<Bar>`→`List`,
-   `pkg.Foo`→`Foo`, `-> Self` / `: self` / `this.type` → the declaring type.
-2. **Preserve the chained receiver at extraction** — `tree-sitter.ts` (or a bespoke
-   extractor) encodes `Foo.getInstance().bar()` as the marker string
-   `Foo.getInstance().bar` (the `().` marker never appears in an ordinary ref). A
-   per-language gate keeps **instance** chains (`list.map().filter()`) bare so their
-   existing resolution is untouched — only capitalized-receiver / factory chains re-encode.
-3. **Resolve AND VALIDATE** — at resolution the receiver's type is inferred from what
-   the inner call returns, then the outer method is resolved **on that type** and
-   validated: the method must exist on the type (or a supertype it conforms to), so a
-   wrong inference yields **no edge**, never a wrong one.
+1. **捕获工厂声明的返回类型** - 每种语言的 `getReturnType`
+钩子写入 `nodes.return_type`（架构 v5）。 `*Foo`→`Foo`，`List<Bar>`→`List`，
+`pkg.Foo`→`Foo`、`-> Self` / `: self` / `this.type` → 声明类型。
+2. **在提取时保留链式接收器** — `tree-sitter.ts`（或定制
+extractor) 将 `Foo.getInstance().bar()` 编码为标记字符串
+`Foo.getInstance().bar`（`().` 标记永远不会出现在普通参考中）。一个
+每个语言的门保持**实例**链（`list.map().filter()`）裸露，以便它们
+现有的分辨率保持不变——只有大写接收器/工厂链重新编码。
+3. **解析并验证** — 在解析时，接收器的类型是根据什么推断出来的
+内部调用返回，然后外部方法在该类型上解析**并且
+已验证：该方法必须存在于该类型（或其符合的超类型）上，因此
+错误的推论不会产生**任何优势**，而绝不会产生错误的推论。
 
-Three shared resolvers in `src/resolution/name-matcher.ts`, all calling
-`resolveMethodOnType` (which has the conformance supertype-walk):
+`src/resolution/name-matcher.ts` 中的三个共享解析器，全部调用
+`resolveMethodOnType`（具有一致性超类型-walk）：
 
-| Resolver | Receiver style | Languages |
+| 旋转变压器 | 接收器样式 | 语言 |
 |---|---|---|
-| `matchCppCallChain` | `field_expression` (`Foo::instance().bar`) | C++, C |
-| `matchScopedCallChain` | `::` (`Cls::for($x)->m`, `Foo::new().bar`) | PHP, Rust |
-| `matchDottedCallChain` | `.` (`Foo.create().bar`) | Java, Kotlin, C#, Swift, Go, Scala, Dart |
+| `matchCppCallChain` | `field_expression` (`Foo::instance().bar`) | C++、C |
+| `matchScopedCallChain` | `::`（`Cls::for($x)->m`、`Foo::new().bar`） | PHP、铁锈 |
+| `matchDottedCallChain` | `.` (`Foo.create().bar`) | Java、Kotlin、C#、Swift、Go、Scala、Dart |
 
-**Conformance pass (#754).** When the chained method lives on a **supertype** the
-return type conforms to (an inherited / default-interface / trait / mixin / embedded
-method), the first pass can't see it — `implements`/`extends` edges aren't built yet.
-So failed chain refs are deferred (`CHAIN_LANGUAGES` in `resolution/index.ts`) and
-re-resolved in a second pass `resolveChainedCallsViaConformance()` after edges exist,
-walking `context.getSupertypes(...)`.
+**一致性通过 (#754)。** 当链接方法存在于 **超类型** 时
+返回类型符合（继承/默认接口/特征/混合/嵌入
+方法），第一遍看不到它 - `implements`/`extends` 边尚未构建。
+因此失败的链引用被推迟（`resolution/index.ts` 中的 `CHAIN_LANGUAGES`）并且
+边缘存在后，在第二遍 `resolveChainedCallsViaConformance()` 中重新解析，
+步行`context.getSupertypes(...)`。
 
-**Adding a language:** `getReturnType` in `languages/*.ts`; encode the chained receiver
-+ a node-type gate; add the language to the right `matchReference` gate (and
-`CONSTRUCTS_VIA_BARE_CALL` if a bare capitalized call constructs the class); add to
-`CHAIN_LANGUAGES`; synthetic tests + a real-repo A/B; bump `EXTRACTION_VERSION`.
+**添加语言：** `languages/*.ts`中的`getReturnType`；对链接的接收器进行编码
++ 节点型门；将语言添加到右侧 `matchReference` 门（并且
+`CONSTRUCTS_VIA_BARE_CALL`（如果是裸露的大写调用构造该类）；添加
+`CHAIN_LANGUAGES`;综合测试 + 真实仓库 A/B；凹凸`EXTRACTION_VERSION`。
 
 ---
 
-## Coverage (validated — each via synthetic decoy/absent-method tests + a real-repo A/B)
+## 覆盖范围（均通过合成诱饵/缺失方法测试 + 真实回购 A/B 进行验证）
 
-| Language | PR | Receiver | Real-repo A/B (unique `calls` edges) | Notes |
+| 语言 | 公关 | 接收者 | Real-repo A/B（独特的 `calls` 边） | 笔记 |
 |---|---|---|---|---|
-| **C++ / C** | #645 (#742) | `field_expression` | — | The original: singletons / factories / chained getters. |
-| **PHP** | #608 (#749) | `::` → `->` | — | `Cls::for($x)->method()` — the Laravel per-tenant client idiom. `: self`/`: static`. |
-| **Java** | #751 | `.` | Guava **+1,507 / −0** | Missing-edge → purely additive. |
-| **Kotlin** | #752 | `.` | arrow **+49 / −438** | Wrong-edge → precision win (438 removed = test/doc noise + wrong). Needed the capitalized-receiver gate + constructor-receiver handling. |
-| **C#** | #753 | `.` | Newtonsoft +3 / NodaTime **+73 / −0** | Additive. Return type is the `returns` field; extension-method chains correctly don't resolve. |
-| **conformance** | #754 | (resolver upgrade) | arrow **+22 / −0** | Supertype walk — enables Swift protocol-ext, Rust trait, Go embedded, Dart mixin, Java/Kotlin/C# inherited chains. |
-| **Swift** | #755 | `.` | Alamofire / Kingfisher **0 / 0** | Neutral-safe (unique fluent names already bare-resolved). Needed a nested-extension naming fix (`KF.Builder`→`KF::Builder`). |
-| **Rust** | #757 | `::` | clap **+937 / −775** | Precision win (622 wrong→right retargets, +162 net). `-> Self`; trait-default methods via conformance. Single-hop. |
-| **Go** | #760 | `.` | gin **net-zero** | `New().Method()`; embedded structs via conformance. Variable-inner fallback. **Found + fixed a batched-resolver runaway** (a mutated `original.referenceName` looped the offset-0 batch → 5M edges / 1.4 GB; fixed by tying the fallback to the original ref + a non-progress guard). |
-| **Scala** | #761 | `.` | gatling **+14 / −59** | Precision win (−59 = stdlib `Option`/`Iterator` `.map`/`.flatMap` the baseline mis-tied to gatling's `Validation::*`). Companion factories + case-class `apply`. |
-| **Dart** | #762 | `.` | localsend hand-written **+17 / −10** | Precision win **+ constructors made first-class** (factory/named ctors `Foo.create()`/`Foo._()` are now indexed; unnamed `Foo()` stays `instantiates`). `dartCtorInfo` validates a ctor against the enclosing class name — handles a tree-sitter misparse where `@override (A,B) m()` makes `m()` look like a ctor. |
-| **Objective-C** | #786 | message send | SDWebImage **+35 / −75** | Precision win. Chained message send `[[Foo create] doIt]` over `message_expression`. getReturnType skips nullability qualifiers (`nonnull instancetype`). A class-message factory returns the receiver class by convention, so `[[X alloc] init]` / singleton chains resolve on `X` (validated). The −75 are wrong `init` mis-matches retargeted to the right class. |
-| **Pascal/Delphi** | #791 | `.` (`exprDot`) | PascalCoin **+19 / −18** | Precision win. `TFoo.GetInstance().DoIt()` over Pascal's `exprCall`/`exprDot`. getReturnType from the `typeref` (incl. interface returns `IFoo`). Re-encoding gated on the Delphi `TFoo`/`IFoo` type convention so capitalized *variable* chains stay bare. A constructor (no `: TBar`) or typecast `TFoo(x)` resolves on the class. 15 of the −18 are correct class→interface retargets (`GetInstance(): IAsn1OctetString`). |
-| **TypeScript** | — | `.` | typeorm +0/−6 · nest **+0/−164** | **Evaluated, NOT shipped** — gradual typing; see below. |
-| **Luau** | — | `:` / `.` | Fusion +0/−0 · matter +0/−0 | **Evaluated, NOT shipped** — gradually typed; additive-safe (missing-edge gap, no regression) but real Luau rarely annotates factory returns, so +0 on both benchmarks. Works for `Foo.create(): Bar` then `:doIt()` (synthetic). |
+| **C++ / C** | 第645章 （742） | `field_expression` | — | 原始：单例/工厂/链式吸气剂。 |
+| **PHP** | 第608章（749） | `::` → `->` | — | `Cls::for($x)->method()` — Laravel 每租户客户端习惯用法。 `: self`/`: static`。 |
+| **Java** | 第751章 | `.` | 番石榴 **+1,507 / −0** | 缺边 → 纯累加。 |
+| **科特林** | 第752章 | `.` | 箭头 **+49 / −438** | 错误边缘 → 精度获胜（删除 438 = 测试/文档噪声 + 错误）。需要大写接收器门+构造器接收器处理。 |
+| **C#** | 第753章 | `.` | Newtonsoft +3 / NodaTime **+73 / −0** | 添加剂。返回类型为`returns`字段；扩展方法链无法正确解析。 |
+| **一致性** | 第754章 | （解析器升级） | 箭头 **+22 / −0** | Supertype walk — 支持 Swift 协议扩展、Rust 特性、Go 嵌入、Dart mixin、Java/Kotlin/C# 继承链。 |
+| **迅速** | 第755章 | `.` | 阿拉莫菲尔 / 翠鸟 **0 / 0** | 中立安全（唯一流畅的名称已经裸解析）。需要嵌套扩展命名修复（`KF.Builder`→`KF::Builder`）。 |
+| **锈** | 第757章 | `::` | 拍手 **+937 / −775** | 精准获胜（622 错误→正确重定向，+162 净值）。 `-> Self`;通过一致性的特征默认方法。单跳。 |
+| **去** | 第760章 | `.` | 杜松子酒 **净零** | `New().Method()`;通过一致性嵌入结构。可变内部后备。 **发现+修复了批处理解析器失控**（变异的`original.referenceName`循环了偏移0批次→5M边缘/1.4GB；通过将回退与原始引用绑定+非进度防护来修复）。 |
+| **斯卡拉** | 第761章 | `.` | 加特林 **+14 / −59** | 精度获胜（−59 = stdlib `Option`/`Iterator` `.map`/`.flatMap` 基线错误地连接到加特林的 `Validation::*`）。同伴工厂+案例级`apply`。 |
+| **镖** | 第762章 | `.` | localsend 手写 **+17 / −10** | 精确获胜 **+ 构造函数成为一流**（工厂/命名构造函数 `Foo.create()`/`Foo._()` 现在已编入索引；未命名的 `Foo()` 保留为 `instantiates`）。 `dartCtorInfo` 根据封闭的类名验证 ctor - 处理树保护错误解析，其中 `@override (A,B) m()` 使 `m()` 看起来像一个 ctor。 |
+| **Objective-C** | 第786章 | 消息发送 | SDWebImage **+35 / −75** | 精准致胜。链接消息通过 `message_expression` 发送 `[[Foo create] doIt]`。 getReturnType 跳过可为空限定符 (`nonnull instancetype`)。类消息工厂按约定返回接收者类，因此 `[[X alloc] init]` / 单例链在 `X` 上解析（已验证）。 −75 是错误的 `init` 错误匹配，被重定向到正确的类别。 |
+| **帕斯卡/德尔福** | 第791章 | `.` (`exprDot`) | 帕斯卡币 **+19 / −18** | 精准致胜。 `TFoo.GetInstance().DoIt()` 优于 Pascal 的 `exprCall`/`exprDot`。从 `typeref` 获取返回类型（包括接口返回 `IFoo`）。根据 Delphi `TFoo`/`IFoo` 类型约定重新编码，因此大写的*变量*链保持裸露。构造函数（无 `: TBar`）或类型转换 `TFoo(x)` 在类上解析。 -18 个中的 15 个是正确的类→接口重定向 (`GetInstance(): IAsn1OctetString`)。 |
+| **打字稿** | — | `.` | typeorm +0/−6 · 嵌套 **+0/−164** | **已评估，未发货** — 逐步打字；见下文。 |
+| **卢奥** | — | `:` / `.` | 融合+0/−0·物质+0/−0 | **已评估，未发货** — 逐步打字；添加剂安全（缺边间隙，无回归），但真正的 Luau 很少注释工厂回报，因此两个基准均为 +0。适用于 `Foo.create(): Bar`，然后适用于 `:doIt()`（合成）。 |
 
-`EXTRACTION_VERSION` is now **18** (C++→…→Pascal chains→paren-less calls→free-routine attribution). Re-index with `rustcodegraph index -f`
-to pick up the newer extractor on an existing graph.
+`EXTRACTION_VERSION` 现在是 **18** （C++→…→Pascal 链→无父母调用→自由例程归因）。使用 `rustcodegraph index -f` 重新索引
+在现有图表上选择较新的提取器。
 
-## Why TypeScript was skipped
+## 为什么 TypeScript 被跳过
 
-The mechanism resolves a chain from the factory's **declared** return type. TypeScript
-leans on **type inference** — e.g. NestJS's `Test.createTestingModule(m) { return new
-TestingModuleBuilder(...) }` has no `: TestingModuleBuilder` annotation — so the
-factory's type can't be recovered, the re-encoded chain can't resolve, and it **drops
-the bare-name edge** the existing resolver found. Real-repo A/B was **+0 added on both
-typeorm and nest** with a net recall regression (−164 on nest, mostly the ubiquitous
-`Test.createTestingModule({…}).compile()` pattern). The removed edges were mostly
-*wrong* (baseline mis-resolved `.compile()` to `ModuleCompiler::compile`), so it's
-precision-positive but recall-negative — against the recall-first invariant, and adding
-nothing where it doesn't hurt (TS method names are unique enough that bare-name already
-lands them). It was fully implemented (5 synthetic tests passed, runaway-safe bare-name
-fallback) and consciously not shipped. The only path to a TS win would be reading
-**inferred** return types (resolving `return new X()` in the factory body) — a much
-larger change. Full write-up on issue #750.
+该机制从工厂的**声明的**返回类型中解析出一条链。打字稿
+依赖于**类型推断**——例如NestJS 的 `Test.createTestingModule(m) { return new
+TestingModuleBuilder(...) }` has no `:TestingModuleBuilder` 注释 — 所以
+工厂的类型无法恢复，重新编码的链无法解析，并且它**丢弃
+现有解析器找到的裸名边缘**。 Real-repo A/B 都添加了 **+0
+typeorm 和 Nest** 具有净召回率回归（nest 上为 −164，主要是无处不在的
+`Test.createTestingModule({…}).compile()` 图案）。去除的边缘大部分是
+*错误*（基线错误地将 `.compile()` 解析为 `ModuleCompiler::compile`），所以它是
+精度为正但召回为负 — 反对召回优先不变量，并添加
+没有什么不伤害的地方（TS 方法名称足够独特，裸名称已经
+让他们着陆）。它已完全实施（通过了 5 项综合测试，安全失控的裸名
+后备）并有意识地不发货。获得 TS 胜利的唯一途径是阅读
+**推断**返回类型（在工厂主体中解析 `return new X()`） - 非常多
+较大的变化。关于问题 #750 的完整文章。
 
 ---
 
-## Full README classification (all 21 languages)
+## 完整的自述文件分类（所有 21 种语言）
 
-The mechanism's real requirement is a **declared return type** to recover the receiver's
-type — not "statically typed" (PHP qualifies via its `: self` / `: Type` return
-declarations). Against the README's full supported-language list:
+该机制的真正要求是**声明的返回类型**来恢复接收者的
+type — 不是“静态类型”（PHP 通过其 `: self` / `: Type` 返回进行限定
+声明）。根据自述文件的完整支持语言列表：
 
-| Bucket | Languages |
+| 桶 | 语言 |
 |---|---|
-| **Covered** (13) | C++, C, PHP, Java, Kotlin, C#, Swift, Rust, Go, Scala, Dart, Objective-C, Pascal/Delphi |
-| **Evaluated, skipped** (2) | **TypeScript** — gradual typing → inference-typed factories can't be recovered; net recall regression. **Luau** — gradually typed; additive-safe but +0 on Fusion AND matter (real Luau rarely annotates factory returns). Both: the mechanism needs reliably-declared return types, which gradually-typed code too often omits. |
-| **Pascal call-coverage follow-ups** | Two gaps from the chained-call work, both resolved. **Paren-less calls (#793):** Pascal lets a no-arg method drop its parens (`Obj.Free;`, `TFoo.GetInstance.DoIt;`), which parse as a bare `exprDot` and weren't extracted as calls at all. Now extracted, scoped to STATEMENT position (a bare dot in assignment/condition position is left alone — ambiguous with a field/property access). PascalCoin A/B **+1131 / −1**, all new edges resolve to methods. **Free-routine attribution (#795):** a procedure/function defined only in the `implementation` section (no interface decl, not a method) had no node, so its body's calls were lumped under the file; now it gets a function node and its calls attribute to it. PascalCoin A/B **+511 / −145** (file-level aggregates → per-routine edges). |
-| **Out of scope — no declared return types** (6) | JavaScript, Ruby, Lua, Svelte, Vue, Liquid (Liquid has no methods/chains at all) |
-| **Partial / separate** (1) | Python — only optional `-> T` hints; tracked as #578, not part of this mechanism |
+| **涵盖** (13) | C++、C、PHP、Java、Kotlin、C#、Swift、Rust、Go、Scala、Dart、Objective-C、Pascal/Delphi |
+| **已评估，已跳过** (2) | **TypeScript** — 渐进式打字 → 推理类型工厂无法恢复；净回忆回归。 **Luau** — 逐渐打字；添加剂安全，但 Fusion AND Matter 为 +0（真正的 Luau 很少标注工厂退货）。两者：该机制需要可靠地声明返回类型，而逐渐类型化的代码经常会忽略这一点。 |
+| **帕斯卡呼叫覆盖后续行动** | 链式调用工作中的两个差距都已解决。 **无括号调用 (#793)：** Pascal 允许无参数方法删除其括号 (`Obj.Free;`、`TFoo.GetInstance.DoIt;`)，这些括号被解析为裸 `exprDot` 并且根本不会提取为调用。现在提取，作用域为 STATEMENT 位置（赋值/条件位置中的裸点被单独保留 - 与字段/属性访问不明确）。 PascalCoin A/B **+1131 / −1**，所有新边都解析为方法。 **自由例程归因（#795）：**仅在 `implementation` 部分定义的过程/函数（没有接口 decl，不是方法）没有节点，因此其主体的调用集中在文件下；现在它得到一个函数节点及其调用属性。 PascalCoin A/B **+511 / −145** （文件级聚合 → 每个例程边缘）。 |
+| **超出范围 - 未声明返回类型** (6) | JavaScript、Ruby、Lua、Svelte、Vue、Liquid（Liquid 根本没有方法/链） |
+| **部分/单独** (1) | Python — 仅可选 `-> T` 提示；追踪为#578，不属于该机制的一部分 |
 
-So #750's original framing ("the 9 statically-typed README languages") was incomplete —
-it missed three more typed languages, all now resolved: **Objective-C** shipped (#786,
-same wrong-edge gap, mechanism ports directly); **Pascal/Delphi** shipped (#791, a clean
-port for the paren'd chain — an initial "blocked" read was wrong, caused by probing only
-the paren-less form); **Luau** evaluated and skipped (gradual typing → +0 on real repos,
-additive-safe).
+所以 #750 的原始框架（“9 种静态类型自述语言”）是不完整的 —
+它错过了另外三种类型的语言，现已全部解决：** Objective-C ** 已发布（#786，
+相同的错边间隙，机构端口直接）； **Pascal/Delphi** 已发布（#791，一个干净的
+配对链的端口 - 最初的“阻塞”读取是错误的，仅由探测引起
+无括号形式）； **Luau** 评估并跳过（逐步输入→真实存储库上的 +0，
+添加剂安全）。
 
-The through-line: this mechanism fits languages with **reliably-declared return types**
-(the 13 shipped). Gradually-typed languages (TypeScript, Luau) omit them too often for
-it to pay off, and dynamically-typed languages have none.
+直通车：此机制适合具有**可靠声明的返回类型**的语言
+（13 已发货）。渐进式语言（TypeScript、Luau）经常忽略它们
+它是有回报的，而动态类型语言却没有。
 
 ---
 
-## Edge cases / model
-- **Single-hop**: a chain re-encodes one hop; deeper hops (`a.b().c().d()`) keep the
-  bare name (the inner `()` defeats the `Class::method` split). Re-measure on deep
-  fluent-builder repos.
-- **Validation, not guessing**: every resolver ends in `resolveMethodOnType`, so an
-  unknown / wrong inferred type produces **no edge** — the decoy / absent-method
-  guarantee that makes this safe to ship.
-- **Per-language receiver gate** keeps instance chains bare so existing resolution is
-  never regressed; the A/B "removed" counts are wrong-edge corrections, not losses.
+## 边缘案例/模型
+- **单跳**：一条链重新编码一跳；更深的跳跃（`a.b().c().d()`）保持
+裸名称（内部 `()` 击败了 `Class::method` 拆分）。重新测量深度
+flutter-builder 仓库。
+- **验证，而不是猜测**：每个解析器都以 `resolveMethodOnType` 结尾，因此
+未知/错误的推断类型产生**无边缘** - 诱饵/缺席方法
+保证可以安全运输。
+- **每种语言接收器门**保持实例链裸露，因此现有分辨率是
+从未退步； A/B“删除”计数是错误边缘修正，而不是损失。
 
-## Related work
-- **Dynamic-dispatch / callback synthesis** (a *different* mechanism): observer /
-  EventEmitter / React-render / JSX-child / django-ORM edge synthesis lives in
-  `callback-edge-synthesis.md` + `dynamic-dispatch-coverage-playbook.md`.
-- The verbose session working-notes for #750 are in
-  `.claude/handoffs/chained-call-multilang-probe.md` (scratch; this doc is the
-  permanent record).
+## 相关工作
+- **动态调度/回调综合**（一个*不同的*机制）：观察者/
+EventEmitter / React-render / JSX-child / django-ORM 边缘合成住在
+`callback-edge-synthesis.md` + `dynamic-dispatch-coverage-playbook.md`。
+- #750 的详细会话工作说明位于
+`.claude/handoffs/chained-call-multilang-probe.md`（草稿；该文档是
+永久记录）。

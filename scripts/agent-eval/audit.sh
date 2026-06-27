@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 对指定版本做一次完整质量审计，覆盖安装、重建索引和 with/without A/B。
+# 主要输入是版本、仓库和问题；主要副作用是可能安装或链接 CLI、重置语料仓库索引，并运行评估后恢复本地开发链接。
 # One-shot RustCodeGraph quality audit:
 #   set version -> ensure corpus repo -> wipe+reindex with that version ->
 #   run with/without A/B -> restore the local dev link.

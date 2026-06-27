@@ -1,8 +1,8 @@
-# How It Works
+# 它是如何运作的
 
-The extraction, storage, resolution, and auto-sync pipeline.
+提取、存储、解析和自动同步管道。
 
-RustCodeGraph turns source code into a queryable graph in four stages.
+RustCodeGraph 分四个阶段将源代码转换为可查询的图。
 
 ```
 files → Extraction (tree-sitter) → DB (nodes/edges/files)
@@ -14,18 +14,18 @@ files → Extraction (tree-sitter) → DB (nodes/edges/files)
       Context building (markdown / JSON for AI consumption)
 ```
 
-## 1. Extraction
+## 1. 提取
 
-[tree-sitter](https://tree-sitter.github.io/) parses source into ASTs. Language-specific queries extract **nodes** (functions, classes, methods, types…) and **edges** (calls, imports, extends, implements). Heavy parsing runs off the main thread.
+[[[tree-sitter]]]（https://tree-sitter.github.io/) 将源代码解析为 AST。特定于语言的查询提取 **节点**（函数、类、方法、类型...）和 **边缘**（调用、导入、扩展、实现）。繁重的解析在主线程中运行。
 
-## 2. Storage
+## 2. 储存
 
-Everything goes into a local SQLite database (`.rustcodegraph/rustcodegraph.db`) with FTS5 full-text search. RustCodeGraph uses native `better-sqlite3` when available and transparently falls back to a WASM backend; `rustcodegraph status` shows which is live.
+所有内容都会通过 FTS5 全文搜索存储到本地 SQLite 数据库 (`.rustcodegraph/rustcodegraph.db`) 中。 RustCodeGraph 在可用时使用本机 `better-sqlite3`，并透明地回退到 WASM 后端； `rustcodegraph status` 显示哪个是实时的。
 
-## 3. Resolution
+## 3. 分辨率
 
-After extraction, references are resolved: function calls → definitions, imports → source files, class inheritance, and framework-specific patterns. Some dynamic-dispatch boundaries (callbacks, observers, React re-render, JSX children) are bridged by synthesizers so flows connect end-to-end. See [Resolution & Frameworks](./resolution.md).
+提取后，引用被解析：函数调用→定义、导入→源文件、类继承和特定于框架的模式。 一些动态调度边界（回调、观察者、React 重新渲染、JSX 子级）由合成器桥接，因此流可以端到端连接。 请参阅[Resolution & Frameworks](./resolution.md)。
 
-## 4. Auto-sync
+## 4.自动同步
 
-The MCP server watches your project using native OS file events (FSEvents / inotify / ReadDirectoryChangesW). Changes are debounced, filtered to source files, and incrementally synced — the graph stays fresh as you code, with no configuration.
+MCP 服务器使用本机操作系统文件事件（FSEvents / inotify / ReadDirectoryChangesW）监视您的项目。 更改会被反跳、过滤到源文件并增量同步 - 图表在您编码时保持新鲜，无需配置。

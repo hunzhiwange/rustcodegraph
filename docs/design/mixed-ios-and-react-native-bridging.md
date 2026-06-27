@@ -1,120 +1,120 @@
-# Mixed iOS + React Native Bridging — Coverage Design
+# 混合 iOS + React Native 桥接 - 覆盖设计
 
-**Audience:** a Claude agent (or human) continuing this work after #165 landed
-pure-Objective-C support.
-**Mission:** make rustcodegraph's `trace` / `callers` / `callees` / `impact` /
-flow-context calls connect end-to-end across **cross-language runtime
-dispatch boundaries** that today silently break flows: **Swift ↔ Objective-C**
-in mixed iOS codebases, and **JavaScript ↔ native** in React Native / Expo
-apps.
+**观众：** 克劳德特工（或人类）在 #165 着陆后继续这项工作
+纯 Objective-C 支持。
+**任务：**制作 rustcodegraph 的 `trace` / `callers` / `callees` / `impact` /
+流上下文调用跨**跨语言运行时进行端到端连接
+调度边界**如今悄然打破了流程：**Swift ↔ Objective-C**
+在混合 iOS 代码库中，以及 React Native / Expo 中的 **JavaScript ↔ native**
+应用程序。
 
-> This doc is the **plan**, not the implementation. No code lands on this
-> branch — only the design, the validation corpus, and the success bar.
-> Coding starts on a follow-up branch per phase.
+> 本文档是**计划**，而不是实施。没有代码登陆此
+> 分支——只有设计、验证语料库和成功栏。
+> 编码从每个阶段的后续分支开始。
 
-This work is the next item on the
-[dynamic-dispatch coverage playbook](./dynamic-dispatch-coverage-playbook.md) §6
-matrix: row "Swift × Objective-C bridging" and a new "React Native bridge"
-row. Both are **resolver** patterns (named refs exist on both sides — the
-bridging rule is deterministic) — not synthesizer patterns. See §3a of the
-playbook for the reference Django ORM resolver.
-
----
-
-## 1. Why this matters (the gap today)
-
-After #165, rustcodegraph indexes Swift, Objective-C, and JavaScript/TypeScript
-each correctly **in isolation**. But the value is in cross-language flows —
-exactly where iOS apps and React Native apps live:
-
-- **Mixed iOS app:** `MyViewController.swift` calls `imageDownloader.download(url:completion:)`,
-  which is `-[ImageDownloader downloadURL:completion:]` in `ImageDownloader.m`.
-  Today: a `trace("MyViewController.viewDidLoad", "downloadURL:completion:")`
-  call returns no path. The Swift callsite parses as a `call_expression` whose
-  selector goes nowhere; the ObjC method exists as a node with no incoming
-  edge. The agent reads both files to reconstruct the bridge.
-- **React Native app:** `useEffect(() => NativeModules.Geolocation.getCurrentPosition(cb))`
-  in `App.js` reaches `RCT_EXPORT_METHOD(getCurrentPosition:(RCTResponseSenderBlock)cb)`
-  in `RNCGeolocation.m`. Today: the JS callsite has no outgoing edge to
-  the ObjC implementation; the ObjC handler has no incoming edge from JS.
-  `impact(getCurrentPosition)` (ObjC side) shows no JS callers.
-- **Expo module:** `await ExpoCamera.takePictureAsync(options)` (JS) reaches
-  `AsyncFunction("takePictureAsync") { ... }` in `ExpoCamera.swift` (Expo
-  Modules API). Same break.
-
-In every case **a name exists on both sides** that an agent or a name-matcher
-can correlate — Swift's auto-bridged ObjC selector, `RCT_EXPORT_METHOD`'s
-literal first argument, an Expo `Function("name")` literal. The fix is a
-**resolver** that knows the bridging rules per channel and emits
-`references` edges with `provenance:'heuristic'` and `metadata.synthesizedBy:'<channel>'`.
-
-The playbook's load-bearing warning applies here harder than usual:
-
-> **Partial coverage is WORSE than none.** Bridging one boundary but not the
-> next reveals a hop the agent then drills + reads to finish. Always close
-> the flow end-to-end and re-measure — never ship a half-bridged flow.
-
-For mixed iOS, this means **both directions** (Swift→ObjC and ObjC→Swift) and
-**all bridged kinds** (methods, properties, init/initializers, protocols)
-must close before measuring. For React Native, JS→native AND
-native→JS (`RCTEventEmitter`, `sendEvent`) must both close, AND on **both
-the legacy bridge and TurboModules**, or apps that mix them will half-bridge.
+这项工作是
+[动态调度覆盖手册](./dynamic-dispatch-coverage-playbook.md) §6
+矩阵：“Swift × Objective-C 桥接”行和一个新的“React Native 桥接”
+排。两者都是 **resolver** 模式（双方都存在名为 refs 的
+桥接规则是确定性的）——而不是合成器模式。参见第 3a 节
+参考 Django ORM 解析器的 playbook。
 
 ---
 
-## 2. The bridging mechanisms to model
+## 1. 为什么这很重要（今天的差距）
 
-Each row is a separate **dispatch channel** in the playbook's vocabulary —
-each gets its own resolver (or synthesizer if no static ref exists), its own
-validation, its own row in the §6 matrix.
+#165 之后，rustcodegraph 索引了 Swift、Objective-C 和 JavaScript/TypeScript
+每个都正确地**隔离**。但价值在于跨语言流动——
+iOS 应用程序和 React Native 应用程序所在的位置：
 
-| # | Direction | Channel | Mapping rule | Where it lives | Difficulty |
+- **混合 iOS 应用程序：** `MyViewController.swift` 调用 `imageDownloader.download(url:completion:)`，
+也就是 `ImageDownloader.m` 中的 `-[ImageDownloader downloadURL:completion:]`。
+今天：`trace("MyViewController.viewDidLoad", "downloadURL:completion:")`
+调用不返回路径。 Swift 调用点解析为 `call_expression`，其
+选择器无处可去； ObjC方法作为一个没有传入的节点存在
+边缘。代理读取这两个文件以重建网桥。
+- **React Native 应用程序：** `useEffect(() => NativeModules.Geolocation.getCurrentPosition(cb))`
+在 `App.js` 达到 `RCT_EXPORT_METHOD(getCurrentPosition:(RCTResponseSenderBlock)cb)`
+在`RNCGeolocation.m`。今天：JS 调用点没有传出优势
+ObjC 实现； ObjC 处理程序没有来自 JS 的传入边缘。
+`impact(getCurrentPosition)`（ObjC 端）显示没有 JS 调用者。
+- **世博模块：** `await ExpoCamera.takePictureAsync(options)` (JS) 到达
+`ExpoCamera.swift` 中的 `AsyncFunction("takePictureAsync") { ... }`（世博会
+模块 API）。同样的休息。
+
+在每种情况下，代理人或名称匹配者都存在**双方的名称
+can correlate — Swift 的自动桥接 ObjC 选择器，`RCT_EXPORT_METHOD`
+文字第一个参数，Expo `Function("name")` 文字。修复方法是
+**解析器**知道每个通道的桥接规则并发出
+`references` 与 `provenance:'heuristic'` 和 `metadata.synthesizedBy:'<channel>'` 边缘。
+
+剧本的承重警告在这里比平常更适用：
+
+> **部分覆盖比没有覆盖更糟糕。** 弥合一个边界，但不弥合整个边界
+> 接下来显示一个跳跃，然后代理进行钻探+读取以完成。始终关闭
+> 端到端的流程并重新测量——切勿发送半桥流程。
+
+对于混合 iOS，这意味着**两个方向**（Swift→ObjC 和 ObjC→Swift）并且
+**所有桥接类型**（方法、属性、初始化/初始化器、协议）
+测量前必须关闭。对于 React Native，JS→native AND
+native→JS (`RCTEventEmitter`, `sendEvent`) 必须都关闭，并且**都关闭
+传统桥和 TurboModules**，或混合它们的应用程序将半桥。
+
+---
+
+## 2. 建模的桥接机制
+
+在剧本的词汇表中，每一行都是一个单独的**调度通道** -
+每个都有自己的解析器（如果不存在静态引用则为合成器），它自己的
+验证，在 §6 矩阵中拥有自己的行。
+
+| # | 方向 | 渠道 | 映射规则 | 它住在哪里 | 困难 |
 |---|---|---|---|---|---|
-| 1 | Swift → ObjC | direct call, ObjC class imported via `-Bridging-Header.h` | Swift call `obj.x(y:z:)` ↔ ObjC selector `-x:z:` (literal mapping, see §3a) | resolver in `frameworks/swift-objc.ts` | medium |
-| 2 | ObjC → Swift | `@objc` exposure | Swift `@objc func foo(bar:)` ↔ ObjC `-fooWithBar:` (auto-name); `@objc(custom:)` overrides | resolver in `frameworks/swift-objc.ts` | medium |
-| 3 | Swift ↔ ObjC | property/getter/setter bridging | Swift `var name: String` ↔ ObjC `-name` / `-setName:` | resolver in `frameworks/swift-objc.ts` | low |
-| 4 | Swift ↔ ObjC | initializer bridging | Swift `init(name:age:)` ↔ ObjC `-initWithName:age:` | resolver in `frameworks/swift-objc.ts` | low |
-| 5 | Swift ↔ ObjC | protocol bridging (`@objc protocol`) | conformance edges across language | resolver in `frameworks/swift-objc.ts` | medium |
-| 6 | JS → ObjC (RN legacy bridge) | `NativeModules.<Mod>.<fn>` ↔ `RCT_EXPORT_METHOD(<fn>:...)` or `RCT_REMAP_METHOD(<jsName>, <selector>:...)` | name match keyed by `RCT_EXPORT_MODULE()` literal on the ObjC side | resolver in `frameworks/react-native.ts` | medium |
-| 7 | JS → Java/Kotlin (RN legacy bridge, Android) | `NativeModules.<Mod>.<fn>` ↔ `@ReactMethod` annotated method on a `ReactContextBaseJavaModule` subclass with `getName()` returning `<Mod>` | resolver — same shape as #6, JVM side | medium |
-| 8 | JS ↔ native (RN TurboModules / Codegen) | `TurboModuleRegistry.get('Mod')` ↔ generated spec interface (`NativeMod` TS type) ↔ ObjC++/Kotlin impl matching the spec | resolver that reads the spec file as ground truth | hard |
-| 9 | Native → JS (events) | ObjC `[self sendEventWithName:@"x" body:b]` (extending `RCTEventEmitter`) ↔ JS `new NativeEventEmitter(NativeModules.Mod).addListener('x', cb)` | EventEmitter-style synthesizer (matches existing `callback-synthesizer.ts` for in-language EventEmitter) | medium |
-| 10 | JS → native (Expo modules) | JS `ExpoX.fn(args)` ↔ Swift `Function("fn") { ... }` or `AsyncFunction("fn") { ... }` inside a `Module` subclass with `Name("ExpoX")` | resolver in `frameworks/expo-modules.ts` | medium |
-| 11 | JS → native (Fabric view components) | JS `<MyView prop={v}/>` ↔ ObjC/Swift `RCT_EXPORT_VIEW_PROPERTY(prop, ...)` or Codegen view spec | resolver + JSX hop (compose with existing JSX synthesizer) | hard (defer) |
+| 1 | Swift→ObjC | 直接调用，通过`-Bridging-Header.h`导入ObjC类 | Swift 调用 `obj.x(y:z:)` ↔ ObjC 选择器 `-x:z:` （文字映射，参见 §3a） | `frameworks/swift-objc.ts` 中的旋转变压器 | 中等的 |
+| 2 | ObjC → Swift | `@objc`曝光 | Swift `@objc func foo(bar:)` ↔ ObjC `-fooWithBar:` （自动名称）； `@objc(custom:)` 覆盖 | `frameworks/swift-objc.ts` 中的旋转变压器 | 中等的 |
+| 3 | 斯威夫特 ↔ ObjC | 属性/getter/setter 桥接 | 斯威夫特 `var name: String` ↔ 对象 C `-name` / `-setName:` | `frameworks/swift-objc.ts` 中的旋转变压器 | 低的 |
+| 4 | 斯威夫特 ↔ ObjC | 初始化器桥接 | 斯威夫特 `init(name:age:)` ↔ ObjC `-initWithName:age:` | `frameworks/swift-objc.ts` 中的旋转变压器 | 低的 |
+| 5 | 斯威夫特 ↔ ObjC | 协议桥接 (`@objc protocol`) | 跨语言的一致性边缘 | `frameworks/swift-objc.ts` 中的旋转变压器 | 中等的 |
+| 6 | JS → ObjC（RN 遗留桥） | `NativeModules.<Mod>.<fn>` ↔ `RCT_EXPORT_METHOD(<fn>:...)` 或 `RCT_REMAP_METHOD(<jsName>, <selector>:...)` | ObjC 端由 `RCT_EXPORT_MODULE()` 文字键入的名称匹配 | `frameworks/react-native.ts` 中的旋转变压器 | 中等的 |
+| 7 | JS → Java/Kotlin（RN 遗留桥，Android） | `NativeModules.<Mod>.<fn>` ↔ `ReactContextBaseJavaModule` 子类上的 `@ReactMethod` 带注释的方法，其中 `getName()` 返回 `<Mod>` | 解析器 — 形状与 #6 相同，JVM 端 | 中等的 |
+| 8 | JS ↔ 原生（RN TurboModules / Codegen） | `TurboModuleRegistry.get('Mod')` ↔ 生成的规范接口（`NativeMod` TS 类型） ↔ 与规范匹配的 ObjC++/Kotlin impl | 将规范文件读取为基本事实的解析器 | 难的 |
+| 9 | 原生 → JS（事件） | ObjC `[self sendEventWithName:@"x" body:b]`（扩展 `RCTEventEmitter`）↔ JS `new NativeEventEmitter(NativeModules.Mod).addListener('x', cb)` | EventEmitter 风格的合成器（与语言 EventEmitter 的现有 `callback-synthesizer.ts` 相匹配） | 中等的 |
+| 10 | JS → 原生（Expo 模块） | JS `ExpoX.fn(args)` ↔ Swift `Function("fn") { ... }` 或 `AsyncFunction("fn") { ... }` 位于具有 `Name("ExpoX")` 的 `Module` 子类中 | `frameworks/expo-modules.ts` 中的旋转变压器 | 中等的 |
+| 11 | JS → 原生（Fabric 视图组件） | JS `<MyView prop={v}/>` ↔ ObjC/Swift `RCT_EXPORT_VIEW_PROPERTY(prop, ...)` 或 Codegen 查看规范 | 解析器 + JSX hop（与现有的 JSX 合成器组合） | 硬（推迟） |
 
-The **Difficulty** column drives phasing — see §6.
+**难度**列驱动分阶段——参见§6。
 
-### 2a. Why these are resolvers, not synthesizers
+### 2a.为什么这些是解析器，而不是合成器
 
-In every row, **the bridging rule is deterministic from a name**:
-- Swift's `@objc` exposure is a documented automatic mapping; `@objc(custom:)`
-  is an explicit override; both are statically extractable.
-- `RCT_EXPORT_METHOD` takes a literal selector; `RCT_EXPORT_MODULE()` takes
-  an optional literal module name (default: class name minus `RCT` prefix);
-  `NativeModules.Mod.fn` is a literal-property access on a known global.
-- Expo Modules `Function("name") { ... }` and `Module { Name("ExpoX"); ... }`
-  are literal strings inside `Module` definitions.
-- TurboModules spec interfaces are literal `Native<Name>` exports with
-  `TurboModuleRegistry.get<...>('<Name>')`.
+在每一行中，**桥接规则都是由名称确定的**：
+- Swift 的 `@objc` 曝光的是有记录的自动映射； `@objc(custom:)`
+是显式覆盖；两者都是静态可提取的。
+- `RCT_EXPORT_METHOD` 采用文字选择器； `RCT_EXPORT_MODULE()` 采取
+可选的文字模块名称（默认值：类名称减去 `RCT` 前缀）；
+`NativeModules.Mod.fn` 是对已知全局的文字属性访问。
+- 展览模块 `Function("name") { ... }` 和 `Module { Name("ExpoX"); ... }`
+是 `Module` 定义内的文字字符串。
+- TurboModules 规范接口是文字 `Native<Name>` 导出
+`TurboModuleRegistry.get<...>('<Name>')`。
 
-So the work is: **extract the bridging-side names → make the resolver match
-them**. Same shape as `djangoResolver` resolving `_iterable_class` to
-`ModelIterable` — no whole-graph correlation pass needed.
+所以工作是：**提取桥接端名称→使解析器匹配
+他们**。与 `djangoResolver` 形状相同，将 `_iterable_class` 解析为
+`ModelIterable` — 不需要全图相关传递。
 
-The one exception is **#9 native→JS events**, where the registration sites
-look very much like the in-language EventEmitter pattern the existing
-callback synthesizer already handles. Extending that synthesizer with a
-cross-language channel is the natural fit.
+一个例外是 **#9 本机→JS 事件**，其中注册站点
+看起来非常像现有的语言内 EventEmitter 模式
+回调合成器已经处理。扩展该合成器
+跨语言渠道是天作之合。
 
 ---
 
-## 3. Concrete bridging rules (the reference table)
+## 3. 具体桥接规则（参考表）
 
-### 3a. Swift → ObjC selector mapping (auto)
+### 3a. Swift → ObjC 选择器映射（自动）
 
-Swift uses standard rules to derive an ObjC selector from a Swift method:
+Swift 使用标准规则从 Swift 方法派生 ObjC 选择器：
 
-| Swift declaration | ObjC selector |
+| 迅速声明 | 对象选择器 |
 |---|---|
 | `func greet()` | `greet` |
 | `func say(_ msg: String)` | `say:` |
@@ -124,19 +124,19 @@ Swift uses standard rules to derive an ObjC selector from a Swift method:
 | `func move(from a: CGPoint, to b: CGPoint)` | `moveFrom:to:` |
 | `init(name: String)` | `initWithName:` |
 | `init(name: String, age: Int)` | `initWithName:age:` |
-| `var name: String` (getter) | `name` |
-| `var name: String` (setter) | `setName:` |
-| `@objc(customSel:) func f(...)` | `customSel:` (explicit override) |
+| `var name: String`（吸气剂） | `name` |
+| `var name: String`（二传手） | `setName:` |
+| `@objc(customSel:) func f(...)` | `customSel:`（显式覆盖） |
 
-The full rule set is at
-[Apple — Importing Swift into Objective-C](https://developer.apple.com/documentation/swift/importing-swift-into-objective-c)
-— specifically the "method name translation" and "initializer name translation"
-sections. The resolver implements this mapping in **one direction at extract
-time** (Swift declarations produce the bridged ObjC name, attached as an
-alias on the Swift method node), so name resolution on the ObjC side finds
-the Swift method through normal name-matching.
+完整的规则集位于
+[Apple — 将 Swift 导入 Objective-C](https://developer.apple.com/documentation/swift/importing-swift-into-objective-c)
+— 特别是“方法名称翻译”和“初始化程序名称翻译”
+部分。解析器在提取处以**一个方向实现此映射
+time** （Swift 声明生成桥接 ObjC 名称，附加为
+Swift 方法节点上的别名），因此 ObjC 端的名称解析找到
+通过正常名称匹配的 Swift 方法。
 
-### 3b. React Native legacy bridge — name resolution
+### 3b. React Native 遗留桥 — 名称解析
 
 ```objc
 // Native side (ObjC)
@@ -151,21 +151,21 @@ import { NativeModules } from 'react-native';
 NativeModules.Geolocation.getCurrentPosition(cb);       // resolves to the ObjC method above
 ```
 
-Rule:
-1. On the native side, extract a synthetic `module` node per class containing
-   `RCT_EXPORT_MODULE()`. Name = explicit string argument if present, else
-   class name with `RCT` prefix stripped.
-2. Each `RCT_EXPORT_METHOD(<sel>)` and `RCT_REMAP_METHOD(<jsName>, <sel>)`
-   becomes a method node attached to that module node, with the JS-visible
-   name (`<sel>`'s first keyword for `RCT_EXPORT_METHOD`, or `<jsName>` for
-   `RCT_REMAP_METHOD`).
-3. On the JS side, the resolver matches the literal property chain
-   `NativeModules.<Mod>.<fn>` against `(module, jsName)` pairs from the
-   native side.
-4. Resolver emits `references` (`provenance:'heuristic'`, `synthesizedBy:'rn-bridge'`)
-   from the JS callsite to the native method.
+规则：
+1. 在本机端，为每个类提取一个合成 `module` 节点，其中包含
+`RCT_EXPORT_MODULE()`。名称 = 显式字符串参数（如果存在），否则
+去掉 `RCT` 前缀的类名。
+2. 每个 `RCT_EXPORT_METHOD(<sel>)` 和 `RCT_REMAP_METHOD(<jsName>, <sel>)`
+成为附加到该模块节点的方法节点，具有 JS 可见
+名称（`<sel>` 的第一个关键字为 `RCT_EXPORT_METHOD`，或 `<jsName>` 为
+`RCT_REMAP_METHOD`）。
+3. 在 JS 端，解析器匹配文字属性链
+`NativeModules.<Mod>.<fn>` 与 `(module, jsName)` 对
+本机方面。
+4. 旋转变压器发出 `references`（`provenance:'heuristic'`、`synthesizedBy:'rn-bridge'`）
+从 JS 调用点到本机方法。
 
-### 3c. React Native TurboModule — name resolution
+### 3c. React Native TurboModule — 名称解析
 
 ```ts
 // Spec (TS) — codegen ground truth
@@ -185,16 +185,16 @@ import Geolocation from './NativeGeolocation';
 Geolocation.getCurrentPosition(cb);  // resolves to the ObjC method via the spec
 ```
 
-Rule:
-1. The spec file is the source of truth: parse `TurboModuleRegistry.get*<Spec>('<Name>')`
-   to find the module name, then read the `Spec` interface methods.
-2. Match each spec method to the native impl's same-named method (by selector
-   first-keyword, in the class identified by name convention or by reading
-   any `JSI_EXPORT_MODULE` macro if present).
-3. JS imports of the spec file get name resolution through the spec.
-4. Emits the same `references` edges as #3b, with `synthesizedBy:'rn-turbomodule'`.
+规则：
+1. 规范文件是事实来源：解析 `TurboModuleRegistry.get*<Spec>('<Name>')`
+找到模块名称，然后读取`Spec`接口方法。
+2. 将每个规范方法与本机 impl 的同名方法相匹配（通过选择器
+第一个关键字，在通过名称约定或阅读识别的类中
+任何 `JSI_EXPORT_MODULE` 宏（如果存在）。
+3. 规范文件的 JS 导入通过规范获得名称解析。
+4. 发出与 #3b 相同的 `references` 边缘，其中 `synthesizedBy:'rn-turbomodule'`。
 
-### 3d. Expo Modules — name resolution
+### 3d.世博模块 — 名称解析
 
 ```swift
 // Native (Swift, expo-modules-core API)
@@ -214,342 +214,342 @@ const ExpoCamera = requireNativeModule('ExpoCamera');
 await ExpoCamera.takePictureAsync({ quality: 1 });
 ```
 
-Rule:
-1. On the native side: a class extending `Module` whose `definition()` (or
-   `init { /* DSL */ }` for newer API) contains a `Name("X")` call defines
-   the module. Each `Function("y")` / `AsyncFunction("y")` literal defines a
-   method. The trailing closure is the implementation body — extract as a
-   method node named `y`, attached to module `X`.
-2. On the JS side: `requireNativeModule('X')` produces a binding; resolve
-   property accesses on it to the named methods.
-3. `Prop("name")` for view modules behaves like RN's `RCT_EXPORT_VIEW_PROPERTY` —
-   defer with the rest of the view-component frontier.
+规则：
+1. 在本机端：扩展 `Module` 的类，其 `definition()` （或
+`init { /* DSL */ }` 对于较新的 API）包含 `Name("X")` 调用定义
+该模块。每个 `Function("y")` / `AsyncFunction("y")` 文字定义一个
+方法。尾随闭包是实现主体——extract as a
+名为 `y` 的方法节点，附加到模块 `X`。
+2. 在JS端：`requireNativeModule('X')`产生一个绑定；解决
+属性访问它的命名方法。
+3. 视图模块的 `Prop("name")` 的行为类似于 RN 的 `RCT_EXPORT_VIEW_PROPERTY` —
+与视图组件边界的其余部分推迟。
 
 ---
 
-## 4. What edges need to exist
+## 4. 需要存在哪些边
 
-For each channel, the closed flow is:
+对于每个通道，闭合流量为：
 
-- **JS callsite → bridged-method-node** (`references`, heuristic, `synthesizedBy:'<channel>'`)
-- **Bridged-method-node → native-impl-method** (already extracted; for #6/#7
-  the bridged-method IS the native impl; for #10 the closure body IS the
-  impl)
-- **Native-impl-method → its own callees** (already extracted in-language)
+- **JS 调用点 → 桥接方法节点**（`references`、启发式、`synthesizedBy:'<channel>'`）
+- **桥接方法节点→本机实现方法**（已提取；适用于#6/#7
+桥接方法是本机实现；对于#10，封闭体是
+暗示）
+- **Native-impl-method → 它自己的被调用者**（已用语言提取）
 
-For Swift↔ObjC specifically, the cleanest model is **alias-name on the
-declaration node**: extend Swift method extraction to compute the ObjC
-auto-bridged name and store it as an alternate name the resolver
-considers. No new edges between Swift and ObjC method nodes are needed
-— normal name resolution suffices because both sides agree on the bridged
-selector after extraction.
+特别是对于 Swift↔ObjC，最干净的模型是 **alias-name
+声明节点**：扩展 Swift 方法提取来计算 ObjC
+自动桥接名称并将其存储为解析器的备用名称
+认为。 Swift 和 ObjC 方法节点之间不需要新的边
+— 正常的名称解析就足够了，因为双方都同意桥接
+提取后的选择器。
 
-The MCP read tools surface heuristic edges inline already
-(see `metadata.synthesizedBy` plumbing from #312/#403); these new edges
-ride that path with no additional plumbing.
+MCP 读取工具已内联表面启发式边缘
+（参见 #312/#403 中的 `metadata.synthesizedBy` 管道）；这些新的边缘
+沿着这条路行驶，无需额外的管道。
 
 ---
 
-## 5. Validation corpus (the small/medium/large bar)
+## 5. 验证语料库（小/中/大栏）
 
-Following CLAUDE.md's validation methodology — **≥3 flow prompts each on
-small / medium / large repos, with deterministic probes + agent A/B,
-≥2 runs/arm**. Picks below are candidates to commit to in the
-implementation branch; the implementation PR confirms the choices after
-verifying each repo still builds an index cleanly.
+遵循 CLAUDE.md 的验证方法 — **≥3 个流程提示
+小型/中型/大型存储库，具有确定性探针+代理 A/B，
+≥2 次运行/臂**。以下选择是要承诺的候选人
+实施部门；实施 PR 确认之后的选择
+验证每个存储库仍然可以干净地构建索引。
 
-### 5a. Mixed iOS (Swift+ObjC) — pick 3
+### 5a.混合 iOS (Swift+ObjC) — 选择 3
 
-| Tier | Repo | Why | Canonical flow |
+| 等级 | 回购协议 | 为什么 | 规范流 |
 |---|---|---|---|
-| **Small** | [Charts](https://github.com/danielgindi/Charts) (~150 files Swift+ObjC) | Swift-first lib with ObjC compatibility layer; well-known | "How does setting `data` on a `ChartView` reach the renderer?" |
-| **Small (alt)** | [Lottie-ios](https://github.com/airbnb/lottie-ios) (~300 files, was mixed; current may be pure-Swift — verify) | Animation engine, well-known mix | "How does `AnimationView.play()` reach the layer compositor?" |
-| **Medium** | [Realm-Cocoa](https://github.com/realm/realm-swift) (~500 files) | Heavy Swift-on-top-of-ObjC: Swift API wraps an ObjC core that wraps C++ Realm Core | "How does `Realm.write { realm.add(obj) }` reach the ObjC persistence layer?" |
-| **Large** | [Wikipedia-iOS](https://github.com/wikimedia/wikipedia-ios) (~2500 Swift+ObjC files) | Real app, deeply mixed, active development | "How does tapping a search result reach the article-fetch network call?" |
-| **Large (alt)** | [WordPress-iOS](https://github.com/wordpress-mobile/WordPress-iOS) | Heavier ObjC legacy + Swift additions | "How does a new-post draft save reach Core Data persistence?" |
+| **小的** | [图表](https://github.com/danielgindi/Charts)（约 150 个文件 Swift+ObjC） | 带有 ObjC 兼容层的 Swift-first 库；知名 | “在 `ChartView` 上设置 `data` 如何到达渲染器？” |
+| **小（替代）** | [洛蒂奥斯](https://github.com/airbnb/lottie-ios)（约 300 个文件，混合在一起；当前可能是纯 Swift — 验证） | 动画引擎，知名组合 | “`AnimationView.play()` 如何到达图层合成器？” |
+| **中等的** | [境界-可可](https://github.com/realm/realm-swift)（约 500 个文件） | Heavy Swift-on-top-of-ObjC：Swift API 包装了 ObjC 核心，而 ObjC 核心又包装了 C++ Realm Core | “`Realm.write { realm.add(obj) }`如何到达ObjC持久层？” |
+| **大的** | [维基百科-iOS](https://github.com/wikimedia/wikipedia-ios)（约 2500 个 Swift+ObjC 文件） | 真正的应用程序，深度混合，积极开发 | “点击搜索结果如何到达文章获取网络调用？” |
+| **大（替代）** | [WordPress-iOS](https://github.com/wordpress-mobile/WordPress-iOS) | 较重的 ObjC 遗留 + Swift 添加 | “新帖子草稿保存如何达到核心数据持久性？” |
 
-Bar per repo:
-1. Pure-language probes still pass (Swift-in-Swift trace; ObjC-in-ObjC trace) — no regression vs #165's pure-ObjC baseline.
-2. **Cross-language probe passes:** the canonical flow above traces end-to-end with `trace`, no break at the language boundary.
-3. **Agent A/B (with vs without rustcodegraph, ≥2 runs/arm):** Read = 0 within the explore-call budget; faster than without-rustcodegraph; no regression on a pure-Swift or pure-ObjC control repo (e.g. Texture).
-4. **No node-count explosion** vs pre-bridging baseline (`select count(*) from nodes` before/after).
+每个仓库的酒吧：
+1. 纯语言探测仍然通过（Swift-in-Swift 跟踪；ObjC-in-ObjC 跟踪）——与 #165 的纯 ObjC 基线相比没有回归。
+2. **跨语言探测通过：** 上面的规范流程以 `trace` 端到端跟踪，在语言边界处没有中断。
+3. **代理 A/B（使用 rustcodegraph 与不使用 rustcodegraph，≥2 次运行/臂）：** 在探索调用预算内读取 = 0；比不使用 rustcodegraph 更快；纯 Swift 或纯 ObjC 控制存储库（例如纹理）上没有回归。
+4. **没有节点数爆炸** 与桥接前基线（之前/之后的 `select count(*) from nodes`）相比。
 
-### 5b. React Native — pick 3
+### 5b. React Native — 选择 3
 
-| Tier | Repo | Why | Canonical flow |
+| 等级 | 回购协议 | 为什么 | 规范流 |
 |---|---|---|---|
-| **Small** | [react-native-svg](https://github.com/software-mansion/react-native-svg) (~100 files JS+ObjC+Java) | Small, well-scoped native module set | "How does setting `<Path d=.../>` reach the iOS Core Graphics call?" |
-| **Medium** | [react-native-screens](https://github.com/software-mansion/react-native-screens) (~300 files, JS+native) | Real navigation primitives, both legacy bridge and Fabric | "How does navigating to a new screen reach UINavigationController?" |
-| **Medium (alt)** | [react-native-firebase](https://github.com/invertase/react-native-firebase) (~1000 files across packages) | Many native modules, both platforms — stresses module discovery | "How does `firestore().collection('x').get()` reach the iOS Firebase SDK call?" |
-| **Large** | [facebook/react-native](https://github.com/facebook/react-native) RNTester subset (~3000 files) | The framework itself + sample app; canonical bridge usage | "How does pressing a button in RNTester's GeolocationExample reach the iOS Core Location call?" |
+| **小的** | [反应本机 svg](https://github.com/software-mansion/react-native-svg)（~100 个文件 JS+ObjC+Java） | 小型、范围广泛的本机模块集 | “设置`<Path d=.../>`如何到达iOS Core Graphics调用？” |
+| **中等的** | [反应本机屏幕](https://github.com/software-mansion/react-native-screens)（~300 个文件，JS+原生） | 真正的导航原语，包括传统的网桥和 Fabric | “导航到新屏幕如何到达 UINavigationController？” |
+| **中（替代）** | [反应本机 Firebase](https://github.com/invertase/react-native-firebase)（跨包约 1000 个文件） | 许多本机模块，两个平台 - 强调模块发现 | “`firestore().collection('x').get()` 如何到达 iOS Firebase SDK 调用？” |
+| **大的** | [facebook/react-native](https://github.com/facebook/react-native) RNTester 子集（约 3000 个文件） | 框架本身+示例应用程序；规范桥接用法 | “按下 RNTester 的 GeolocationExample 中的按钮如何到达 iOS 核心位置调用？” |
 
-Bar per repo:
-1. Pure-JS probes unchanged (`useState` → re-render flow still resolves — existing react synthesizer not regressed).
-2. **JS → ObjC bridge probe passes** for ≥1 known RCT_EXPORT_METHOD on each repo.
-3. **JS → TurboModule probe passes** on a repo that uses TurboModules (react-native main has both; pick one of each).
-4. **Native → JS event probe passes** for ≥1 emitter (NativeEventEmitter pattern).
-5. **Agent A/B** as above. Critical: a question that *crosses the bridge* (e.g. "how does pressing Button X reach the network call") must drop Read to 0 in ≥1 run with rustcodegraph.
-6. **No regression** on a pure-JS control repo (existing react-realworld / excalidraw measurements unchanged).
+每个仓库的酒吧：
+1. Pure-JS 探针不变（`useState` → 重新渲染流程仍然解析 - 现有的反应合成器没有回归）。
+2. **JS → ObjC 桥接探测通过**，每个存储库上有 ≥1 个已知的 RCT_EXPORT_METHOD。
+3. **JS → TurboModule 探针在使用 TurboModules 的存储库上传递**（react-native main 两者都有；各选一个）。
+4. **本机 → JS 事件探测传递**对于 ≥1 个发射器（NativeEventEmitter 模式）。
+5. **代理 A/B** 如上所述。关键：*过桥*的问题（例如“按下按钮 X 如何到达网络调用”）必须在使用 rustcodegraph 运行 ≥1 次时将 Read 降至 0。
+6. **在纯 JS 控制存储库上没有回归**（现有的 React-realworld / excalidraw 测量不变）。
 
-### 5c. Expo — pick 2 (smaller scope, narrower API surface)
+### 5c. Expo — 选择 2（范围更小，API 面更窄）
 
-| Tier | Repo | Why |
+| 等级 | 回购协议 | 为什么 |
 |---|---|---|
-| **Small/Medium** | [expo/expo](https://github.com/expo/expo) — one SDK module like `expo-camera` or `expo-location` | The cleanest Expo Modules API examples; live |
-| **Large** | full `expo/expo` monorepo (all SDK modules + the JS API) | Stress-test module-name resolution across many packages |
+| **小/中** | [博览会](https://github.com/expo/expo) — 一个 SDK 模块，如 `expo-camera` 或 `expo-location` | 最干净的 Expo Modules API 示例；居住 |
+| **大的** | 完整的 `expo/expo` monorepo（所有 SDK 模块 + JS API） | 跨多个包的压力测试模块名称解析 |
 
-Canonical flow: "How does `await Camera.takePictureAsync()` (JS) reach the
-native camera API call (Swift `AVCaptureSession` or Kotlin
-`CameraDevice`)?"
-
----
-
-## 6. Phasing — what comes first
-
-Per the playbook's difficulty gradient and the half-bridge rule, the order
-is fixed by what closes a flow end-to-end on the **smallest repo first**.
-
-### Phase 1 — Swift ↔ ObjC bridging (rows 1–5 above)
-Smallest scope, deterministic name mapping, no JS involved. Validate on the
-Charts/Realm/Wikipedia corpus before moving on. **Don't proceed to Phase 2
-until Phase 1 passes the §5a bar on all three repos.**
-
-### Phase 2 — React Native legacy bridge (rows 6–7, ObjC + Java/Kotlin)
-Both iOS and Android sides must close in the same PR — half-bridging one
-platform reveals the half-coverage hop on the other and the agent reads.
-Validate on the §5b corpus.
-
-### Phase 3 — Native → JS events (row 9)
-Extends the existing callback synthesizer with a cross-language channel.
-Validate on the same §5b corpus (most RN libs use at least one event emitter).
-
-### Phase 4 — Expo Modules (row 10)
-Layered on Phase 1's Swift extraction. Smaller corpus (§5c).
-
-### Phase 5 — RN TurboModules / Codegen (row 8)
-Requires reading the spec file as cross-language ground truth. Validate on
-the §5b corpus's TurboModule users (react-native main, post-0.73 libs).
-
-### Phase 6 — Fabric view components (row 11)
-Deferred — composes with the existing JSX synthesizer and the view side of
-TurboModules. Address when ≥1 of the §5b corpus repos has its bridge
-otherwise closed but a Fabric flow still breaks.
+规范流程：“`await Camera.takePictureAsync()` (JS) 如何到达
+本机相机 API 调用（Swift `AVCaptureSession` 或 Kotlin
+`CameraDevice`）？”
 
 ---
 
-## 7. Anti-goals (what we will not try to do)
+## 6. 分阶段——先做什么
 
-- **Android Kotlin/Java extraction quality** — out of scope. We use what
-  Kotlin/Java extractors already produce. If they miss a `@ReactMethod`
-  annotation's literal name we may add a tiny extractor refinement, but we
-  do not redesign JVM extraction.
-- **Dynamic / computed bridge keys** — `NativeModules[someVar]`,
-  `requireNativeModule(name)` where `name` is a parameter, etc. We only
-  resolve literal-key access (matches the
-  [agent-eval Lua frontier](./dynamic-dispatch-coverage-playbook.md) — anonymous-only patterns deferred).
-- **Bridging-header file content parsing** — we *do* index `.h` files
-  (already does via #165's content sniff) but we do **not** parse the
-  bridging header's `#import` list as a special "what's visible to Swift"
-  manifest. Treat it as a normal ObjC header.
-- **Runtime dispatch on `performSelector:`** — out of scope; matches the
-  same "named-only" anti-goal.
-- **JSI (raw, non-TurboModule)** — out of scope. Apps using bare JSI
-  call into native through a custom `Host*` interface that has no documented
-  declarative spec. Wait for those apps to migrate to TurboModules.
-- **Swift-only generics over ObjC protocols / Swift extensions on ObjC
-  classes** — extension methods are still callable in ObjC if `@objc`, so
-  they go through the same Phase 1 path. Generics are not — we silently
-  miss them. Acceptable; matches Java/Kotlin generics frontier.
+根据剧本的难度梯度和半桥规则，顺序
+由在**最小的存储库首先**上端到端关闭流程的内容来修复。
+
+### 第 1 阶段 — Swift ↔ ObjC 桥接（上面第 1-5 行）
+最小范围，确定性名称映射，不涉及 JS。验证在
+继续之前的图表/领域/维基百科语料库。 **不要继续进入第 2 阶段
+直到第 1 阶段通过所有三个存储库的 §5a 条。**
+
+### 第 2 阶段 — React Native 遗留桥（第 6-7 行，ObjC + Java/Kotlin）
+iOS 和 Android 双方必须在同一个 PR 中关闭——半桥接 PR
+平台显示另一个平台上的半覆盖跳跃，并且代理读取。
+在 §5b 语料库上进行验证。
+
+### 第 3 阶段 — 本机 → JS 事件（第 9 行）
+使用跨语言通道扩展现有的回调合成器。
+在相同的 §5b 语料库上进行验证（大多数 RN 库至少使用一个事件发射器）。
+
+### 第 4 阶段 — 世博模块（第 10 行）
+分层于第一阶段的快速提取。较小的语料库 (§5c)。
+
+### 第 5 阶段 — RN TurboModules/Codegen（第 8 行）
+需要将规范文件作为跨语言的基本事实进行读取。验证于
+§5b 语料库的 TurboModule 用户（react-native main，0.73 后的库）。
+
+### 第 6 阶段 - Fabric 视图组件（第 11 行）
+Deferred — 与现有的 JSX 合成器和视图端组合
+涡轮增压模块。当 ≥1 个 §5b 语料库存储库有桥时的地址
+否则关闭，但结构流仍然中断。
 
 ---
 
-## 8. Coverage-matrix entries — measured
+## 7. 反目标（我们不会尝试做的事情）
 
-| Language | Framework | Canonical flow | Mechanism | Status |
+- **Android Kotlin/Java 提取质量** — 超出范围。我们用什么
+Kotlin/Java 提取器已经生成。如果他们错过了 `@ReactMethod`
+注释的字面名称我们可以添加一个微小的提取器细化，但是我们
+不要重新设计 JVM 提取。
+- **动态/计算桥键** — `NativeModules[someVar]`，
+`requireNativeModule(name)` 其中`name`是参数等。我们只
+解析文字键访问（匹配
+[代理评估 Lua 前沿](./dynamic-dispatch-coverage-playbook.md) — 仅匿名模式被推迟）。
+- **桥接头文件内容解析** — 我们*做*索引 `.h` 文件
+（已经通过#165的内容嗅探做到了）但我们**不**解析
+桥接标头的 `#import` 列表作为特殊的“Swift 可见内容”
+显现。将其视为普通的 ObjC 标头。
+- **`performSelector:` 上的运行时调度** — 超出范围；匹配
+同样的“仅限命名”的反目标。
+- **JSI（原始、非 TurboModule）** — 超出范围。使用裸 JSI 的应用程序
+通过没有记录的自定义 `Host*` 接口调用本机
+声明性规范等待这些应用程序迁移到 TurboModules。
+- **ObjC 协议上的仅 Swift 泛型/ObjC 上的 Swift 扩展
+类** — 如果 `@objc`，扩展方法仍然可以在 ObjC 中调用，所以
+他们经历相同的第一阶段路径。泛型不是——我们默默地
+想念他们。可以接受；匹配 Java/Kotlin 泛型前沿。
+
+---
+
+## 8. 覆盖矩阵条目——测量
+
+| 语言 | 框架 | 规范流 | 机制 | 地位 |
 |---|---|---|---|---|
-| Swift × Objective-C | bridging | Swift call → ObjC selector; ObjC call → @objc Swift method | R | ✅ Phase 1 (§8a) |
-| JavaScript × Objective-C/Java/Kotlin | React Native legacy bridge | `NativeModules.<M>.<f>` → `RCT_EXPORT_METHOD` / `@ReactMethod` | R | ✅ Phase 2 (§8b) |
-| JavaScript × native | React Native TurboModules | spec interface ↔ impl | R (spec as ground truth) | ✅ partial — name-match path lands (§8b) |
-| Objective-C/Java/Kotlin → JavaScript | React Native event emitters | `[self sendEventWithName:]` → `addListener` | S (cross-lang channel) | ✅ Phase 3 (§8e) |
-| JavaScript × Swift/Kotlin | Expo Modules | `requireNativeModule('X').fn(...)` → `Function("fn") { }` | R (extract synthesizes method nodes) | ✅ Phase 4 (§8f) |
-| JavaScript × native | React Native Fabric views | `<MyView p=v/>` → Codegen spec component + NativeProps | R (extract) + S (native-impl) + JSX | ✅ Phase 6 (§8g) |
+| Swift × Objective-C | 桥接 | Swift 调用 → ObjC 选择器； ObjC 调用 → @objc Swift 方法 | 右 | ✅ 第 1 阶段 (§8a) |
+| JavaScript × Objective-C/Java/Kotlin | React Native 遗留桥 | `NativeModules.<M>.<f>` → `RCT_EXPORT_METHOD` / `@ReactMethod` | 右 | ✅ 第 2 阶段 (§8b) |
+| JavaScript × 原生 | React Native TurboModules | 规范接口 ↔ impl | R（规范作为基本事实） | ✅ 部分 — 名称匹配路径着陆 (§8b) |
+| Objective-C/Java/Kotlin → JavaScript | React Native 事件发射器 | `[self sendEventWithName:]` → `addListener` | S（跨语言通道） | ✅ 第 3 阶段 (§8e) |
+| JavaScript × Swift/Kotlin | 世博模块 | `requireNativeModule('X').fn(...)` → `Function("fn") { }` | R（提取合成方法节点） | ✅ 第 4 阶段 (§8f) |
+| JavaScript × 原生 | React Native Fabric 视图 | `<MyView p=v/>` → Codegen 规范组件 + NativeProps | R（提取）+ S（原生实现）+ JSX | ✅ 第 6 阶段（§8g） |
 
-### 8a. Phase 1 measurements — Swift ↔ ObjC
+### 8a.第一阶段测量 — Swift ↔ ObjC
 
-| Repo | Source files | Bridge edges (framework-resolved) | Sample edges |
+| 回购协议 | 源文件 | 桥接边缘（框架解析） | 样品边缘 |
 |---|---|---|---|
-| **Charts** (small) | 269 (205 Swift + 59 ObjC/.h) | 28 objc→swift, 1 swift→objc | `handleOption:forChartView:` → `animate` · `setupPieChartView:` → `setExtraOffsets` · `setDataCount:range:` → `setColor` |
-| **realm-swift** (medium) | 369 (151 Swift + 218 ObjC family) | 36 objc→swift, 1185 swift→objc | `valueForUndefinedKey:` → `get` · `setValue:forUndefinedKey:` → `set` · `promote:on:` → `initialize` |
-| **wikipedia-ios** (large) | 1734 (1234 Swift + 500 ObjC/.h) | 52 objc→swift, 983 swift→objc | real-iOS-app bridging across many feature modules |
+| **图表**（小） | 269（205 斯威夫特 + 59 ObjC/.h） | 28 objc→swift, 1 swift→objc | `handleOption:forChartView:` → `animate` · `setupPieChartView:` → `setExtraOffsets` · `setDataCount:range:` → `setColor` |
+| **领域-快速**（中） | 369（151 Swift + 218 ObjC 系列） | 36 objc→斯威夫特, 1185 斯威夫特→objc | `valueForUndefinedKey:` → `get` · `setValue:forUndefinedKey:` → `set` · `promote:on:` → `initialize` |
+| **维基百科-ios**（大） | 1734（1234 斯威夫特 + 500 ObjC/.h） | 52 objc→斯威夫特, 983 斯威夫特→objc | 真实 iOS 应用程序跨多个功能模块的桥接 |
 
-All three: in-language baselines unchanged, no node-count explosion,
-`trace` connects canonical flows across the boundary (verified on
-Charts: `trace(handleOption:forChartView:, animate)` surfaces the
-bridge edge directly).
+所有这三个：语言基线不变，没有节点数爆炸，
+`trace` 连接跨边界的规范流（已在
+图表：`trace(handleOption:forChartView:, animate)` 表面
+直接桥接边缘）。
 
-### 8b. Phase 2 + 5 (partial) measurements — React Native bridge
+### 8b.第 2 + 5 阶段（部分）测量 — React Native 桥
 
-| Repo | Source files | Bridge edges (framework-resolved) | Notes |
+| 回购协议 | 源文件 | 桥接边缘（框架解析） | 笔记 |
 |---|---|---|---|
-| **react-native-svg** (small/medium) | ~700 (93 .mm + 115 .java + 6 .kt + 49 js + 92 ts + 154 tsx) | 9 tsx→java via TurboModule spec | RNSvg's iOS uses TurboModule auto-gen (no `RCT_EXPORT_METHOD`); resolutions land on Java. All 9 precise: `isPointInStroke`, `isPointInFill`, `getTotalLength`, `getPointAtLength`, `getCTM`, `getScreenCTM`, `getBBox`, `toDataURL`. |
-| **AsyncStorage** (small, pure legacy bridge) | ~60 (28 kt + 2 mm + 16 ts + 14 tsx + …) | **8/8 precise** | The canonical legacy bridge test — Kotlin `@ReactMethod` + ObjC `RCT_EXPORT_METHOD`. JS `setItem` → Kotlin `legacy_multiSet`; `getItem` → `legacy_multiGet`; `clear` → `legacy_clear`; etc. |
-| **react-native-firebase** (large) | ~1100 (111 .java + 63 .m + 13 .mm + 239 js + 427 ts + 9 tsx) | 18 after RCTEventEmitter blocklist (was 78 before) | Initial 78 included 60 false positives targeting `addListener:` / `remove:` (every RCTEventEmitter declares them; every JS call to `.addListener(...)` resolved into noise). Blocklist cut to 18, all precise: `httpsCallable:region:emulatorHost:...`, `signInWithProvider`, `configureProvider`, `removeFunctionsStreaming:`. |
-| **react-native-screens** (medium) | 1211 | 0 — empty TurboModule spec, no `RCT_EXPORT_METHOD`, all Fabric/Codegen view-side | RNScreens lives entirely in Phase 6 (Fabric, deferred). The bridge declining to over-match here is the right behavior. |
+| **react-native-svg**（小/中） | 〜700（93 .mm + 115 .java + 6 .kt + 49 js + 92 ts + 154 tsx） | 9 tsx→java 通过 TurboModule 规范 | RNSvg 的 iOS 使用 TurboModule auto-gen （无 `RCT_EXPORT_METHOD`）；决议涉及爪哇岛。所有 9 个精确：`isPointInStroke`、`isPointInFill`、`getTotalLength`、`getPointAtLength`、`getCTM`、`getScreenCTM`、`getBBox`、`toDataURL`。 |
+| **AsyncStorage**（小型、纯遗留桥） | ~60（28 kt + 2 mm + 16 ts + 14 tsx + …） | **8/8 精确** | 规范的遗留桥接测试 — Kotlin `@ReactMethod` + ObjC `RCT_EXPORT_METHOD`。 JS `setItem` → Kotlin `legacy_multiSet`； `getItem` → `legacy_multiGet`； `clear` → `legacy_clear`； ETC。 |
+| **react-native-firebase**（大） | 〜1100（111 .java + 63 .m + 13 .mm + 239 js + 427 ts + 9 tsx） | RCTEventEmitter 黑名单后为 18（之前为 78） | 最初的 78 个包括 60 个针对 `addListener:` / `remove:` 的误报（每个 RCTEventEmitter 都声明它们；每个对 `.addListener(...)` 的 JS 调用都解析为噪声）。黑名单削减至 18 个，全部精确：`httpsCallable:region:emulatorHost:...`、`signInWithProvider`、`configureProvider`、`removeFunctionsStreaming:`。 |
+| **反应本机屏幕**（中） | 1211 | 0 — 空 TurboModule 规范，无 `RCT_EXPORT_METHOD`，所有 Fabric/Codegen 视图端 | RNScreens 完全处于第 6 阶段（Fabric，延迟）。桥牌在这里拒绝过度匹配是正确的行为。 |
 
-### 8c. Architectural fix discovered during validation
+### 8c.验证期间发现的架构修复
 
-The resolver's `initialize()` runs at RustCodeGraph construction — before any
-files are indexed — so framework resolvers whose `detect()` consults
-the indexed file list (UIKit / SwiftUI scanning for imports,
-`swift-objc-bridge` looking for both Swift and ObjC files,
-`react-native-bridge` looking for RN markers) all returned false on that
-initial pass and silently dropped themselves. This affected every
-framework resolver in the codebase that read `context.getAllFiles()` /
-`context.readFile()` rather than scanning the filesystem directly — a
-pre-existing latent bug, not bridge-specific. Fixed: `indexAll()` now
-calls `resolver.initialize()` after extraction completes, so detect()
-runs against the populated index.
+解析器的 `initialize()` 在 RustCodeGraph 构造中运行 - 在任何之前
+文件被索引 - 因此 `detect()` 咨询的框架解析器
+索引文件列表（UIKit / SwiftUI 扫描导入，
+`swift-objc-bridge` 寻找 Swift 和 ObjC 文件，
+`react-native-bridge` 寻找 RN 标记）全部返回 false
+最初的通过并默默地放弃了自己。这影响了每一个
+代码库中的框架解析器读取 `context.getAllFiles()` /
+`context.readFile()` 而不是直接扫描文件系统 - a
+预先存在的潜在错误，不是特定于桥的。已修复：现在 `indexAll()`
+提取完成后调用 `resolver.initialize()`，因此 detector()
+针对填充的索引运行。
 
-### 8d. Bridge-precision blocklists (lessons learned)
+### 8d.桥接精度阻止列表（经验教训）
 
-| Bridge | Blocked names | Reason |
+| 桥 | 被屏蔽的名字 | 原因 |
 |---|---|---|
-| swift-objc | `init`, `description`, `hash`, `isEqual`, `copy`, `count`, `value`, `data`, `string`, `object`, `add`, `remove`, `update`, `load`, `save`, `reload`, `cancel`, `start`, `stop`, `pause`, `resume`, `close`, `open`, `show`, `hide`, `dealloc`, `release`, `retain`, `autorelease`, … | Every NSObject subclass implements these; bridging them to arbitrary project-local ObjC methods produces noise. Regular name-matcher handles them on its own. |
-| react-native | `addListener`, `removeListeners`, `remove`, `invalidate`, `startObserving`, `stopObserving` | Every `RCTEventEmitter` subclass declares these via `RCT_EXPORT_METHOD`. JS callers of `.addListener(...)` / `.remove(...)` go through `NativeEventEmitter` (JS abstraction), not the native bridge directly. |
+| swift-objc | `init`、`description`、`hash`、`isEqual`、`copy`、`count`、`value`、`data`、`string`、`object`、`add`、`remove`、`update`、`load`、 `save`、`reload`、`cancel`、`start`、`stop`、`pause`、`resume`、`close`、`open`、`show`、`hide`、`dealloc`、`release`、 `retain`、`autorelease`、…… | 每个 NSObject 子类都实现了这些；将它们桥接到任意项目本地 ObjC 方法会产生噪音。常规名称匹配器会自行处理它们。 |
+| 反应本机 | `addListener`、`removeListeners`、`remove`、`invalidate`、`startObserving`、`stopObserving` | 每个 `RCTEventEmitter` 子类都通过 `RCT_EXPORT_METHOD` 声明它们。 `.addListener(...)` / `.remove(...)` 的 JS 调用者通过 `NativeEventEmitter` （JS 抽象），而不是直接通过本机桥。 |
 
-### 8e. Phase 3 measurements — RN native → JS event channel
+### 8e.第 3 阶段测量 — RN 原生 → JS 事件通道
 
-Synthesizer pattern; extends `src/resolution/callback-synthesizer.ts` with a
-cross-language event channel keyed by literal event name. Validates on
-**RNFirebase** (large):
+合成器模式；将 `src/resolution/callback-synthesizer.ts` 扩展为
+由文字事件名称键入的跨语言事件通道。验证于
+**RNFirebase**（大）：
 
-| Synthesized event channel | Edges | Sample |
+| 合成事件通道 | 边缘 | 样本 |
 |---|---|---|
-| `messaging_message_received` | 2 | `application:didReceiveRemoteNotification:fetchCompletionHandler:` → TS `onMessage` (and the `UNUserNotificationCenter` willPresent variant → same `onMessage`) |
+| `messaging_message_received` | 2 | `application:didReceiveRemoteNotification:fetchCompletionHandler:` → TS `onMessage`（并且 `UNUserNotificationCenter` 将呈现变体 → 相同的 `onMessage`） |
 | `messaging_notification_opened` | 1 | `userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:` → TS `onNotificationOpenedApp` |
 
-Each edge is `provenance:'heuristic'`,
-`metadata.synthesizedBy:'rn-event-channel'`. Same `EVENT_FANOUT_CAP = 6`
-as the in-language channel — generic event names with too many handlers
-or dispatchers skip rather than over-link.
+每条边都是`provenance:'heuristic'`，
+`metadata.synthesizedBy:'rn-event-channel'`。相同`EVENT_FANOUT_CAP = 6`
+作为语言通道 - 具有太多处理程序的通用事件名称
+或者调度员跳过而不是过度链接。
 
-The synthesizer also handles the **subscribe-wrapper pattern** common in
-RN libraries (`messaging().onMessage(listener)` where `listener` is a
-parameter that flows up to user code): when the JS handler arg isn't a
-named symbol, it attributes the listener to the ENCLOSING JS function
-(reachability-correct, attributes to the abstraction layer).
+合成器还处理常见的 **订阅包装模式**
+RN 库（`messaging().onMessage(listener)`，其中 `listener` 是
+流向用户代码的参数）：当 JS 处理程序 arg 不是
+命名符号，它将侦听器归因于 ENCLOSING JS 函数
+（可达性正确，抽象层的属性）。
 
-### 8f. Phase 4 measurements — Expo Modules
+### 8f.第四阶段测量——Expo 模块
 
-Framework `extract()` parses Swift / Kotlin source for literal
+框架 `extract()` 解析 Swift / Kotlin 源代码以获取文字
 `Function("X") { … }` / `AsyncFunction("X") { … }` / `Property("X") { … }`
-/ `Constants` declarations inside `class X: Module` (or `: Module()` in
-Kotlin) and emits a `method` node named `X` per literal. The standard
-name-matcher resolves JS callsites like `Foo.takePictureAsync(...)` to
-these synthetic nodes via the existing `obj.method` → method-name path.
+/ `Constants` 里面的声明 `class X: Module` （或者 `: Module()` 里面
+Kotlin) 并为每个文字发出一个名为 `X` 的 `method` 节点。标准
+name-matcher 将 `Foo.takePictureAsync(...)` 之类的 JS 调用解析为
+这些合成节点通过现有的 `obj.method` → 方法名称路径。
 
-Validated on real Expo SDK packages:
+在真实的 Expo SDK 包上进行验证：
 
-| Package | Files indexed | Expo method nodes extracted | Cross-language edges |
+| 包裹 | 文件已编入索引 | 提取的 Expo 方法节点 | 跨语言边缘 |
 |---|---|---|---|
-| **expo-haptics** | 14 | 6 (3 Swift + 3 Kotlin: `notificationAsync`, `impactAsync`, `selectionAsync` / `performHapticsAsync`) | Module nodes registered; consumer-app callers resolve via name-match |
-| **expo-camera** | 72 | 41 (Swift + Kotlin; covers `takePictureAsync`, `record`, `resumePreview`, `getAvailableLenses`, `scanFromURLAsync`, `requestCameraPermissionsAsync`, view-side `width` / `height` properties, …) | 9 swift→expo, 7 kotlin→expo internal edges. JS-side callsites in the package shadow the native names with TS wrappers (`pausePreview()` defined on `CameraView.tsx`); name-match correctly prefers the local TS method. An external consumer app of `Camera.takePictureAsync()` resolves through to the native method directly. |
+| **世博会触觉** | 14 | 6（3 Swift + 3 Kotlin：`notificationAsync`、`impactAsync`、`selectionAsync` / `performHapticsAsync`） | 模块节点注册；消费者应用程序调用者通过名称匹配进行解析 |
+| **世博相机** | 72 | 41（Swift + Kotlin；涵盖 `takePictureAsync`、`record`、`resumePreview`、`getAvailableLenses`、`scanFromURLAsync`、`requestCameraPermissionsAsync`、视图端 `width` / `height` 属性，...） | 9 swift→expo，7 kotlin→expo 内部边缘。包中的 JS 端调用点使用 TS 包装器隐藏本机名称（在 `CameraView.tsx` 上定义的 `pausePreview()`）； name-match 正确地更喜欢本地 TS 方法。 `Camera.takePictureAsync()` 的外部消费者应用程序直接解析为本机方法。 |
 
-Five tests cover the extractor + an end-to-end fixture:
-`JS callsite of literal AsyncFunction("uniqueExpoHapticCall") resolves
-to the native impl node` — confirms the resolver-free bridge path
-works when names aren't shadowed.
+五项测试涵盖提取器 + 端到端固定装置：
+文字 AsyncFunction("uniqueExpoHapticCall") 的 JS 调用点解析
+到本机 impl 节点` — 确认无解析器的桥接路径
+当名称没有阴影时有效。
 
-### 8g. Phase 6 measurements — Fabric / Codegen view components
+### 8克。第 6 阶段测量——Fabric/Codegen 视图组件
 
-Two-part design:
+两部分设计：
 
-1. **Framework extractor** (`src/resolution/frameworks/fabric.ts`) — parses
-   TS / TSX spec files for `codegenNativeComponent<Props>('Name', ...)`
-   declarations. Emits:
-   - One `component` node per declaration (named after the JS-visible
-     component name; matches the JSX synthesizer's name+kind filter).
-   - One `property` node per declared field of the `NativeProps`
-     interface — surfacing JSX-callable props like `onTap`,
-     `nativeContainerBackgroundColor` as discoverable graph nodes.
+1. **框架提取器** (`src/resolution/frameworks/fabric.ts`) — 解析
+`codegenNativeComponent<Props>('Name', ...)` 的 TS / TSX 规格文件
+声明。发出：
+   - 每个声明一个 `component` 节点（以 JS-visible 命名）
+组件名称；匹配 JSX 合成器的 name+kind 过滤器）。
+   - `NativeProps` 的每个声明字段有一个 `property` 节点
+接口 — 呈现 JSX 可调用的 props，例如 `onTap`，
+`nativeContainerBackgroundColor` 作为可发现的图节点。
 
-2. **Synthesizer** (`fabricNativeImplEdges` in `callback-synthesizer.ts`) —
-   walks every `fabric-component:*` node and looks for a native class
-   matching its name with one of RN's convention suffixes (empty / `View`
-   / `ViewManager` / `ComponentView` / `Manager`). Emits a `calls` edge
-   with `metadata.synthesizedBy:'fabric-native-impl'` from the component
-   to each match. The convention is precise enough that there's no name
-   collision in well-formed RN libraries.
+2. **合成器**（`callback-synthesizer.ts` 中的 `fabricNativeImplEdges`）—
+遍历每个 `fabric-component:*` 节点并寻找本地类
+将其名称与 RN 的约定后缀之一匹配（空 / `View`
+/ `ViewManager` / `ComponentView` / `Manager`）。发出 `calls` 边缘
+组件中的 `metadata.synthesizedBy:'fabric-native-impl'`
+每场比赛。约定足够精确，以至于没有名字
+结构良好的 RN 库中的碰撞。
 
-Combined with the existing `reactJsxChildEdges` JSX synthesizer, this
-closes the full JSX → native flow: consumer-app JSX `<MyView prop=v/>`
-→ Fabric `component` node `MyView` → native class `MyViewView`
-(or `MyViewManager` / `MyViewComponentView` / …).
+与现有的 `reactJsxChildEdges` JSX 合成器相结合，该
+关闭完整的 JSX → 原生流程：消费者应用程序 JSX `<MyView prop=v/>`
+→ Fabric `component` 节点 `MyView` → 原生类 `MyViewView`
+（或 `MyViewManager` / `MyViewComponentView` / …）。
 
-Re-validated on **react-native-screens** (the corpus repo that was
-entirely Fabric and showed 0 bridges in Phase 2):
+在**react-native-screens**（语料库存储库）上重新验证
+完全 Fabric 并在第 2 阶段显示 0 个桥）：
 
-| Metric | Count |
+| 公制 | 数数 |
 |---|---|
-| `codegenNativeComponent` spec declarations | 54 |
-| Fabric component nodes extracted | 27 (one per non-web spec; the `*.web.ts` variants are filtered out by spec validity) |
-| Fabric prop nodes extracted | 272 (the full NativeProps interface surface across all components) |
-| `fabric-native-impl` bridge edges | 68 |
+| `codegenNativeComponent` 规格声明 | 54 |
+| 提取的 Fabric 组件节点 | 27（每个非网络规范一个；`*.web.ts` 变体按规范有效性过滤掉） |
+| 提取的 Fabric 支撑节点 | 272（所有组件的完整 NativeProps 界面） |
+| `fabric-native-impl` 桥边 | 68 |
 
-Sample bridge edges:
+桥边缘示例：
 
-| JS component | Native class | Suffix |
+| JS组件 | 母语班 | 后缀 |
 |---|---|---|
-| `RNSFullWindowOverlay` | `RNSFullWindowOverlay` (ObjC) | (exact) |
-| `RNSFullWindowOverlay` | `RNSFullWindowOverlayManager` (ObjC) | `Manager` |
-| `RNSModalScreen` | `RNSModalScreenManager` (ObjC) | `Manager` |
-| `RNSScreenContainer` | `RNSScreenContainerView` (ObjC) | `View` |
+| `RNSFullWindowOverlay` | `RNSFullWindowOverlay`（对象） | （精确的） |
+| `RNSFullWindowOverlay` | `RNSFullWindowOverlayManager`（对象） | `Manager` |
+| `RNSModalScreen` | `RNSModalScreenManager`（对象） | `Manager` |
+| `RNSScreenContainer` | `RNSScreenContainerView`（对象） | `View` |
 
-Four tests cover the extractor + a full end-to-end fixture
+四项测试涵盖提取器 + 完整的端到端夹具
 (`App (TSX) → MyView (fabric-component) → MyViewView (ObjC class)`)
-that asserts the JSX→component edge AND the
-component→native-class edge both exist after indexing.
+断言 JSX→组件边缘 AND
+组件→本机类边在索引后都存在。
 
 ---
 
-## 9. Open questions to settle in Phase 1
+## 9. 第一阶段需要解决的开放性问题
 
-These are not blocking the start of Phase 1 — they're the first things to
-decide *while* writing the Swift↔ObjC resolver:
+这些并不会阻碍第一阶段的开始——它们是首先要做的事情
+*在*编写 Swift↔ObjC 解析器时决定：
 
-1. **Alias on declaration vs new bridge edge?** Storing the auto-bridged
-   ObjC selector as an alternate name on the Swift method node is cheaper
-   and aligns with how name resolution already works. The alternative
-   (synthesize a cross-language `references` edge between matching nodes)
-   is more explicit in `trace` output but adds N edges per `@objc` symbol.
-   **Default: alias.** Verify the alias surfaces in `callers`/`callees`/`trace`
-   results.
-2. **How does `trace` display a cross-language hop?** The MCP `trace` tool
-   inlines each hop's body. A Swift → ObjC hop should make this obvious in
-   the rendered output ("Swift `func foo(bar:)` → bridged to ObjC selector
-   `-fooWithBar:` → ObjC `-[ImageDownloader fooWithBar:]`"). Will likely
-   need a small renderer tweak in `trace.ts` to label the bridge.
-3. **Where do the resolver bridging rules live?** Suggest a
-   `src/resolution/frameworks/swift-objc.ts` for the auto-name mapping (a
-   pure function) imported by both the Swift extractor (to compute the
-   alias at extract time) and tests. Keeps the mapping in one place.
-4. **What about `@objcMembers`?** Class-level export — applies to all members
-   unless `@nonobjc`. Handle by checking the class's modifiers in the Swift
-   extractor and defaulting each member's `@objc`-ness from that.
+1. **声明上的别名与新桥接边缘？** 存储自动桥接
+ObjC 选择器作为 Swift 方法节点上的替代名称更便宜
+并与名称解析的工作方式保持一致。另一种选择
+（在匹配节点之间合成跨语言`references`边）
+在 `trace` 输出中更明确，但为每个 `@objc` 符号添加 N 个边。
+**默认：alias。** 验证 `callers`/`callees`/`trace` 中的别名表面
+结果。
+2. **`trace` 如何显示跨语言跳转？** MCP `trace` 工具
+内联每个跃点的主体。 Swift → ObjC 跳跃应该使这一点显而易见
+渲染的输出（“Swift `func foo(bar:)` →桥接到 ObjC 选择器
+`-fooWithBar:` → ObjC `-[ImageDownloader fooWithBar:]`”）。可能会
+需要在 `trace.ts` 中对渲染器进行小的调整来标记桥。
+3. **解析器桥接规则位于哪里？** 建议
+`src/resolution/frameworks/swift-objc.ts` 用于自动名称映射（
+纯函数）由 Swift 提取器导入（以计算
+提取时的别名）和测试。将映射保留在一处。
+4. **`@objcMembers` 怎么样？** 类级别导出 — 适用于所有成员
+除非`@nonobjc`。通过检查 Swift 中类的修饰符来处理
+提取器并从中默认每个成员的 `@objc`-ness。
 
 ---
 
-## 10. Done-bar (so we know when to stop)
+## 10. 完成吧（这样我们就知道何时停止）
 
-Phase 1 (Swift↔ObjC) is done when:
-- All three §5a corpora pass: pure-language probes unchanged; cross-language
-  canonical flow probe finds the path end-to-end; agent A/B shows Read = 0
-  in ≥1 run with rustcodegraph, faster than without.
-- Coverage matrix row in §6 of the playbook is filled in with numbers.
-- A CHANGELOG `[Unreleased]` entry exists, written user-side.
+第 1 阶段 (Swift↔ObjC) 在以下情况下完成：
+- 所有三个 §5a 语料库均通过：纯语言探测不变；跨语言
+规范流探针找到端到端的路径；代理 A/B 显示 Read = 0
+使用 rustcodegraph 运行 ≥1 次，比不使用更快。
+- 手册第 6 节中的覆盖矩阵行用数字填充。
+- 存在 CHANGELOG `[Unreleased]` 条目，是在用户端写入的。
 
-Each subsequent Phase has the same shape — its own §5 corpus, its own
-matrix row, its own CHANGELOG entry — and **doesn't ship until the
-previous one passes**. Half-bridges are not optional to avoid here; they
-actively make rustcodegraph worse on these codebases than not having any
-bridging at all.
+每个后续阶段都有相同的形状 - 它自己的 §5 语料库，它自己的
+矩阵行，它自己的 CHANGELOG 条目 — 并且 ** 直到
+前一项通过**。在这里，半桥是必须避免的；他们
+积极地使 rustcodegraph 在这些代码库上比没有任何代码更糟糕
+根本无法桥接。

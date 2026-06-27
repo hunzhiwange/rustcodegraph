@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 对单个仓库发起一次无头 Claude 评估运行，并保存完整 JSONL 事件流用于后续统计。
+# 主要输入是仓库路径、标签和提示词；主要副作用是启动带 RustCodeGraph MCP 的 `claude` 进程，并把输出写到 `AGENT_EVAL_OUT`。
 # Headless Claude Code run against a repo with rustcodegraph MCP, capturing the
 # full stream-json so we can see tool calls + token usage. Complements the
 # interactive itrun.sh: headless gives a clean per-tool breakdown + exact

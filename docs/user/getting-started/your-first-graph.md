@@ -1,32 +1,32 @@
-# Your First Graph
+# 你的第一张图表
 
-Build an index and run your first queries against it.
+构建索引并对其运行第一个查询。
 
-Once RustCodeGraph is installed, building and exploring a graph takes three commands.
+安装 RustCodeGraph 后，构建和探索图表需要三个命令。
 
-## Index a project
+## 索引项目
 
 ```bash
 cd your-project
 rustcodegraph init -i      # initialize + index in one step
 ```
 
-`init` creates the `.rustcodegraph/` directory; `-i` (or `--index`) immediately builds the full index. For an existing project you can re-index any time:
+`init` 创建`.rustcodegraph/` 目录； `-i`（或 `--index`）立即构建完整索引。 对于现有项目，您可以随时重新索引：
 
 ```bash
 rustcodegraph index          # full index
 rustcodegraph sync           # incremental update of changed files
 ```
 
-## Check it worked
+## 检查它是否有效
 
 ```bash
 rustcodegraph status
 ```
 
-This reports the node/edge/file counts, the active SQLite backend, and the journal mode — a quick health check that the index is ready.
+这会报告节点/边缘/文件计数、活动 SQLite 后端和日志模式 - 快速运行状况检查索引是否已准备好。
 
-## Run a query
+## 运行查询
 
 ```bash
 rustcodegraph query UserService          # find symbols by name
@@ -36,8 +36,8 @@ rustcodegraph impact AuthMiddleware      # what a change would affect
 rustcodegraph context "fix the login flow"   # build task-focused context
 ```
 
-Each accepts `--json` for machine-readable output. See the full [CLI reference](../reference/cli.md).
+每个都接受 `--json` 作为机器可读的输出。 See the full [CLI reference](../reference/cli.md).
 
-## Hand it to your agent
+## 交给你的代理人
 
-With a `.rustcodegraph/` directory present and an agent configured (see [Installation](./installation.md)), your agent uses the [MCP tools](../reference/mcp-server.md) automatically — no extra step.
+如果存在 `.rustcodegraph/` 目录并配置了代理（请参阅 [Installation](./installation.md)），您的代理将自动使用 [MCP tools](../reference/mcp-server.md) — 无需额外步骤。

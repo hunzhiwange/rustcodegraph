@@ -1,36 +1,36 @@
-# RustCodeGraph User Documentation
+# RustCodeGraph 用户文档
 
-User-facing documentation for installing, configuring, and using RustCodeGraph.
+用于安装、配置和使用 RustCodeGraph 的面向用户的文档。
 
-## Getting Started
+## 入门
 
-- [Introduction](getting-started/introduction.md)
-- [Quickstart](getting-started/quickstart.md)
-- [Installation](getting-started/installation.md)
-- [Configuration](getting-started/configuration.md)
-- [Your First Graph](getting-started/your-first-graph.md)
-- [Next Steps](getting-started/next-steps.md)
+- [Introduction](入门/介绍.md)
+-  [[[Quickstart]]]（入门/quickstart.md）
+-  [Installation](入门/安装.md)
+-  [Configuration](入门/configuration.md)
+-  [[[Your First Graph]]]（入门/your-first-graph.md）
+-  [[[Next Steps]]]（入门/下一步.md）
 
-## Core Concepts
+## 核心概念
 
-- [How It Works](core-concepts/how-it-works.md)
-- [The Knowledge Graph](core-concepts/knowledge-graph.md)
-- [Resolution & Frameworks](core-concepts/resolution.md)
+- [How It Works](核心概念/how-it-works.md)
+-  [The Knowledge Graph](核心概念/知识图.md)
+-  [[[Resolution & Frameworks]]]（核心概念/分辨率.md）
 
-## Guides
+## 指南
 
-- [Indexing a Project](guides/indexing.md)
-- [Framework Routes](guides/framework-routes.md)
-- [Affected Tests in CI](guides/affected-tests.md)
+- [[[Indexing a Project]]]（指南/indexing.md）
+-  [[[Framework Routes]]]（指南/framework-routes.md）
+-  [[[Affected Tests in CI]]]（指南/受影响的测试.md）
 
-## Reference
+## 参考
 
-- [MCP Server](reference/mcp-server.md)
-- [Integrations](reference/integrations.md)
-- [CLI](reference/cli.md)
-- [API](reference/api.md)
-- [Languages](reference/languages.md)
+- [MCP Server](参考/mcp-server.md)
+-  [Integrations](参考/integrations.md)
+-  [CLI](参考/cli.md)
+-  [API](参考/api.md)
+-  [Languages](参考/语言.md)
 
-## Troubleshooting
+## 故障排除
 
-- [Troubleshooting](troubleshooting.md)
+- [[[Troubleshooting]]]（故障排除.md）

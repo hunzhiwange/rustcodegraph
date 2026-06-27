@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 针对实现类任务做 with/without RustCodeGraph A/B，观察编辑前理解阶段是否仍回退到 `Read`。
+# 主要输入是已索引仓库、任务和可选构建命令；主要副作用是复制仓库、运行多轮代理评估并记录构建是否通过。
 # Sufficiency A/B for an IMPLEMENTATION task (the agent edits): when it uses
 # codegraph (explore/node) to understand before editing, does it still Read? Like
 # ab-sufficiency.sh but copies+indexes a FRESH target per run (the agent mutates

@@ -45,13 +45,13 @@ fn combined_output(args: &[&str]) -> String {
     )
 }
 
-fn help_lists_serve_command(out: &str) -> bool {
+fn help_lists_command(out: &str, command: &str) -> bool {
     out.lines().any(|line| {
         let trimmed = line.trim_start();
         line.len() != trimmed.len()
-            && (trimmed == "serve"
-                || trimmed.starts_with("serve ")
-                || trimmed.starts_with("serve\t"))
+            && (trimmed == command
+                || trimmed.starts_with(&format!("{command} "))
+                || trimmed.starts_with(&format!("{command}\t")))
     })
 }
 
@@ -123,9 +123,22 @@ mod codegraph_version_affordances {
     }
 
     #[test]
+    fn lists_user_facing_explore_and_node_commands_in_help() {
+        let out = run(&["--help"]);
+        assert!(help_lists_command(&out, "explore"), "{out}");
+        assert!(help_lists_command(&out, "node"), "{out}");
+    }
+
+    #[test]
+    fn lists_the_watch_command_in_help() {
+        let out = run(&["--help"]);
+        assert!(help_lists_command(&out, "watch"), "{out}");
+    }
+
+    #[test]
     fn hides_the_internal_serve_command_from_help() {
         let out = run(&["--help"]);
-        assert!(!help_lists_serve_command(&out), "{out}");
+        assert!(!help_lists_command(&out, "serve"), "{out}");
     }
 
     #[test]

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 把 Rust 发布归档重新组装成 npm 分发目录。
+# 主要输入是版本号和 `release/` 下的归档文件；主要副作用是在 `release/npm/` 下重建各平台包与主包。
 #
 # Assemble npm packages from Rust release archives.
 #

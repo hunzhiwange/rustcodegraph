@@ -1,8 +1,8 @@
-# Integrations
+# 集成
 
-Supported agents, and manual MCP setup.
+支持的代理和手动 MCP 设置。
 
-The interactive installer auto-detects and configures each supported agent — wiring up the MCP server and writing its instructions file.
+交互式安装程序会自动检测并配置每个受支持的代理 - 连接 MCP 服务器并写入其说明文件。
 
 ## Supported agents
 
@@ -15,18 +15,18 @@ The interactive installer auto-detects and configures each supported agent — w
 - **Antigravity IDE**
 - **Kiro**
 
-Run `rustcodegraph install` and pick your agent(s); see [Installation](../getting-started/installation.md) for the non-interactive flags.
+运行 `rustcodegraph install` 并选择您的代理；有关非交互式标志，请参阅 [Installation](../getting-started/installation.md)。
 
-## Manual setup
+## 手动设置
 
-If you'd rather wire it up yourself, install globally:
+如果您想自己连接，请全局安装：
 
 ```bash
 # macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/hunzhiwange/rustcodegraph/main/install.sh | sh
 ```
 
-Add the MCP server to `~/.claude.json`:
+将 MCP 服务器添加到 `~/.claude.json`：
 
 ```json
 {
@@ -40,7 +40,7 @@ Add the MCP server to `~/.claude.json`:
 }
 ```
 
-Optionally auto-allow the read-only tools in `~/.claude/settings.json`:
+可以选择自动允许 `~/.claude/settings.json` 中的只读工具：
 
 ```json
 {
@@ -58,6 +58,6 @@ Optionally auto-allow the read-only tools in `~/.claude/settings.json`:
 }
 ```
 
-:::tip
-Cursor launches MCP subprocesses with the wrong working directory. The installer handles this for you by injecting a `--path` argument; if you wire Cursor up by hand, pass the project path explicitly.
+:::提示
+光标使用错误的工作目录启动 MCP 子进程。安装程序通过注入 `--path` 参数来为您处理这个问题；如果您手动连接 Cursor，请显式传递项目路径。
 :::

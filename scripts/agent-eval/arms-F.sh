@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 批量运行 F 臂实验，用同一组仓库验证内联函数体 trace 加 trace-first 引导的效果。
+# 主要输入是 `RUNS` 和 `CORPUS`；主要副作用是循环调用 `run-arms.sh`，把多轮实验结果写到默认输出目录。
 # Arm F (body-inlining trace + trace-first steering) across the same 6 repos as
 # arms-matrix.sh, so F vs B isolates the trace-enrichment effect (same surface,
 # old thin trace in B vs body-inlining trace here).

@@ -116,9 +116,12 @@ fn option_takes_value(arg: &str) -> bool {
             | "--target"
             | "--file"
             | "--format"
+            | "--pattern"
             | "--max-files"
             | "--max-depth"
+            | "--debounce-ms"
             | "--offset"
+            | "--line"
             | "--print-config"
             | "--location"
     )

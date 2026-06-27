@@ -1,21 +1,21 @@
-# Configuration
+# 配置
 
-RustCodeGraph is zero-config — there are no config files.
+RustCodeGraph 是零配置的——没有配置文件。
 
-There isn't any — RustCodeGraph is **zero-config**, with **no config file** to write or keep in sync. Language support is automatic from the file extension; there's nothing to wire up per language.
+没有任何 — RustCodeGraph 是 **零配置**，**没有配置文件** 可以写入或保持同步。 语言支持是从文件扩展名自动获得的； 每种语言无需连接任何内容。
 
-## What it skips out of the box
+## 它从盒子里跳过了什么
 
-- **Dependency, build, and cache directories** — `node_modules`, `vendor`, `dist`, `build`, `target`, `.venv`, `Pods`, `.next`, and the like across every [supported stack](../reference/languages.md) — so the graph is your code, not third-party noise. This holds even with no `.gitignore`.
-- **Anything in your `.gitignore`** — honored in git repos via git, and in non-git projects by reading `.gitignore` directly (root and nested).
-- **Files larger than 1 MB** — generated bundles, minified JS, vendored blobs.
+- **依赖项、构建和缓存目录** - 每个 [supported stack](../reference/languages.md) 中的 `node_modules`、`vendor`、`dist`、`build`、`target`、`.venv`、`Pods`、`.next` 等 - 因此图表是您的代码，而不是第三方的代码 噪音。 即使没有 `.gitignore`，这也成立。 
+- **`.gitignore` 中的任何内容** — 通过 git 在 git 存储库中获得荣誉，在非 git 项目中则通过直接读取 `.gitignore`（根和嵌套）获得荣誉。 
+- **大于 1 MB 的文件** — 生成的包、缩小的 JS、供应商的 blob。
 
-## Excluding or including more
+## 排除或包含更多
 
-To keep something else out, add it to `.gitignore`. To pull a default-excluded directory back **in** (e.g. you really want a vendored dependency indexed), add a negation — `!vendor/`.
+要排除其他内容，请将其添加到 `.gitignore`。 要将默认排除的目录拉回到**中（例如，您确实想要对供应商依赖项进行索引），请添加否定 - `!vendor/`。
 
-The defaults apply uniformly, so committing a dependency or build directory doesn't force it into the graph — the `.gitignore` negation is the explicit opt-in.
+默认值统一应用，因此提交依赖项或构建目录不会强制将其放入图中 - `.gitignore` 否定是显式选择加入。
 
-## Where data lives
+## 数据所在的地方
 
-Per-project data lives in a `.rustcodegraph/` directory at your project root, containing the SQLite database (`rustcodegraph.db`). Nothing leaves your machine.
+每个项目的数据位于项目根目录的 `.rustcodegraph/` 目录中，其中包含 SQLite 数据库 (`rustcodegraph.db`)。 没有任何东西离开你的机器。
