@@ -2,8 +2,8 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -252,7 +252,10 @@ fn watch_cli_honors_explicit_path_from_a_different_cwd() {
         }
     }
 
-    assert!(seen.contains(&fixture.path().display().to_string()), "{seen}");
+    assert!(
+        seen.contains(&fixture.path().display().to_string()),
+        "{seen}"
+    );
 
     let _ = child.kill();
     let _ = child.wait();
