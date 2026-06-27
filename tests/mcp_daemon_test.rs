@@ -406,11 +406,33 @@ mod shared_mcp_daemon_issue_411 {
     }
 
     #[cfg(windows)]
-    fn with_mismatched_mini_server<F>(_socket_path: &Path, _hello: Value, _body: F)
+    fn with_mismatched_mini_server<F>(socket_path: &Path, hello: Value, body: F)
     where
         F: FnOnce(),
     {
-        panic!("Windows named-pipe mini server fixture is not implemented for the ignored port");
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind(rustcodegraph::mcp::daemon_paths::daemon_loopback_addr(
+            socket_path,
+        ))
+        .unwrap_or_else(|err| {
+            panic!(
+                "failed to bind mini daemon loopback for {}: {err}",
+                socket_path.display()
+            )
+        });
+        let hello_line = format!(
+            "{}\n",
+            serde_json::to_string(&hello).expect("mini daemon hello should serialize")
+        );
+        let handle = thread::spawn(move || {
+            if let Ok((mut stream, _addr)) = listener.accept() {
+                let _ = stream.write_all(hello_line.as_bytes());
+            }
+        });
+
+        body();
+        let _ = handle.join();
     }
 
     // TS it: "two invocations share ONE detached daemon; both attach as proxies"

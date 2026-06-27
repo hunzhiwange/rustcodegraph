@@ -4,6 +4,8 @@
 //! registry 在不同进程中能算出同一位置。
 
 use std::env;
+#[cfg(windows)]
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -60,6 +62,19 @@ pub fn get_daemon_socket_path(project_root: impl AsRef<Path>) -> PathBuf {
 /// Absolute path to the daemon pid lockfile for `project_root`.
 pub fn get_daemon_pid_path(project_root: impl AsRef<Path>) -> PathBuf {
     get_code_graph_dir(project_root).join("daemon.pid")
+}
+
+/// Map a stable daemon socket path to the loopback TCP address used on Windows.
+#[cfg(windows)]
+pub fn daemon_loopback_addr(socket_path: impl AsRef<Path>) -> SocketAddrV4 {
+    const LOOPBACK_PORT_BASE: u16 = 30_000;
+    const LOOPBACK_PORT_SPAN: u16 = 30_000;
+
+    let mut hasher = Sha256::new();
+    hasher.update(socket_path.as_ref().to_string_lossy().as_bytes());
+    let digest = hasher.finalize();
+    let offset = u16::from_be_bytes([digest[0], digest[1]]) % LOOPBACK_PORT_SPAN;
+    SocketAddrV4::new(Ipv4Addr::LOCALHOST, LOOPBACK_PORT_BASE + offset)
 }
 
 /// Serialize a daemon lock for writing to the pidfile.

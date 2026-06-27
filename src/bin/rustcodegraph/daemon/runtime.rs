@@ -23,6 +23,8 @@ use rustcodegraph::mcp::daemon::{
 use rustcodegraph::mcp::daemon_paths::{
     decode_lock_info, get_daemon_pid_path, get_daemon_socket_path,
 };
+#[cfg(windows)]
+use rustcodegraph::mcp::daemon_paths::daemon_loopback_addr;
 use serde_json::Value;
 
 use super::socket::{LocalListener, LocalStream};
@@ -347,8 +349,14 @@ fn bind_daemon_listener(socket_path: &Path) -> Result<LocalListener, String> {
 }
 
 #[cfg(windows)]
-fn bind_daemon_listener(_socket_path: &Path) -> Result<LocalListener, String> {
-    Err("Windows named-pipe daemon transport is not implemented in this build".to_string())
+fn bind_daemon_listener(socket_path: &Path) -> Result<LocalListener, String> {
+    let addr = daemon_loopback_addr(socket_path);
+    let listener = LocalListener::bind(addr)
+        .map_err(|err| format!("failed to bind Windows daemon loopback {addr}: {err}"))?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|err| format!("failed to set Windows daemon listener nonblocking: {err}"))?;
+    Ok(listener)
 }
 
 #[cfg(all(not(unix), not(windows)))]
@@ -369,8 +377,12 @@ fn accept_daemon_client(listener: &LocalListener) -> io::Result<Option<LocalStre
 }
 
 #[cfg(windows)]
-fn accept_daemon_client(_listener: &LocalListener) -> io::Result<Option<LocalStream>> {
-    Ok(None)
+fn accept_daemon_client(listener: &LocalListener) -> io::Result<Option<LocalStream>> {
+    match listener.accept() {
+        Ok((stream, _addr)) => Ok(Some(stream)),
+        Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(None),
+        Err(err) => Err(err),
+    }
 }
 
 #[cfg(all(not(unix), not(windows)))]

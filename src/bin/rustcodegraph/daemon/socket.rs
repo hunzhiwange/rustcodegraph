@@ -1,12 +1,15 @@
 //! daemon transport 的跨平台适配层。
 //!
-//! Unix 使用 Unix domain socket；Windows 目前只保留类型占位和清晰的 unsupported
-//! 错误，避免调用方把“传输未实现”误判成可重试的随机 IO 问题。
+//! Unix 使用 Unix domain socket；Windows 复用稳定映射的 loopback TCP 端口来承载
+//! 同一套 daemon/proxy 协议，同时继续对外暴露命名管道风格的标识路径。
 
 use std::io::{self, Read};
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
+
+#[cfg(windows)]
+use rustcodegraph::mcp::daemon_paths::daemon_loopback_addr;
 
 #[cfg(unix)]
 pub(super) type LocalStream = std::os::unix::net::UnixStream;
@@ -60,7 +63,7 @@ pub(super) fn daemon_socket_may_exist(socket_path: &Path) -> bool {
 
 #[cfg(windows)]
 pub(super) fn daemon_socket_may_exist(_socket_path: &Path) -> bool {
-    // Windows transport 尚未实现，因此这里返回 true 让上层尝试连接并得到明确错误。
+    // Windows 使用稳定 loopback 端口；没有 pid/socket 文件可探测时，直接尝试连接即可。
     true
 }
 
@@ -75,11 +78,8 @@ pub(super) fn connect_local_stream(socket_path: &Path) -> io::Result<LocalStream
 }
 
 #[cfg(windows)]
-pub(super) fn connect_local_stream(_socket_path: &Path) -> io::Result<LocalStream> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "Windows named-pipe daemon transport is not implemented in this build",
-    ))
+pub(super) fn connect_local_stream(socket_path: &Path) -> io::Result<LocalStream> {
+    LocalStream::connect(daemon_loopback_addr(socket_path))
 }
 
 #[cfg(all(not(unix), not(windows)))]

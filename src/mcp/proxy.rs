@@ -76,7 +76,7 @@ pub fn client_hello(host_ppid_env: Option<&str>, current_ppid: u32) -> DaemonCli
     DaemonClientHello {
         rustcodegraph_client: 1,
         pid: std::process::id(),
-        host_pid: parse_host_ppid(host_ppid_env).or(Some(current_ppid)),
+        host_pid: parse_host_ppid(host_ppid_env).or((current_ppid > 1).then_some(current_ppid)),
     }
 }
 
