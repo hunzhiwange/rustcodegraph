@@ -399,17 +399,35 @@ fn platform_process_alive(pid: u32) -> bool {
     use std::ffi::c_void;
 
     const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const SYNCHRONIZE: u32 = 0x0010_0000;
     const STILL_ACTIVE: u32 = 259;
+    const WAIT_OBJECT_0: u32 = 0x0000_0000;
+    const WAIT_TIMEOUT: u32 = 0x0000_0102;
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
         fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> *mut c_void;
         fn GetExitCodeProcess(hProcess: *mut c_void, lpExitCode: *mut u32) -> i32;
+        fn WaitForSingleObject(hHandle: *mut c_void, dwMilliseconds: u32) -> u32;
         fn CloseHandle(hObject: *mut c_void) -> i32;
     }
 
-    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid) };
     if handle.is_null() {
+        return false;
+    }
+
+    let wait = unsafe { WaitForSingleObject(handle, 0) };
+    if wait == WAIT_OBJECT_0 {
+        unsafe {
+            let _ = CloseHandle(handle);
+        }
+        return false;
+    }
+    if wait != WAIT_TIMEOUT {
+        unsafe {
+            let _ = CloseHandle(handle);
+        }
         return false;
     }
 

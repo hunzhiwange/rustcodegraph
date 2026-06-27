@@ -369,7 +369,9 @@ mod shared_mcp_daemon_issue_411 {
         #[cfg(windows)]
         {
             let _ = Command::new("taskkill")
-                .args(["/PID", &pid.to_string(), "/T"])
+                // Windows 没有 Unix 风格 SIGTERM；这里直接模拟“daemon 消失”，
+                // 才能稳定覆盖 proxy 的 mid-session fallback 行为。
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status();

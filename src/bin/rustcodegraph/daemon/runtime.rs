@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
+use std::net::Shutdown;
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc, Mutex,
@@ -117,6 +118,7 @@ struct RuntimeDaemonState {
     pid_path: PathBuf,
     // 客户端先注册连接，再通过内部 hello 补上真实宿主 PID；因此值允许暂时为空。
     clients: Mutex<BTreeMap<usize, Option<ClientPeerPids>>>,
+    client_controls: Mutex<BTreeMap<usize, LocalStream>>,
     next_client_id: AtomicUsize,
     // idle timeout 只从“没有客户端”时开始计时，避免长会话被普通空闲间隙误杀。
     zero_clients_since: Mutex<Option<Instant>>,
@@ -133,6 +135,7 @@ impl RuntimeDaemonState {
             pid_path: get_daemon_pid_path(&project_root),
             project_root,
             clients: Mutex::new(BTreeMap::new()),
+            client_controls: Mutex::new(BTreeMap::new()),
             next_client_id: AtomicUsize::new(1),
             zero_clients_since: Mutex::new(Some(now)),
             last_activity_at: Mutex::new(now),
@@ -140,10 +143,13 @@ impl RuntimeDaemonState {
         }
     }
 
-    fn add_client(&self) -> usize {
+    fn add_client(&self, control_stream: LocalStream) -> usize {
         let id = self.next_client_id.fetch_add(1, Ordering::SeqCst);
         if let Ok(mut clients) = self.clients.lock() {
             clients.insert(id, None);
+        }
+        if let Ok(mut controls) = self.client_controls.lock() {
+            controls.insert(id, control_stream);
         }
         if let Ok(mut zero_since) = self.zero_clients_since.lock() {
             *zero_since = None;
@@ -167,6 +173,9 @@ impl RuntimeDaemonState {
         } else {
             false
         };
+        if let Ok(mut controls) = self.client_controls.lock() {
+            controls.remove(&id);
+        }
         if is_empty && let Ok(mut zero_since) = self.zero_clients_since.lock() {
             *zero_since = Some(Instant::now());
         }
@@ -195,6 +204,19 @@ impl RuntimeDaemonState {
         // 只删除仍指向自己的锁文件，避免竞态中误删新 daemon 已经写入的锁。
         if info.pid == std::process::id() {
             let _ = fs::remove_file(&self.pid_path);
+        }
+    }
+
+    fn begin_shutdown(&self) {
+        if self.stopping.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        // 主循环决定停止时，主动关闭所有 client socket，让阻塞在读的 handler
+        // 线程及时退出；这在 Windows 上比单纯等待进程自然收尾更可靠。
+        if let Ok(mut controls) = self.client_controls.lock() {
+            for stream in controls.values_mut() {
+                let _ = stream.shutdown(Shutdown::Both);
+            }
         }
     }
 
@@ -272,7 +294,7 @@ fn run_bound_daemon(root: PathBuf) -> Result<(), String> {
             }
             Ok(None) => {}
             Err(err) => {
-                state.stopping.store(true, Ordering::SeqCst);
+                state.begin_shutdown();
                 state.cleanup_lockfile();
                 return Err(format!("daemon accept failed: {err}"));
             }
@@ -297,6 +319,7 @@ fn run_bound_daemon(root: PathBuf) -> Result<(), String> {
                 .unwrap_or_default();
             if state.client_count() == 0 && idle_elapsed >= Duration::from_millis(idle_timeout_ms) {
                 eprintln!("[RustCodeGraph daemon] Stopping after idle timeout.");
+                state.begin_shutdown();
                 break;
             }
         }
@@ -310,6 +333,7 @@ fn run_bound_daemon(root: PathBuf) -> Result<(), String> {
                 .unwrap_or_default();
             if inactive_for >= Duration::from_millis(max_idle_ms) {
                 eprintln!("[RustCodeGraph daemon] Stopping after inactivity backstop.");
+                state.begin_shutdown();
                 break;
             }
         }
@@ -321,7 +345,7 @@ fn run_bound_daemon(root: PathBuf) -> Result<(), String> {
         thread::sleep(Duration::from_millis(25));
     }
 
-    state.stopping.store(true, Ordering::SeqCst);
+    state.begin_shutdown();
     state.cleanup_lockfile();
     cleanup_daemon_socket(&state.socket_path);
     Ok(())
@@ -402,7 +426,11 @@ fn cleanup_daemon_socket(_socket_path: &Path) {}
 use std::os::unix::fs::PermissionsExt;
 
 fn handle_daemon_client(state: Arc<RuntimeDaemonState>, mut stream: LocalStream) {
-    let client_id = state.add_client();
+    let control_stream = match stream.try_clone() {
+        Ok(stream) => stream,
+        Err(_) => return,
+    };
+    let client_id = state.add_client(control_stream);
     let hello = daemon_hello(&state.socket_path);
     if let Ok(mut line) = serde_json::to_string(&hello) {
         line.push('\n');

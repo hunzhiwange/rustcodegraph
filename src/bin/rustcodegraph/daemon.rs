@@ -179,6 +179,7 @@ fn spawn_detached_daemon(root: &Path) -> Result<(), String> {
     command
         .args(["serve", "--mcp", "--path"])
         .arg(root)
+        .current_dir(std::env::temp_dir())
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_for_stderr))
