@@ -403,7 +403,13 @@ fn accept_daemon_client(listener: &LocalListener) -> io::Result<Option<LocalStre
 #[cfg(windows)]
 fn accept_daemon_client(listener: &LocalListener) -> io::Result<Option<LocalStream>> {
     match listener.accept() {
-        Ok((stream, _addr)) => Ok(Some(stream)),
+        Ok((stream, _addr)) => {
+            // Windows TCP accept 出来的 socket 会继承 listener 的 nonblocking 状态；
+            // 后续 daemon client handler 用的是阻塞式读写，所以这里必须切回 blocking，
+            // 否则会把正常会话误判成 WouldBlock/断开。
+            let _ = stream.set_nonblocking(false);
+            Ok(Some(stream))
+        }
         Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(None),
         Err(err) => Err(err),
     }
