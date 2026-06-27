@@ -202,7 +202,12 @@ fn response_text(resp: &Value) -> &str {
 }
 
 fn file_uri(path: &Path) -> String {
-    format!("file://{}", path.display())
+    let value = path.to_string_lossy().replace('\\', "/");
+    if value.starts_with('/') {
+        format!("file://{value}")
+    } else {
+        format!("file:///{value}")
+    }
 }
 
 mod mcp_project_resolution_via_roots_list_issue_196 {

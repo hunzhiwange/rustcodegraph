@@ -284,13 +284,22 @@ mod shared_mcp_daemon_issue_411 {
         }
 
         fn root_uri(&self) -> String {
-            format!("file://{}", self.temp_dir.display())
+            file_uri(&self.temp_dir)
         }
     }
 
     impl Drop for TempProject {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.temp_dir);
+        }
+    }
+
+    fn file_uri(path: &Path) -> String {
+        let value = path.to_string_lossy().replace('\\', "/");
+        if value.starts_with('/') {
+            format!("file://{value}")
+        } else {
+            format!("file:///{value}")
         }
     }
 

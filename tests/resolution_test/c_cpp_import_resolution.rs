@@ -105,10 +105,12 @@ fn should_extract_c_cpp_import_mappings_from_include_directives() {
 fn should_discover_include_directories_from_compile_commands_json() {
     let _guard = CppIncludeCacheGuard::new();
     let project = TempProject::new("codegraph-cpp-test");
-    let compile_db = format!(
-        r#"[{{"directory":"{}","command":"g++ -Iinclude -Isrc/lib -isystem /usr/include -c src/main.cpp","file":"src/main.cpp"}}]"#,
-        project.path().display()
-    );
+    let compile_db = serde_json::json!([{
+        "directory": project.path().to_string_lossy(),
+        "command": "g++ -Iinclude -Isrc/lib -isystem /usr/include -c src/main.cpp",
+        "file": "src/main.cpp"
+    }])
+    .to_string();
     project.write("compile_commands.json", &compile_db);
     project.mkdir("include");
     project.mkdir("src/lib");

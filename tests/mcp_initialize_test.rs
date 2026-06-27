@@ -113,10 +113,19 @@ fn send_initialize(child: &mut Child, project_path: &Path) {
                 "protocolVersion": "2025-11-25",
                 "capabilities": {},
                 "clientInfo": { "name": "test", "version": "0.0.0" },
-                "rootUri": format!("file://{}", project_path.display()),
+                "rootUri": file_uri(project_path),
             },
         }),
     );
+}
+
+fn file_uri(path: &Path) -> String {
+    let value = path.to_string_lossy().replace('\\', "/");
+    if value.starts_with('/') {
+        format!("file://{value}")
+    } else {
+        format!("file:///{value}")
+    }
 }
 
 fn send_message(child: &mut Child, message: Value) {
