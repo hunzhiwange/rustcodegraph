@@ -199,9 +199,10 @@ release-push: release-check-version release-check-clean ## Push the current bran
 	fi
 	git push --atomic "$(REMOTE)" HEAD:"$(BRANCH)" "$(TAG)"
 
-# 一键完成完整发布链路。
-release-all: ## Prep, verify, commit, tag, and push a release.
+# 一键完成完整发布链路，并在校验前自动跑一次格式化。
+release-all: ## Prep, format, verify, commit, tag, and push a release.
 	$(MAKE) release-prep VERSION="$(VERSION)" TAG="$(TAG)"
+	$(MAKE) fmt
 	$(MAKE) release-verify VERSION="$(VERSION)" TAG="$(TAG)"
 	$(MAKE) release-commit VERSION="$(VERSION)" COMMIT_MESSAGE="$(COMMIT_MESSAGE)" RELEASE_ADD_PATHS="$(RELEASE_ADD_PATHS)"
 	$(MAKE) release-tag TAG="$(TAG)"
