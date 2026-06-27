@@ -20,20 +20,29 @@ use rustcodegraph::types::{Edge, EdgeKind, Language, Node, NodeKind};
 
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
+fn test_temp_root() -> PathBuf {
+    std::env::var_os("CARGO_TARGET_TMPDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+}
+
 struct TempDir {
     path: PathBuf,
 }
 
 impl TempDir {
     fn new(prefix: &str) -> Self {
+        let root = test_temp_root();
+        fs::create_dir_all(&root).unwrap_or_else(|err| {
+            panic!("failed to create test temp root {}: {err}", root.display())
+        });
         for _ in 0..100 {
             let unique = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("system time should be after the Unix epoch")
                 .as_nanos();
             let suffix = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir()
-                .join(format!("{prefix}-{}-{unique}-{suffix}", std::process::id()));
+            let path = root.join(format!("{prefix}-{}-{unique}-{suffix}", std::process::id()));
             match fs::create_dir(&path) {
                 Ok(()) => return Self { path },
                 Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,

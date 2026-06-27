@@ -21,11 +21,11 @@ use rustcodegraph::mcp::daemon::{
     parse_client_hello_line, resolve_client_sweep_ms, resolve_idle_timeout_ms, resolve_max_idle_ms,
     try_acquire_daemon_lock,
 };
+#[cfg(windows)]
+use rustcodegraph::mcp::daemon_paths::daemon_loopback_addr;
 use rustcodegraph::mcp::daemon_paths::{
     decode_lock_info, get_daemon_pid_path, get_daemon_socket_path,
 };
-#[cfg(windows)]
-use rustcodegraph::mcp::daemon_paths::daemon_loopback_addr;
 use serde_json::Value;
 
 use super::socket::{LocalListener, LocalStream};
