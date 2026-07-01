@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+
+## [1.2.0] - 2026-07-01
+
 ### Fixes
 
 - Fixed a tree-sitter AST conversion bug that could make `rustcodegraph watch` consume gigabytes of memory when syncing Rust files with chained calls or many nested syntax nodes.
@@ -48,3 +51,4 @@
 ### Fixes
 
 - Published a maintenance release with the latest packaging and release workflow updates.
+[1.2.0]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.0
