@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use super::ToolHandler;
-use super::response::{ToolResult, text_result};
+use super::response::{ToolResult, current_time_ms, text_result};
 use crate::sync::worktree::worktree_mismatch_warning;
 
 pub(super) fn run(handler: &mut ToolHandler, project_path: Option<&str>) -> ToolResult {
@@ -48,8 +48,22 @@ pub(super) fn run(handler: &mut ToolHandler, project_path: Option<&str>) -> Tool
         let pending = cg.get_pending_files();
         if !pending.is_empty() {
             lines.push("### Pending sync:".to_string());
+            lines.push(
+                "Watcher is waiting for the next batch sync; these graph entries may be stale until it completes."
+                    .to_string(),
+            );
+            let now_ms = current_time_ms();
             for pending in pending {
-                lines.push(format!("- {}", pending.path));
+                let age_ms = (now_ms - pending.last_seen_ms).max(0);
+                let state = if pending.indexing {
+                    "indexing in progress"
+                } else {
+                    "waiting for batch sync"
+                };
+                lines.push(format!(
+                    "- {} (edited {age_ms}ms ago, {state})",
+                    pending.path
+                ));
             }
             lines.push(String::new());
         }

@@ -17,6 +17,8 @@ fn disables_auto_sync_after_prolonged_lock_contention_with_bounded_retries() {
         sync_fn,
         FileWatchOptions {
             debounce_ms: Some(25),
+            min_sync_interval_ms: None,
+            max_debounce_ms: None,
             inert_for_tests: true,
             on_sync_complete: Some(Box::new(move |result| {
                 on_complete

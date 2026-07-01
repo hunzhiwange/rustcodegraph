@@ -434,7 +434,7 @@ fn with_mcp_index_state_notice(text: String, project_root: &Path) -> String {
         String::new()
     };
     format!(
-        "⚠️ Some files were edited since the last index sync and may be stale in this response:\n{files}{suffix}\nFor accurate content of those files, read them directly; the watcher will sync after its debounce window.\n\n{text}"
+        "⚠️ Some files were edited since the last index sync and may be stale in this response:\n{files}{suffix}\nThese files are waiting for the next batch sync; the watcher will refresh the graph automatically. Treat only those entries as possibly stale until that batch sync completes.\n\n{text}"
     )
 }
 

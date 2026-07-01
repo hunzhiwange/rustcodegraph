@@ -57,11 +57,17 @@ pub(super) fn index_facade_database_inner(
         };
         let metadata = fs::metadata(&abs).ok();
         let language = detect_language(&file_path, Some(&source));
+        crate::utils::debug_rss(&format!(
+            "  file:start ({file_path}, lang={language:?}, native={})",
+            should_index_with_native_parser(language, &source)
+        ));
         let mut file_errors = Vec::new();
         let (mut file_nodes, mut file_pending_edges, mut file_edges, mut file_unresolved_refs) =
             if should_index_with_native_parser(language, &source) {
                 // 小文件优先走原生 tree-sitter，之后再用 facade fallback 针对语言缺口补齐节点和边。
+                crate::utils::debug_rss("    native:before extract_source_now");
                 let mut result = extract_source_now(&file_path, &source, Some(language), None);
+                crate::utils::debug_rss("    native:after extract_source_now");
                 let mut pending_edges = result
                     .unresolved_references
                     .iter()
@@ -128,13 +134,20 @@ pub(super) fn index_facade_database_inner(
                     || (language == Language::Go && go_facade_fallback_file(&file_path, &source))
                 {
                     // fallback 节点放在前面，后续去重会保留首个 id；这让补洞结果能覆盖原生抽取漏掉的结构。
+                    crate::utils::debug_rss(
+                        "    native:before extract_facade_symbols_rich (fallback)",
+                    );
                     let (mut fallback_nodes, mut fallback_pending_edges, mut fallback_edges) =
                         extract_facade_symbols_rich(&file_path, &source, language, indexed_at, &[]);
+                    crate::utils::debug_rss(
+                        "    native:after extract_facade_symbols_rich (fallback)",
+                    );
                     fallback_nodes.append(&mut nodes);
                     nodes = fallback_nodes;
                     pending_edges.append(&mut fallback_pending_edges);
                     edges.append(&mut fallback_edges);
                 }
+                crate::utils::debug_rss("    native:before framework_extraction");
                 let framework_pending_start = pending_edges.len();
                 append_facade_framework_extraction(
                     &file_path,
@@ -182,6 +195,7 @@ pub(super) fn index_facade_database_inner(
                 &mut file_edges,
             );
         }
+        crate::utils::debug_rss(&format!("  file:after extract ({})", file_path));
         append_facade_function_ref_edges(
             &file_path,
             &source,
@@ -190,6 +204,7 @@ pub(super) fn index_facade_database_inner(
             &file_nodes,
             &mut file_pending_edges,
         );
+        crate::utils::debug_rss("  file:after function_ref_edges");
         append_facade_react_native_member_call_edges(
             &file_path,
             &source,
@@ -197,6 +212,7 @@ pub(super) fn index_facade_database_inner(
             &file_nodes,
             &mut file_pending_edges,
         );
+        crate::utils::debug_rss("  file:after react_native_edges");
         append_facade_class_member_reference_edges(
             &file_path,
             &source,
@@ -205,7 +221,9 @@ pub(super) fn index_facade_database_inner(
             &file_nodes,
             &mut file_pending_edges,
         );
+        crate::utils::debug_rss("  file:after class_member_ref_edges");
         append_facade_relation_edges(&source, language, &file_nodes, &mut file_pending_edges);
+        crate::utils::debug_rss("  file:after relation_edges");
         let node_count = file_nodes.len();
         sources.push((file_path.clone(), source.clone()));
         file_records.push(FileRecord {
@@ -234,9 +252,15 @@ pub(super) fn index_facade_database_inner(
         files_indexed += 1;
     }
 
+    crate::utils::debug_rss(&format!(
+        "inner:after extract loop ({} files, {} nodes)",
+        files_indexed,
+        nodes.len()
+    ));
     dedupe_facade_nodes(&mut nodes);
     let mut edges = resolve_facade_edges_rich(&nodes, pending_edges, &direct_edges);
     edges.append(&mut direct_edges);
+    crate::utils::debug_rss("inner:after resolve_facade_edges_rich");
     // 这些补充边都依赖全项目节点集合，必须等所有文件抽取完成后再统一运行。
     edges.extend(resolve_facade_property_type_edges(&nodes));
     edges.extend(resolve_facade_value_ref_edges(&sources, &nodes));
@@ -245,6 +269,7 @@ pub(super) fn index_facade_database_inner(
     edges.extend(resolve_facade_test_file_edges(&sources, &nodes));
     dedupe_facade_edges(&mut edges);
     dedupe_facade_edges_by_node_names(&mut edges, &nodes);
+    crate::utils::debug_rss("inner:after cross-file edges + dedupe");
 
     let tx = match conn.transaction() {
         Ok(tx) => tx,
@@ -482,12 +507,15 @@ pub(super) fn index_facade_database_inner(
         }
     }
 
+    crate::utils::debug_rss("inner:after tx.commit, before resolve queue");
     let post_resolution_edges = if files_indexed > 0 {
         // resolver 和动态边合成在事务提交后运行，因为它们需要查询刚写入的完整索引。
-        resolve_facade_reference_queue(project_root)
+        // full_rebuild 时全量 load 节点；增量同步走按需 DB 查询，避免单文件改动吃满内存。
+        resolve_facade_reference_queue(project_root, full_rebuild)
     } else {
         0
     };
+    crate::utils::debug_rss("inner:after resolve queue (DONE)");
     IndexResult {
         success: true,
         files_indexed,

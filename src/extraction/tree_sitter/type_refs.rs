@@ -339,7 +339,7 @@ impl TreeSitterExtractor {
             .iter()
             .find(|child| child.node_type() == "type_list")
         {
-            return type_list.named_children.clone();
+            return type_list.named_children.to_vec();
         }
         node.named_children
             .iter()

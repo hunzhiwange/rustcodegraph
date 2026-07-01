@@ -4,7 +4,7 @@
 //! 写锁竞争，以及哪些错误需要把 live watching 永久关闭。
 
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 
@@ -14,7 +14,7 @@ use super::backend::WatchStartError;
 use super::state::FileWatcher;
 use super::types::{
     EXHAUSTION_REASON, INOTIFY_LIMIT_REASON, MAX_LOCK_RETRIES, MAX_LOCK_RETRY_DELAY_MS,
-    WatchSyncError,
+    ScheduledSyncKind, WatchSyncError,
 };
 use super::util::{context, now_ms, path_string};
 
@@ -49,15 +49,55 @@ impl FileWatcher {
     }
 
     pub(super) fn schedule_sync(&mut self) {
-        // 新事件总是重置 debounce 起点，等文件写入稳定后再同步。
-        self.scheduled_at = Some(Instant::now());
-        self.scheduled_delay_ms = Some(self.debounce_ms);
+        if self.scheduled_kind == Some(ScheduledSyncKind::Retry) {
+            return;
+        }
+
+        let now = Instant::now();
+        // 本轮 debounce 周期的第一个事件确定 max-wait 的计时起点；后续事件不重置它。
+        let epoch_start = *self.debounce_started_at.get_or_insert(now);
+
+        // 新事件正常会把 debounce 起点推后到现在（等写入稳定）。但 debounce 不能超过
+        // 从本轮第一个事件起的 max-wait 上限：持续事件流（复制大文件夹）下，纯重置会
+        // 让 sync 永不触发；这里把本次 flush 钳到不晚于 max-wait 截止时刻。
+        let deadline = epoch_start + Duration::from_millis(self.max_debounce_ms);
+        let remaining_to_deadline = deadline.saturating_duration_since(now).as_millis() as u64;
+        let delay = self.debounce_ms.min(remaining_to_deadline);
+
+        self.scheduled_at = Some(now);
+        self.scheduled_delay_ms = Some(delay);
+        self.scheduled_kind = Some(ScheduledSyncKind::Debounce);
     }
 
     fn schedule_retry_sync(&mut self, delay_ms: u64) {
-        // 锁竞争重试使用单独延迟，不改变 pending 文件集合。
+        // 锁竞争/可恢复跳过的重试使用单独延迟，不改变 pending 文件集合。
         self.scheduled_at = Some(Instant::now());
         self.scheduled_delay_ms = Some(delay_ms);
+        self.scheduled_kind = Some(ScheduledSyncKind::Retry);
+    }
+
+    fn skipped_sync_retry_delay_ms(&self) -> u64 {
+        self.debounce_ms
+            .max(self.max_debounce_ms)
+            .max(self.min_sync_interval_ms)
+    }
+
+    /// 距上次重型同步完成还需等待多久才允许下一轮（背靠背节流）。
+    ///
+    /// 返回 `Some(剩余毫秒)` 表示当前处于最小间隔内、应推迟；`None` 表示可以放行
+    /// （从未跑过、间隔为 0、或间隔已过）。这只约束自动 debounce 路径，`flush_now`
+    /// 的强制刷新不受它影响。
+    pub(super) fn throttle_remaining_ms(&self) -> Option<u64> {
+        if self.min_sync_interval_ms == 0 {
+            return None;
+        }
+        let elapsed = self.last_sync_finished_at?.elapsed();
+        let interval = Duration::from_millis(self.min_sync_interval_ms);
+        if elapsed >= interval {
+            return None;
+        }
+        // 至少等 1ms，避免 0 延迟时定时器立刻又判到期形成忙环。
+        Some(((interval - elapsed).as_millis() as u64).max(1))
     }
 
     pub(super) fn flush(&mut self) {
@@ -68,11 +108,32 @@ impl FileWatcher {
 
         self.sync_started_ms = now_ms();
         self.syncing = true;
+        // 本轮 debounce 周期到此结束：清空 max-wait 计时起点，之后到来的事件会通过
+        // schedule_sync 开启新一轮（而不是沿用旧 epoch 立刻被判过期）。
+        self.debounce_started_at = None;
 
         let result = (self.sync_fn)();
+        let mut skipped_sync_retry_delay_ms = None;
         match result {
+            Ok(result) if result.skipped => {
+                // 可恢复跳过：本轮没做重型同步。**不**清理 pending，也不当作正常完成
+                // 回调，保持 watcher active。下一轮使用 retry 调度，避免
+                // skip→debounce→skip 短周期空转。
+                self.lock_retry_count = 0;
+                self.last_sync_finished_at = Some(Instant::now());
+                skipped_sync_retry_delay_ms = Some(self.skipped_sync_retry_delay_ms());
+                let ctx = context([
+                    ("pendingFiles", json!(self.pending_files.len())),
+                    ("filesChanged", json!(result.files_changed)),
+                ]);
+                log_warn(
+                    "Watch sync skipped by the sync callback; keeping pending and retrying later.",
+                    Some(&ctx),
+                );
+            }
             Ok(result) => {
                 self.lock_retry_count = 0;
+                self.last_sync_finished_at = Some(Instant::now());
                 let sync_started_ms = self.sync_started_ms;
                 // 清掉本轮同步开始前已经看到的事件；同步期间新来的事件保留到下一轮。
                 self.pending_files
@@ -123,6 +184,8 @@ impl FileWatcher {
                     .debounce_ms
                     .saturating_mul(multiplier)
                     .min(MAX_LOCK_RETRY_DELAY_MS);
+                self.schedule_retry_sync(retry_delay_ms);
+            } else if let Some(retry_delay_ms) = skipped_sync_retry_delay_ms {
                 self.schedule_retry_sync(retry_delay_ms);
             } else {
                 self.schedule_sync();

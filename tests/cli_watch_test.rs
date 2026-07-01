@@ -67,8 +67,15 @@ struct WatchChild {
 
 impl WatchChild {
     fn spawn(path: &Path) -> Self {
+        Self::spawn_with_debounce(path, 100)
+    }
+
+    fn spawn_with_debounce(path: &Path, debounce_ms: u64) -> Self {
         let mut child = Command::new(BIN)
-            .args(["watch", "--debounce-ms", "100", "-p"])
+            .arg("watch")
+            .arg("--debounce-ms")
+            .arg(debounce_ms.to_string())
+            .arg("-p")
             .arg(path)
             .env("RUSTCODEGRAPH_NO_DAEMON", "1")
             .stdin(Stdio::null())
@@ -164,6 +171,25 @@ fn wait_for(mut predicate: impl FnMut() -> bool, timeout_ms: u64) {
 }
 
 #[test]
+fn watch_cli_reports_pending_files_waiting_for_batch_sync() {
+    let fixture = Fixture::new();
+    let mut watch = WatchChild::spawn_with_debounce(fixture.path(), 4000);
+    watch.wait_for_stdout("Press Ctrl-C to stop.", 10_000);
+
+    fs::write(
+        fixture.path().join("batch-pending.ts"),
+        "export function batchPending() { return 42; }\n",
+    )
+    .expect("new source file should be written");
+
+    let output = watch.wait_for_stdout("waiting for the next batch sync", 10_000);
+    assert!(output.contains("pending file(s)"), "{output}");
+    assert!(output.contains("max wait"), "{output}");
+    assert!(!output.contains("Read"), "{output}");
+    assert!(!output.contains("Grep"), "{output}");
+}
+
+#[test]
 fn watch_cli_auto_syncs_new_files_until_interrupted() {
     let fixture = Fixture::new();
     let mut watch = WatchChild::spawn(fixture.path());
@@ -178,6 +204,11 @@ fn watch_cli_auto_syncs_new_files_until_interrupted() {
     )
     .expect("new source file should be written");
 
+    let output = watch.wait_for_stdout("Synced 1 changed file(s)", 10_000);
+    assert!(output.contains("1 added"), "{output}");
+    assert!(output.contains("0 modified"), "{output}");
+    assert!(output.contains("0 removed"), "{output}");
+
     wait_for(
         || {
             let Ok(mut cg) = CodeGraph::open(
@@ -191,6 +222,57 @@ fn watch_cli_auto_syncs_new_files_until_interrupted() {
             };
             let found = !cg.search_nodes("added", None).is_empty();
             found
+        },
+        10_000,
+    );
+}
+
+#[test]
+fn watch_cli_auto_syncs_removed_directories_until_interrupted() {
+    let fixture = Fixture::new();
+    let removed_dir = fixture.path().join("removed-feature");
+    fs::create_dir(&removed_dir).expect("removed-feature directory should be created");
+    fs::write(
+        removed_dir.join("stale.ts"),
+        "export function staleFeature() { return 1; }\n",
+    )
+    .expect("stale source file should be written");
+
+    let mut cg = CodeGraph::open(
+        fixture.path(),
+        OpenOptions {
+            sync: false,
+            read_only: false,
+        },
+    )
+    .expect("CodeGraph should open");
+    let sync_result = cg.sync(IndexOptions::default());
+    assert_eq!(sync_result.files_added, 1);
+    assert!(!cg.search_nodes("staleFeature", None).is_empty());
+    cg.close();
+
+    let mut watch = WatchChild::spawn(fixture.path());
+    watch.wait_for_stdout("Press Ctrl-C to stop.", 10_000);
+
+    fs::remove_dir_all(&removed_dir).expect("removed-feature directory should be removed");
+
+    let output = watch.wait_for_stdout("Synced 1 changed file(s)", 10_000);
+    assert!(output.contains("0 added"), "{output}");
+    assert!(output.contains("0 modified"), "{output}");
+    assert!(output.contains("1 removed"), "{output}");
+
+    wait_for(
+        || {
+            let Ok(mut cg) = CodeGraph::open(
+                fixture.path(),
+                OpenOptions {
+                    sync: false,
+                    read_only: true,
+                },
+            ) else {
+                return false;
+            };
+            cg.search_nodes("staleFeature", None).is_empty()
         },
         10_000,
     );

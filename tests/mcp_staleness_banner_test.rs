@@ -186,6 +186,7 @@ impl Fixture {
         })));
         let started = self.cg.watch(WatchOptions {
             debounce_ms: Some(1000),
+            ..WatchOptions::default()
         });
         assert!(!started);
         assert!(self.cg.is_watcher_degraded());
@@ -227,6 +228,18 @@ fn node_args(symbol: &str, include_code: bool) -> Map<String, Value> {
     args
 }
 
+fn assert_batch_wait_notice_without_read_or_grep(text: &str) {
+    assert!(
+        Regex::new("(?i)batch sync").unwrap().is_match(text),
+        "{text}"
+    );
+    assert!(Regex::new("(?i)waiting").unwrap().is_match(text), "{text}");
+    assert!(
+        !Regex::new(r"(?i)\b(Read|Grep)\b").unwrap().is_match(text),
+        "{text}"
+    );
+}
+
 mod mcp_staleness_banner {
     use super::*;
 
@@ -237,6 +250,7 @@ mod mcp_staleness_banner {
         // Long debounce so the edit lingers in pendingFiles while we query.
         fixture.cg.watch(WatchOptions {
             debounce_ms: Some(4000),
+            ..WatchOptions::default()
         });
         fixture.cg.wait_until_watcher_ready(None);
 
@@ -267,7 +281,7 @@ mod mcp_staleness_banner {
         assert!(text.starts_with('⚠'));
         assert!(text.contains("src/alpha-only.ts"));
         assert!(Regex::new(r"edited \d+ms ago").unwrap().is_match(&text));
-        assert!(Regex::new(r"Read them directly").unwrap().is_match(&text));
+        assert_batch_wait_notice_without_read_or_grep(&text);
         // The actual result must still follow the banner.
         assert!(Regex::new(r"alphaOnly").unwrap().is_match(&text));
     }
@@ -277,6 +291,7 @@ mod mcp_staleness_banner {
         let mut fixture = Fixture::new();
         fixture.cg.watch(WatchOptions {
             debounce_ms: Some(4000),
+            ..WatchOptions::default()
         });
         fixture.cg.wait_until_watcher_ready(None);
 
@@ -302,6 +317,7 @@ mod mcp_staleness_banner {
         assert_ne!(result.is_error, Some(true));
         assert!(text.starts_with('⚠'), "{text}");
         assert!(text.contains("src/alpha-only.ts"), "{text}");
+        assert_batch_wait_notice_without_read_or_grep(&text);
         assert!(text.contains("alphaOnly"), "{text}");
     }
 
@@ -310,6 +326,7 @@ mod mcp_staleness_banner {
         let mut fixture = Fixture::new();
         fixture.cg.watch(WatchOptions {
             debounce_ms: Some(4000),
+            ..WatchOptions::default()
         });
         fixture.cg.wait_until_watcher_ready(None);
 
@@ -337,11 +354,12 @@ mod mcp_staleness_banner {
 
         assert!(!text.starts_with('⚠'));
         assert!(
-            Regex::new(r"elsewhere in this project are pending index sync")
+            Regex::new(r"elsewhere in this project are waiting for the next batch sync")
                 .unwrap()
                 .is_match(&text)
         );
         assert!(text.contains("src/bravo-only.ts"));
+        assert_batch_wait_notice_without_read_or_grep(&text);
     }
 
     #[test]
@@ -349,6 +367,7 @@ mod mcp_staleness_banner {
         let mut fixture = Fixture::new();
         fixture.cg.watch(WatchOptions {
             debounce_ms: Some(200),
+            ..WatchOptions::default()
         });
         fixture.cg.wait_until_watcher_ready(None);
 
@@ -364,7 +383,7 @@ mod mcp_staleness_banner {
             fixture.execute_text("rustcodegraph_search", search_args("alphaOnly"));
         assert!(!text.starts_with('⚠'));
         assert!(
-            !Regex::new(r"elsewhere in this project are pending index sync")
+            !Regex::new(r"elsewhere in this project are waiting for the next batch sync")
                 .unwrap()
                 .is_match(&text)
         );
@@ -375,6 +394,7 @@ mod mcp_staleness_banner {
         let mut fixture = Fixture::new();
         fixture.cg.watch(WatchOptions {
             debounce_ms: Some(4000),
+            ..WatchOptions::default()
         });
         fixture.cg.wait_until_watcher_ready(None);
 
@@ -398,6 +418,7 @@ mod mcp_staleness_banner {
         let (_result, text) = fixture.execute_text("rustcodegraph_status", Map::new());
         assert!(text.contains("### Pending sync:"));
         assert!(text.contains("src/charlie-only.ts"));
+        assert_batch_wait_notice_without_read_or_grep(&text);
         // Status embeds the info first-class, so the auto-banner is suppressed.
         assert!(!text.starts_with('⚠'));
     }

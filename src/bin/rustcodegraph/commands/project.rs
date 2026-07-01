@@ -1,17 +1,16 @@
 //! 会改变项目本地 RustCodeGraph 状态的 CLI 命令。
 //!
-//! 这里直接操作 SQLite 存储和 `.rustcodegraph/` 目录，保持 CLI 行为与库 facade 解耦；
-//! MCP/watch 场景的更细粒度同步逻辑在库层维护。
+//! 这里直接操作 SQLite 存储和 `.rustcodegraph/` 目录；CLI 同步和 watch 自动刷新复用
+//! 库 facade 的增量 sync，避免终端命令与 MCP/SDK 行为分叉。
 
-use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use rustcodegraph::directory::{get_code_graph_dir, remove_directory};
-use rustcodegraph::extraction::index::{hash_content, scan_directory};
-use rustcodegraph::mcp::engine::parse_debounce_env;
+use rustcodegraph::mcp::engine::{parse_debounce_env, parse_watch_policy_from_env};
 use serde_json::json;
 
 use super::super::args::{
@@ -89,35 +88,7 @@ pub(crate) fn command_sync(args: &[String]) -> Result<(), String> {
         ));
     }
 
-    let started = Instant::now();
-    let changes = detect_cli_sync_changes(&project_root)?;
-    let mut changed_file_paths = Vec::new();
-    changed_file_paths.extend(changes.added.iter().cloned());
-    changed_file_paths.extend(changes.modified.iter().cloned());
-    changed_file_paths.extend(changes.removed.iter().cloned());
-    let files_checked = scan_directory(&project_root, None)
-        .into_iter()
-        .filter(|path| project_root.join(path).is_file())
-        .count();
-    let nodes_updated = if changed_file_paths.is_empty() {
-        0
-    } else {
-        // Keep the CLI command on the same fast SQLite rebuild path as `index`.
-        // The library facade sync does richer per-file extraction for MCP/watch
-        // sessions, but a manual `rustcodegraph sync` must never wedge on one
-        // native parser edge case when `rustcodegraph index` would finish.
-        // 中文补充：CLI sync 宁可重建整库，也不在交互命令里暴露单文件 parser 的偶发失败。
-        build_sqlite_index(&project_root, false)?.nodes_created
-    };
-    let result = rustcodegraph::SyncResult {
-        files_checked,
-        files_added: changes.added.len(),
-        files_modified: changes.modified.len(),
-        files_removed: changes.removed.len(),
-        nodes_updated,
-        duration_ms: started.elapsed().as_millis() as u64,
-        changed_file_paths: (!changed_file_paths.is_empty()).then_some(changed_file_paths),
-    };
+    let result = run_cli_sync(&project_root)?;
 
     if !quiet {
         print_sync_summary(&result);
@@ -136,47 +107,88 @@ pub(crate) fn command_watch(args: &[String]) -> Result<(), String> {
         ));
     }
 
-    let debounce_ms = watch_debounce_ms(args)?;
-    let mut graph = rustcodegraph::CodeGraph::open(
-        &project_root,
-        rustcodegraph::OpenOptions {
-            sync: false,
-            read_only: false,
-        },
-    )
-    .map_err(|err| err.message().to_owned())?;
+    let watch_options = watch_options(args)?;
+    let timing = resolved_watch_timing(&watch_options);
 
-    let sync_result = graph.sync(rustcodegraph::IndexOptions::default());
+    let sync_result = run_cli_sync(&project_root)?;
+    rustcodegraph::debug_rss_pub("cmd:after startup sync");
     print_sync_summary(&sync_result);
 
-    let started = graph.watch(rustcodegraph::WatchOptions { debounce_ms });
-    graph.wait_until_watcher_ready(Some(10_000));
+    let latest_auto_sync = Arc::new(Mutex::new(None::<rustcodegraph::SyncResult>));
+    let sync_project_root = project_root.clone();
+    let sync_latest_auto_sync = Arc::clone(&latest_auto_sync);
+    let print_latest_auto_sync = Arc::clone(&latest_auto_sync);
+    let mut watcher = rustcodegraph::sync::watcher::FileWatcher::new(
+        &project_root,
+        move || {
+            let result = run_cli_sync(&sync_project_root)
+                .map_err(rustcodegraph::sync::watcher::WatchSyncError::Other)?;
+            let files_changed = result.files_added + result.files_modified + result.files_removed;
+            if let Ok(mut slot) = sync_latest_auto_sync.lock() {
+                *slot = Some(result.clone());
+            }
+            Ok(rustcodegraph::sync::watcher::SyncRunResult {
+                files_changed,
+                duration_ms: result.duration_ms,
+                skipped: false,
+            })
+        },
+        rustcodegraph::sync::watcher::WatchOptions {
+            debounce_ms: Some(timing.debounce_ms),
+            max_debounce_ms: Some(timing.max_debounce_ms),
+            min_sync_interval_ms: Some(timing.min_sync_interval_ms),
+            on_sync_complete: Some(Box::new(move |result| {
+                if let Ok(mut slot) = print_latest_auto_sync.lock() {
+                    if let Some(sync_result) = slot.take() {
+                        print_sync_summary(&sync_result);
+                        return;
+                    }
+                }
+                println!(
+                    "Synced {} changed file(s) in {}ms",
+                    result.files_changed, result.duration_ms
+                );
+            })),
+            ..rustcodegraph::sync::watcher::WatchOptions::default()
+        },
+    );
+    let started = watcher.start();
+    rustcodegraph::debug_rss_pub("cmd:after watcher.start()");
+    if started {
+        watcher
+            .wait_until_ready(10_000)
+            .map_err(|err| format!("failed to start file watcher: {err}"))?;
+    }
+    rustcodegraph::debug_rss_pub("cmd:after wait_until_watcher_ready");
     if !started {
-        let reason = graph
-            .get_watcher_degraded_reason()
+        let reason = watcher
+            .get_degraded_reason()
+            .map(str::to_owned)
             .unwrap_or_else(|| "watcher backend failed to start".to_owned());
-        graph.close();
         return Err(format!("failed to start file watcher: {reason}"));
     }
 
-    let debounce_ms = debounce_ms.unwrap_or(2000);
     println!(
-        "Watching {} for changes (debounce {}ms). Press Ctrl-C to stop.",
+        "Watching {} for changes (debounce {}ms, max wait {}ms, min interval {}ms). Press Ctrl-C to stop.",
         project_root.display(),
-        debounce_ms
+        timing.debounce_ms,
+        timing.max_debounce_ms,
+        timing.min_sync_interval_ms
     );
 
     let mut last_degraded_reason = None::<String>;
     let mut last_pending_paths = Vec::<String>::new();
+    let poll_interval = Duration::from_millis(timing.debounce_ms.clamp(50, 250));
     loop {
-        let degraded_reason = graph.get_watcher_degraded_reason();
+        watcher.tick();
+        let degraded_reason = watcher.get_degraded_reason().map(str::to_owned);
         if degraded_reason != last_degraded_reason {
             if let Some(reason) = &degraded_reason {
                 eprintln!("warning: file watcher degraded: {reason}");
             }
             last_degraded_reason = degraded_reason;
         }
-        let pending_paths = graph
+        let pending_paths = watcher
             .get_pending_files()
             .into_iter()
             .map(|pending| pending.path)
@@ -193,15 +205,62 @@ pub(crate) fn command_watch(args: &[String]) -> Result<(), String> {
                     .join(", ");
                 let suffix = if pending_paths.len() > 3 { ", ..." } else { "" };
                 println!(
-                    "Detected {} pending file(s): {}{}",
+                    "Detected {} pending file(s) waiting for the next batch sync (debounce {}ms, max wait {}ms, min interval {}ms): {}{}",
                     pending_paths.len(),
+                    timing.debounce_ms,
+                    timing.max_debounce_ms,
+                    timing.min_sync_interval_ms,
                     preview,
                     suffix
                 );
             }
             last_pending_paths = pending_paths;
         }
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(poll_interval);
+    }
+}
+
+fn run_cli_sync(project_root: &Path) -> Result<rustcodegraph::SyncResult, String> {
+    let mut graph = rustcodegraph::CodeGraph::open(
+        project_root,
+        rustcodegraph::OpenOptions {
+            sync: false,
+            read_only: false,
+        },
+    )
+    .map_err(|err| err.message().to_owned())?;
+    let result = graph.sync(rustcodegraph::IndexOptions::default());
+    graph.close();
+    Ok(result)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct WatchTiming {
+    debounce_ms: u64,
+    max_debounce_ms: u64,
+    min_sync_interval_ms: u64,
+}
+
+fn resolved_watch_timing(options: &rustcodegraph::WatchOptions) -> WatchTiming {
+    const DEFAULT_DEBOUNCE_MS: u64 = 2000;
+    const DEFAULT_MAX_DEBOUNCE_MULTIPLIER: u64 = 5;
+    const MAX_WATCH_WINDOW_MS: u64 = 60_000;
+
+    let debounce_ms = options.debounce_ms.unwrap_or(DEFAULT_DEBOUNCE_MS);
+    let max_debounce_ms = options
+        .max_debounce_ms
+        .unwrap_or_else(|| debounce_ms.saturating_mul(DEFAULT_MAX_DEBOUNCE_MULTIPLIER))
+        .max(debounce_ms)
+        .min(MAX_WATCH_WINDOW_MS);
+    let min_sync_interval_ms = options
+        .min_sync_interval_ms
+        .unwrap_or(debounce_ms)
+        .min(MAX_WATCH_WINDOW_MS);
+
+    WatchTiming {
+        debounce_ms,
+        max_debounce_ms,
+        min_sync_interval_ms,
     }
 }
 
@@ -238,66 +297,17 @@ pub(crate) fn command_unlock(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn detect_cli_sync_changes(project_root: &Path) -> Result<rustcodegraph::ChangedFiles, String> {
-    let conn = open_sqlite_database(project_root)?;
-    let mut stmt = conn
-        .prepare("SELECT path, content_hash FROM files")
-        .map_err(|err| format!("failed to prepare file hash query: {err}"))?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })
-        .map_err(|err| format!("failed to query file hashes: {err}"))?;
-    let mut tracked = HashMap::new();
-    for row in rows {
-        let (path, hash) = row.map_err(|err| format!("failed to read file hash row: {err}"))?;
-        tracked.insert(path, hash);
-    }
-
-    let current_files = scan_directory(project_root, None)
-        .into_iter()
-        .filter(|path| project_root.join(path).is_file())
-        .collect::<HashSet<_>>();
-    let mut changes = rustcodegraph::ChangedFiles::default();
-
-    for path in tracked.keys() {
-        if !current_files.contains(path) {
-            changes.removed.push(path.clone());
-        }
-    }
-
-    // 用文件内容 hash 做变更检测，避免只依赖 mtime 导致 checkout/restore 后漏同步。
-    for path in current_files {
-        let content = fs::read_to_string(project_root.join(&path))
-            .map_err(|err| format!("failed to read {path}: {err}"))?;
-        let current_hash = hash_content(&content);
-        match tracked.get(&path) {
-            None => changes.added.push(path),
-            Some(previous_hash) if previous_hash != &current_hash => changes.modified.push(path),
-            _ => {}
-        }
-    }
-
-    changes.added.sort();
-    changes.modified.sort();
-    changes.removed.sort();
-    Ok(changes)
-}
-
-fn watch_debounce_ms(args: &[String]) -> Result<Option<u64>, String> {
+fn watch_options(args: &[String]) -> Result<rustcodegraph::WatchOptions, String> {
+    let mut options = parse_watch_policy_from_env();
     if let Some(raw) = option_value(args, "--debounce-ms") {
         let Some(parsed) = parse_debounce_env(Some(raw.as_str())) else {
             return Err(format!(
                 "invalid --debounce-ms value `{raw}`; expected an integer between 100 and 60000"
             ));
         };
-        return Ok(Some(parsed));
+        options.debounce_ms = Some(parsed);
     }
-    Ok(parse_debounce_env(
-        std::env::var("RUSTCODEGRAPH_WATCH_DEBOUNCE_MS")
-            .ok()
-            .as_deref(),
-    ))
+    Ok(options)
 }
 
 pub(crate) fn command_status(args: &[String]) -> Result<(), String> {

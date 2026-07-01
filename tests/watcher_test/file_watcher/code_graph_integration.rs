@@ -11,6 +11,7 @@ fn should_watch_and_unwatch_via_code_graph_api() {
 
     let started = cg.watch(CodeGraphWatchOptions {
         debounce_ms: Some(200),
+        ..CodeGraphWatchOptions::default()
     });
     assert!(started);
     assert!(cg.is_watching());
@@ -28,6 +29,7 @@ fn should_stop_watching_on_close() {
 
     cg.watch(CodeGraphWatchOptions {
         debounce_ms: Some(200),
+        ..CodeGraphWatchOptions::default()
     });
     assert!(cg.is_watching());
 
@@ -46,6 +48,7 @@ fn should_auto_sync_when_files_change_while_watching_real_fs_watch_end_to_end() 
 
     cg.watch(CodeGraphWatchOptions {
         debounce_ms: Some(300),
+        ..CodeGraphWatchOptions::default()
     });
     thread::sleep(Duration::from_millis(100));
 

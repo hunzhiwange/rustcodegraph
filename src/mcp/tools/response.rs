@@ -24,7 +24,7 @@ pub struct ToolResult {
 
 pub fn format_stale_banner(stale: &[PendingFile], now_ms: i64) -> String {
     // 命中的文件如果正在等待 watcher 同步，要放在答案顶部强提示；这类内容可能
-    // 真会过期，允许 agent 只对这些文件使用 Read。
+    // 真会过期，但不要把 agent 引导回原始文件读取；下一轮批量同步会追上。
     let lines = stale
         .iter()
         .map(|pending| {
@@ -32,7 +32,7 @@ pub fn format_stale_banner(stale: &[PendingFile], now_ms: i64) -> String {
             let label = if pending.indexing {
                 "indexing in progress"
             } else {
-                "pending sync"
+                "waiting for next batch sync"
             };
             format!("  - {} (edited {age_ms}ms ago, {label})", pending.path)
         })
@@ -40,8 +40,10 @@ pub fn format_stale_banner(stale: &[PendingFile], now_ms: i64) -> String {
         .join("\n");
     format!(
         "⚠️ Some files referenced below were edited since the last index sync - \
-their rustcodegraph entries may be stale:\n{lines}\nFor accurate content of those \
-specific files, Read them directly. The rest of this response is fresh."
+their rustcodegraph entries may be waiting for the next batch sync:\n{lines}\nThe \
+watcher is batching changes and will refresh the graph automatically. Treat only \
+these entries as possibly stale until that batch sync completes; the rest of this \
+response is fresh."
     )
 }
 
@@ -64,8 +66,9 @@ pub fn format_stale_footer(stale: &[PendingFile], now_ms: i64) -> String {
         String::new()
     };
     format!(
-        "(Note: {} file(s) elsewhere in this project are pending index sync but \
-were not referenced above:\n{lines}{more})",
+        "(Note: {} file(s) elsewhere in this project are waiting for the next \
+batch sync and were not referenced above:\n{lines}{more}\nThe current response can \
+still be used while the watcher batches those changes.)",
         stale.len()
     )
 }

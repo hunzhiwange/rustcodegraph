@@ -14,7 +14,10 @@ use crate::utils::normalize_path;
 
 use super::backend::supports_recursive_watch;
 use super::state::FileWatcher;
-use super::types::{PendingFile, SyncRunResult, WatchMode, WatchOptions, WatchSyncError};
+use super::types::{
+    PendingFile, SyncRunResult, WatchMode, WatchOptions, WatchSyncError, resolve_max_debounce_ms,
+    resolve_min_sync_interval_ms,
+};
 use super::util::{context, is_test_runtime, path_string};
 
 impl FileWatcher {
@@ -27,6 +30,10 @@ impl FileWatcher {
     where
         F: FnMut() -> Result<SyncRunResult, WatchSyncError> + Send + 'static,
     {
+        let debounce_ms = options.debounce_ms.unwrap_or(2000);
+        let min_sync_interval_ms =
+            resolve_min_sync_interval_ms(options.min_sync_interval_ms, debounce_ms);
+        let max_debounce_ms = resolve_max_debounce_ms(options.max_debounce_ms, debounce_ms);
         Self {
             recursive_watcher: None,
             dir_watchers: HashMap::new(),
@@ -37,14 +44,22 @@ impl FileWatcher {
             inert: false,
             scheduled_at: None,
             scheduled_delay_ms: None,
+            scheduled_kind: None,
+            debounce_started_at: None,
             pending_files: BTreeMap::new(),
+            poll_snapshot: BTreeMap::new(),
+            last_poll_at: None,
+            poll_interval_ms: debounce_ms.clamp(250, 2000),
             sync_started_ms: 0,
             syncing: false,
+            last_sync_finished_at: None,
+            min_sync_interval_ms,
+            max_debounce_ms,
             stopped: false,
             ready: false,
             ignore_matcher: None,
             project_root: project_root.into(),
-            debounce_ms: options.debounce_ms.unwrap_or(2000),
+            debounce_ms,
             sync_fn: Box::new(sync_fn),
             on_sync_complete: options.on_sync_complete,
             on_sync_error: options.on_sync_error,
@@ -64,6 +79,10 @@ impl FileWatcher {
         self.lock_retry_count = 0;
         self.scheduled_at = None;
         self.scheduled_delay_ms = None;
+        self.scheduled_kind = None;
+        self.debounce_started_at = None;
+        self.last_sync_finished_at = None;
+        self.last_poll_at = None;
 
         if let Some(disabled_reason) =
             super::super::watch_policy::watch_disabled_reason(&self.project_root, None)
@@ -78,6 +97,8 @@ impl FileWatcher {
         }
 
         self.ignore_matcher = Some(build_scope_ignore(&self.project_root, None::<Vec<String>>));
+        self.poll_snapshot = self.collect_source_snapshot();
+        self.last_poll_at = Some(Instant::now());
 
         let mode = if self.inert_for_tests {
             // inert 模式只跑状态机，不触碰真实文件系统 watcher，便于稳定测试 debounce。
@@ -127,6 +148,11 @@ impl FileWatcher {
         self.stopped = true;
         self.scheduled_at = None;
         self.scheduled_delay_ms = None;
+        self.scheduled_kind = None;
+        self.debounce_started_at = None;
+        self.last_sync_finished_at = None;
+        self.last_poll_at = None;
+        self.poll_snapshot.clear();
 
         if let Some(mut watcher) = self.recursive_watcher.take() {
             watcher.close();
@@ -211,8 +237,20 @@ impl FileWatcher {
             return;
         };
         if started_at.elapsed() >= Duration::from_millis(delay_ms) {
+            // 背靠背节流：debounce 已到期，但若距上次重型同步完成还不够最小间隔，
+            // 就把这次 flush 推迟到间隔满足时，而不是紧贴着再跑一轮重型同步。
+            // 间隔有上限（见 MAX_MIN_SYNC_INTERVAL_MS），pending 不会被永久饿死。
+            if self.scheduled_kind == Some(super::types::ScheduledSyncKind::Debounce) {
+                if let Some(remaining_ms) = self.throttle_remaining_ms() {
+                    self.scheduled_at = Some(Instant::now());
+                    self.scheduled_delay_ms = Some(remaining_ms);
+                    self.scheduled_kind = Some(super::types::ScheduledSyncKind::Debounce);
+                    return;
+                }
+            }
             self.scheduled_at = None;
             self.scheduled_delay_ms = None;
+            self.scheduled_kind = None;
             self.flush();
         }
     }
@@ -220,6 +258,7 @@ impl FileWatcher {
     /// drain 原生事件并执行到期的 debounce/backoff 工作；运行时宿主从小型驱动线程调用。
     pub fn tick(&mut self) {
         self.drain_watch_events();
+        self.poll_for_changes();
         self.flush_due();
     }
 
@@ -227,7 +266,14 @@ impl FileWatcher {
     pub fn flush_now(&mut self) {
         self.scheduled_at = None;
         self.scheduled_delay_ms = None;
+        self.scheduled_kind = None;
         self.flush();
+    }
+
+    /// 测试专用：读取当前记录的 debounce/backoff 延迟。
+    #[doc(hidden)]
+    pub fn __scheduled_delay_ms_for_tests(&self) -> Option<u64> {
+        self.scheduled_delay_ms
     }
 }
 

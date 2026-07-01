@@ -7,6 +7,8 @@
 //! Rust 本地 facade，让上层不用关心 WASM 与 native tree-sitter 的差异。
 
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use crate::types::Language as CodeLanguage;
 
@@ -367,8 +369,8 @@ fn syntax_node_stub_from_native(
         has_error: node.has_error(),
         parse_state: node.parse_state() as u32,
         next_parse_state: node.next_parse_state() as u32,
-        children: Vec::new(),
-        named_children: Vec::new(),
+        children: NodeList::default(),
+        named_children: NodeList::default(),
         field_names: HashMap::new(),
         parent,
         previous_named_sibling: None,
@@ -430,10 +432,66 @@ fn syntax_node_from_native(
         children.push(child);
     }
 
-    converted.children = children;
-    converted.named_children = named_children;
+    converted.children = NodeList::from(children);
+    converted.named_children = NodeList::from(named_children);
     converted.field_names = field_names;
     converted
+}
+
+#[derive(Debug, Default)]
+pub struct NodeList(Arc<Vec<SyntaxNode>>);
+
+impl Clone for NodeList {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl From<Vec<SyntaxNode>> for NodeList {
+    fn from(value: Vec<SyntaxNode>) -> Self {
+        Self(Arc::new(value))
+    }
+}
+
+impl Deref for NodeList {
+    type Target = Vec<SyntaxNode>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for NodeList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        Arc::make_mut(&mut self.0)
+    }
+}
+
+impl Extend<SyntaxNode> for NodeList {
+    fn extend<T: IntoIterator<Item = SyntaxNode>>(&mut self, iter: T) {
+        Arc::make_mut(&mut self.0).extend(iter);
+    }
+}
+
+impl IntoIterator for NodeList {
+    type Item = SyntaxNode;
+    type IntoIter = std::vec::IntoIter<SyntaxNode>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match Arc::try_unwrap(self.0) {
+            Ok(values) => values.into_iter(),
+            Err(values) => values.iter().cloned().collect::<Vec<_>>().into_iter(),
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a NodeList {
+    type Item = &'a SyntaxNode;
+    type IntoIter = std::slice::Iter<'a, SyntaxNode>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -454,8 +512,8 @@ pub struct SyntaxNode {
     pub has_error: bool,
     pub parse_state: u32,
     pub next_parse_state: u32,
-    pub children: Vec<SyntaxNode>,
-    pub named_children: Vec<SyntaxNode>,
+    pub children: NodeList,
+    pub named_children: NodeList,
     pub field_names: HashMap<String, FieldTarget>,
     pub parent: Option<Box<SyntaxNode>>,
     pub previous_named_sibling: Option<Box<SyntaxNode>>,
@@ -520,8 +578,8 @@ impl SyntaxNode {
             has_error: self.has_error,
             parse_state: self.parse_state,
             next_parse_state: self.next_parse_state,
-            children: Vec::new(),
-            named_children: Vec::new(),
+            children: NodeList::default(),
+            named_children: NodeList::default(),
             field_names: self.field_names.clone(),
             parent: None,
             previous_named_sibling: None,
@@ -560,11 +618,11 @@ impl SyntaxNode {
     }
 
     pub fn children(&self) -> Vec<SyntaxNode> {
-        self.children.clone()
+        self.children.iter().cloned().collect()
     }
 
     pub fn named_children(&self) -> Vec<SyntaxNode> {
-        self.named_children.clone()
+        self.named_children.iter().cloned().collect()
     }
 
     pub fn child_for_field_name(&self, field_name: &str) -> Option<&SyntaxNode> {

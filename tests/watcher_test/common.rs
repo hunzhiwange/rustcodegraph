@@ -3,13 +3,13 @@ use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{MutexGuard, OnceLock};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) use std::fs;
 pub(crate) use std::sync::atomic::{AtomicUsize, Ordering};
 pub(crate) use std::sync::{Arc, Mutex};
 pub(crate) use std::thread;
-pub(crate) use std::time::Duration;
+pub(crate) use std::time::{Duration, Instant};
 
 use rustcodegraph::errors::{DEFAULT_LOGGER, ErrorContext, Logger, SILENT_LOGGER, set_logger};
 pub(crate) use rustcodegraph::sync::watcher::{
@@ -151,6 +151,7 @@ pub(crate) fn ok(files_changed: usize, duration_ms: u64) -> SyncRunResult {
     SyncRunResult {
         files_changed,
         duration_ms,
+        skipped: false,
     }
 }
 

@@ -8,7 +8,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use rustcodegraph::mcp::daemon::is_process_alive;
-use rustcodegraph::mcp::engine::parse_debounce_env;
+use rustcodegraph::mcp::engine::parse_watch_policy_from_env;
 use rustcodegraph::mcp::index::{parse_host_ppid, parse_ppid_poll_ms};
 use rustcodegraph::mcp::ppid_watchdog::{SupervisionState, supervision_lost_reason};
 use rustcodegraph::mcp::proxy::HOST_PPID_ENV;
@@ -70,13 +70,8 @@ impl McpStdioSession {
         let Ok(mut graph) = rustcodegraph::CodeGraph::open_sync(&self.project_root) else {
             return false;
         };
-        // 复用库层 debounce 解析，保证 CLI MCP 和 daemon MCP 的环境变量语义一致。
-        let debounce_ms = parse_debounce_env(
-            std::env::var("RUSTCODEGRAPH_WATCH_DEBOUNCE_MS")
-                .ok()
-                .as_deref(),
-        );
-        let started = graph.watch(rustcodegraph::WatchOptions { debounce_ms });
+        // 复用库层 watch 策略解析，保证 CLI MCP 和 daemon MCP 的环境变量语义一致。
+        let started = graph.watch(parse_watch_policy_from_env());
         if started {
             self.watcher = Some(graph);
         }

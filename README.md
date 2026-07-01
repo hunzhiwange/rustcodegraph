@@ -94,7 +94,7 @@ rustcodegraph init -i
 
 ### 4. No more syncing!
 
-Auto-sync is enabled by default. RustCodeGraph watches the project and updates the graph on every file change — while your agent edits code, or you add, modify, or delete files. **The index is never stale, and there is nothing to re-run.**
+Auto-sync is enabled by default. RustCodeGraph watches the project and batches file changes into automatic graph updates while your agent edits code, or you add, modify, or delete files. During a batch window, CLI and MCP status call out the pending files so you know the graph is waiting for the next sync instead of silently drifting.
 
 ### Uninstall
 
@@ -236,7 +236,7 @@ RustCodeGraph cuts **tokens, tool calls, and wall-clock time on every repo** —
 | **Smart Context Building** | One tool call returns entry points, related symbols, and code snippets — no expensive exploration agents |
 | **Full-Text Search** | Find code by name instantly across your entire codebase, powered by FTS5 |
 | **Impact Analysis** | Trace callers, callees, and the full impact radius of any symbol before making changes |
-| **Always Fresh** | File watcher uses native OS events (FSEvents/inotify/ReadDirectoryChangesW) with debounced auto-sync — the graph stays current as you code, zero config |
+| **Batched Auto-Sync** | File watcher uses native OS events (FSEvents/inotify/ReadDirectoryChangesW) with debounced, memory-aware auto-sync — the graph catches up as you code and clearly reports pending batch windows |
 | **20+ Languages** | TypeScript, JavaScript, Python, Go, Rust, Java, C#, PHP, Ruby, C, C++, Objective-C, Swift, Kotlin, Scala, Dart, Lua, Luau, R, Svelte, Vue, Astro, Liquid, Pascal/Delphi |
 | **Framework-aware Routes** | Recognizes web-framework routing files and links URL patterns to their handlers across 17 frameworks |
 | **Mixed iOS / React Native / Expo** | Closes cross-language flows that static parsing misses: Swift ↔ ObjC bridging, React Native legacy bridge + TurboModules + Fabric view components, native → JS event emitters, Expo Modules |
@@ -247,23 +247,23 @@ RustCodeGraph cuts **tokens, tool calls, and wall-clock time on every repo** —
 
 When your agent (Claude Code, Cursor, Codex, opencode) launches `rustcodegraph serve --mcp`, three layers keep the index in step with your code — and make sure the agent never gets a silent wrong answer in the brief window between an edit and the next sync:
 
-1. **File watcher with debounced auto-sync.** A native FSEvents / inotify / ReadDirectoryChangesW watcher captures every source-file create / modify / delete and triggers a re-index after a debounce window (default `2000ms`, tunable via `RUSTCODEGRAPH_WATCH_DEBOUNCE_MS`, clamped to `[100ms, 60s]`). Bursts of edits collapse into a single sync.
+1. **File watcher with debounced auto-sync.** A native FSEvents / inotify / ReadDirectoryChangesW watcher captures every source-file create / modify / delete and triggers a re-index after a debounce window (default `2000ms`, tunable via `RUSTCODEGRAPH_WATCH_DEBOUNCE_MS`, clamped to `[100ms, 60s]`). Bursts of edits collapse into a single sync — but a continuous stream that never pauses (copying a large folder in) can't postpone the sync forever: a maximum wait (`RUSTCODEGRAPH_WATCH_MAX_DEBOUNCE_MS`, default a few debounce windows, clamped to `60s`) forces the index to catch up at a steady cadence while files are still streaming in. Under heavy bursts the watcher also protects itself from running the process out of memory: it skips a sync's heavy re-parsing when memory is near a ceiling (the change stays pending and syncs once memory frees up) and enforces a minimum interval between back-to-back syncs. Both are tunable via `RUSTCODEGRAPH_WATCH_MEMORY_LIMIT_MB` (default `1024`) and `RUSTCODEGRAPH_WATCH_MIN_SYNC_INTERVAL_MS` (defaults to the debounce window, clamped to `60s`). For AI write storms or large generated batches, set `RUSTCODEGRAPH_WATCH_DEBOUNCE_MS=60000`, `RUSTCODEGRAPH_WATCH_MAX_DEBOUNCE_MS=60000`, and `RUSTCODEGRAPH_WATCH_MIN_SYNC_INTERVAL_MS=60000` to merge changes into roughly one sync per minute while the storm continues.
 
-2. **Per-file staleness banner.** During the brief debounce window, MCP tool responses that would reference a still-pending file prepend a `⚠️` banner naming it and telling the agent to `Read` it directly. Pending files NOT referenced by the response surface as a small footer instead. Either way, the agent gets an explicit signal — validated with Claude Code, where the agent literally says "Reading the file directly for the live content" before opening it.
+2. **Per-file staleness banner.** During a debounce or batch window, MCP tool responses that would reference a still-pending file prepend a `⚠️` banner naming it and explaining that the graph entry is waiting for the next batch sync. Pending files NOT referenced by the response surface as a small footer instead. Either way, the agent gets an explicit signal without being nudged back into a raw Read/Grep loop.
 
 3. **Connect-time catch-up.** When the MCP server (re)connects, RustCodeGraph runs a fast `(size, mtime)` + content-hash reconciliation against the working tree before answering the first query — so edits made while no MCP server was running (a `git pull` from the terminal, edits from another editor, a previous agent session that exited) get absorbed on the next session's first tool call.
 
 ```
 agent writes src/Widget.ts
   → watcher fires (<100ms)
-  → debounce (default 2s)
+  → debounce / batch window (default 2s, configurable up to 60s)
   → sync; Widget.ts is in the index
   → next agent query sees it
 ```
 
-**Verify any time** with `rustcodegraph_status` (via MCP) or `rustcodegraph status` (CLI). If anything is pending, you'll see a `### Pending sync:` section naming the files and their edit age.
+**Verify any time** with `rustcodegraph_status` (via MCP) or `rustcodegraph status` (CLI). If anything is pending, you'll see a `### Pending sync:` section naming the files, their edit age, and the fact that they are waiting for the next batch sync.
 
-The handful of cases where manual `rustcodegraph sync` makes sense: the watcher is disabled (sandboxed environments, or `RUSTCODEGRAPH_NO_DAEMON=1`), or you're scripting against the index outside an agent session and want a pre-flight sync at the start of your script.
+The handful of cases where manual `rustcodegraph sync` makes sense: the watcher is disabled (sandboxed environments, or `RUSTCODEGRAPH_NO_DAEMON=1`), you want an immediate refresh before a long configured batch window expires, or you're scripting against the index outside an agent session and want a pre-flight sync at the start of your script.
 
 → Full deep-dive in [Guides → Indexing a Project](docs/user/guides/indexing.md#stay-fresh-automatically).
 
@@ -467,7 +467,7 @@ The exact text is `src/mcp/server_instructions.rs` — the single source of trut
 
 3. **Resolution** — After extraction, references are resolved: function calls → definitions, imports → source files, class inheritance, and framework-specific patterns.
 
-4. **Auto-Sync** — The MCP server watches your project using native OS file events. Changes are debounced (2-second quiet window), filtered to source files only, and incrementally synced. The graph stays fresh as you code — no configuration needed.
+4. **Auto-Sync** — The MCP server watches your project using native OS file events. Changes are debounced, filtered to source files only, and synced in memory-aware batches; pending files are reported while the watcher waits for the next batch sync.
 
 ---
 

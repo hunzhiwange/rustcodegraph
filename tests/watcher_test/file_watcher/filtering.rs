@@ -1,5 +1,18 @@
 use crate::common::*;
 
+struct QueuedWatchHandle {
+    events: Arc<Mutex<Vec<std::path::PathBuf>>>,
+}
+
+impl WatchHandle for QueuedWatchHandle {
+    fn close(&mut self) {}
+
+    fn take_events(&mut self) -> Vec<std::path::PathBuf> {
+        let mut events = self.events.lock().expect("events lock should not poison");
+        std::mem::take(&mut *events)
+    }
+}
+
 #[test]
 fn should_ignore_files_not_matching_include_patterns() {
     let _guard = TestGuard::new();
@@ -19,6 +32,61 @@ fn should_ignore_files_not_matching_include_patterns() {
     thread::sleep(Duration::from_millis(400));
     watcher.flush_due();
     assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    watcher.stop();
+}
+
+#[test]
+fn should_trigger_sync_for_deleted_directory_path_events() {
+    let _guard = TestGuard::new();
+    __set_supports_recursive_watch_for_tests(Some(true));
+    let project = TempProject::new("codegraph-watcher");
+    let deleted_dir = project.path().join("src").join("deleted-feature");
+    fs::create_dir_all(&deleted_dir).expect("deleted-feature directory should be created");
+    fs::write(
+        deleted_dir.join("old.ts"),
+        "export function removedFeature() { return 1; }\n",
+    )
+    .expect("source file should be written");
+
+    let events = Arc::new(Mutex::new(Vec::<std::path::PathBuf>::new()));
+    let factory_events = Arc::clone(&events);
+    __set_fs_watch_for_tests(Some(Arc::new(move |_dir| {
+        Ok(Box::new(QueuedWatchHandle {
+            events: Arc::clone(&factory_events),
+        }))
+    })));
+
+    let (calls, sync_fn) = sync_mock(Vec::new(), Ok(ok(1, 10)));
+    let mut watcher = FileWatcher::new(
+        project.path(),
+        sync_fn,
+        FileWatchOptions {
+            debounce_ms: Some(50),
+            ..FileWatchOptions::default()
+        },
+    );
+
+    assert!(watcher.start());
+    watcher
+        .wait_until_ready(1000)
+        .expect("watcher should be ready");
+
+    fs::remove_dir_all(&deleted_dir).expect("deleted-feature directory should be removed");
+    events
+        .lock()
+        .expect("events lock should not poison")
+        .push(deleted_dir);
+
+    wait_for(
+        || {
+            watcher.tick();
+            calls.load(Ordering::SeqCst) > 0
+        },
+        2000,
+        25,
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 
     watcher.stop();
 }

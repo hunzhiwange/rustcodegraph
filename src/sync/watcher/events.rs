@@ -3,8 +3,10 @@
 //! 这里把 OS watcher 的路径事件转换成 project-relative 源文件变更，并负责
 //! 逐目录监听时的新子目录补挂载。真正的同步调度在 `sync.rs` 中完成。
 
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use serde_json::json;
 
@@ -14,7 +16,7 @@ use crate::extraction::grammars::is_source_file;
 
 use super::backend::{WatchStartError, create_watch_handle, max_dir_watches};
 use super::state::FileWatcher;
-use super::types::{EXHAUSTION_REASON, PendingInfo};
+use super::types::{EXHAUSTION_REASON, FileSnapshot, PendingInfo};
 use super::util::{context, now_ms, path_string, relative_posix};
 
 impl FileWatcher {
@@ -139,6 +141,110 @@ impl FileWatcher {
         }
     }
 
+    pub(super) fn poll_for_changes(&mut self) {
+        if self.stopped || !self.ready || self.inert {
+            return;
+        }
+        let now = Instant::now();
+        if self
+            .last_poll_at
+            .is_some_and(|last| last.elapsed() < Duration::from_millis(self.poll_interval_ms))
+        {
+            return;
+        }
+        self.last_poll_at = Some(now);
+
+        let previous = std::mem::take(&mut self.poll_snapshot);
+        let current = self.collect_source_snapshot();
+        for (rel, snapshot) in &current {
+            if previous.get(rel) != Some(snapshot) {
+                self.handle_change(rel);
+            }
+        }
+        for rel in previous.keys() {
+            if !current.contains_key(rel) {
+                self.handle_deleted_or_unknown_path(rel);
+            }
+        }
+        self.poll_snapshot = current;
+    }
+
+    pub(super) fn collect_source_snapshot(&self) -> BTreeMap<String, FileSnapshot> {
+        let mut snapshot = BTreeMap::new();
+        let mut visited_dirs = HashSet::new();
+        self.collect_source_snapshot_dir(&self.project_root, &mut visited_dirs, &mut snapshot);
+        snapshot
+    }
+
+    fn collect_source_snapshot_dir(
+        &self,
+        dir: &Path,
+        visited_dirs: &mut HashSet<PathBuf>,
+        snapshot: &mut BTreeMap<String, FileSnapshot>,
+    ) {
+        let Ok(canonical) = fs::canonicalize(dir) else {
+            return;
+        };
+        if !visited_dirs.insert(canonical) {
+            return;
+        }
+
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                if !self.should_ignore_dir(&path) {
+                    self.collect_source_snapshot_dir(&path, visited_dirs, snapshot);
+                }
+                continue;
+            }
+
+            let rel = relative_posix(&self.project_root, &path);
+            if rel.is_empty()
+                || rel == "."
+                || rel.starts_with("..")
+                || self.is_always_ignored(&rel)
+                || self
+                    .ignore_matcher
+                    .as_ref()
+                    .is_some_and(|matcher| matcher.ignores(&rel))
+                || !is_source_file(&rel)
+            {
+                continue;
+            }
+
+            let metadata = if file_type.is_symlink() {
+                fs::metadata(&path)
+            } else {
+                entry.metadata()
+            };
+            let Ok(metadata) = metadata else {
+                continue;
+            };
+            if !metadata.is_file() {
+                continue;
+            }
+            let modified_ns = metadata
+                .modified()
+                .ok()
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0);
+            snapshot.insert(
+                rel,
+                FileSnapshot {
+                    modified_ns,
+                    len: metadata.len(),
+                },
+            );
+        }
+    }
+
     #[allow(dead_code)]
     fn handle_dir_event(&mut self, dir: &Path, filename: &str) {
         // 保留给更窄的目录事件 backend：语义与 handle_path_event 一致。
@@ -172,19 +278,21 @@ impl FileWatcher {
         } else {
             self.project_root.join(path)
         };
-        if fs::metadata(&full)
-            .map(|metadata| metadata.is_dir())
-            .unwrap_or(false)
-        {
-            // 新目录事件要补挂载 watch，并把目录中已有文件标记为 pending。
-            if !self.should_ignore_dir(&full) {
-                self.watch_tree(&full, true);
-            }
-            return;
-        }
-
         let rel = relative_posix(&self.project_root, &full);
-        self.handle_change(&rel);
+        match fs::metadata(&full) {
+            Ok(metadata) if metadata.is_dir() => {
+                // 新目录事件要补挂载 watch，并把目录中已有文件标记为 pending。
+                if !self.should_ignore_dir(&full) {
+                    self.watch_tree(&full, true);
+                }
+            }
+            Ok(_) => self.handle_change(&rel),
+            Err(_) if is_source_file(&rel) => self.handle_change(&rel),
+            Err(_) => {
+                self.unwatch_deleted_subtree(&full);
+                self.handle_deleted_or_unknown_path(&rel);
+            }
+        }
     }
 
     pub(super) fn handle_change(&mut self, rel: &str) {
@@ -222,10 +330,66 @@ impl FileWatcher {
                 PendingInfo {
                     first_seen_ms,
                     last_seen_ms: now,
+                    indexing: false,
                 },
             );
         }
         self.schedule_sync();
+    }
+
+    fn handle_deleted_or_unknown_path(&mut self, rel: &str) {
+        // Directory removals often arrive as a single path event for the deleted
+        // directory, not as one delete event per contained source file. The
+        // incremental sync can discover removed indexed files by scanning the
+        // current tree, so this path only needs to schedule a batch.
+        if rel.is_empty() || rel == "." || rel.starts_with("..") {
+            return;
+        }
+        if self.is_always_ignored(rel) {
+            return;
+        }
+        let ignored = self
+            .ignore_matcher
+            .as_ref()
+            .is_some_and(|matcher| matcher.ignores(rel) || matcher.ignores(&format!("{rel}/")));
+        if ignored {
+            return;
+        }
+
+        let ctx = context([("path", json!(rel))]);
+        log_debug(
+            "Deleted or unknown path detected; scheduling sync",
+            Some(&ctx),
+        );
+        if self.ready {
+            let now = now_ms();
+            let first_seen_ms = self
+                .pending_files
+                .get(rel)
+                .map(|info| info.first_seen_ms)
+                .unwrap_or(now);
+            self.pending_files.insert(
+                rel.to_owned(),
+                PendingInfo {
+                    first_seen_ms,
+                    last_seen_ms: now,
+                    indexing: false,
+                },
+            );
+        }
+        self.schedule_sync();
+    }
+
+    fn unwatch_deleted_subtree(&mut self, deleted: &Path) {
+        let watched_dirs = self
+            .dir_watchers
+            .keys()
+            .filter(|dir| dir.as_path() == deleted || dir.starts_with(deleted))
+            .cloned()
+            .collect::<Vec<_>>();
+        for dir in watched_dirs {
+            self.unwatch_dir(&dir);
+        }
     }
 
     pub(super) fn unwatch_dir(&mut self, dir: &Path) {

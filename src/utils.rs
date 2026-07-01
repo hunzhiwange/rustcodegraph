@@ -771,3 +771,46 @@ fn current_memory_usage_bytes() -> u64 {
 fn current_memory_usage_bytes() -> u64 {
     0
 }
+
+/// TEMP debug: print current RSS at a labeled phase when RUSTCODEGRAPH_DEBUG_RSS is set.
+pub fn debug_rss(label: &str) {
+    if std::env::var("RUSTCODEGRAPH_DEBUG_RSS").is_ok() {
+        use std::io::Write;
+        let mb = current_memory_usage_bytes() / (1024 * 1024);
+        let mut err = std::io::stderr();
+        let _ = writeln!(err, "[RSS] {mb:>6} MB  {label}");
+        let _ = err.flush();
+    }
+}
+
+/// Compatibility injection point retained for callers from the removed watch
+/// memory guard. Built-in watch sync no longer consults this reader.
+type WatchMemoryReader = Box<dyn Fn() -> u64 + Send + Sync>;
+
+static WATCH_MEMORY_READER: LazyLock<StdMutex<Option<WatchMemoryReader>>> =
+    LazyLock::new(|| StdMutex::new(None));
+
+/// Returns the current process memory reading, optionally overridden by
+/// [`set_watch_memory_reader_for_tests`].
+///
+/// This is retained for compatibility only; built-in watch sync no longer uses
+/// process memory readings to decide whether to run.
+#[deprecated(note = "built-in watch sync no longer skips based on process memory")]
+pub fn current_watch_memory_usage_bytes() -> u64 {
+    if let Ok(reader) = WATCH_MEMORY_READER.lock()
+        && let Some(reader) = reader.as_ref()
+    {
+        return reader();
+    }
+    current_memory_usage_bytes()
+}
+
+/// Overrides [`current_watch_memory_usage_bytes`] for compatibility tests.
+///
+/// Built-in watch sync no longer uses this hook.
+#[deprecated(note = "built-in watch sync no longer skips based on process memory")]
+pub fn set_watch_memory_reader_for_tests(reader: Option<WatchMemoryReader>) {
+    if let Ok(mut slot) = WATCH_MEMORY_READER.lock() {
+        *slot = reader;
+    }
+}

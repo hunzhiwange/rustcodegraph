@@ -185,7 +185,7 @@ mod codegraph_index_full_re_index_keeps_the_graph_populated_874 {
     }
 
     #[test]
-    fn sync_command_refreshes_a_new_file_without_using_the_facade_parser_path() {
+    fn sync_command_refreshes_a_new_file_through_the_incremental_sync_path() {
         let temp_dir = TempDir::new("codegraph-index-cmd-");
         run_codegraph(&["init", "-i"], temp_dir.path());
 

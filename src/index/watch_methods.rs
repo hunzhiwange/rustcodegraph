@@ -12,22 +12,30 @@ impl CodeGraph {
         }
 
         let debounce_ms = options.debounce_ms.unwrap_or(2000);
+        let max_debounce_ms = options.max_debounce_ms;
+        let min_sync_interval_ms = options.min_sync_interval_ms;
         let root = self.project_root.clone();
         let sync_root = root.clone();
         let watcher = Arc::new(StdMutex::new(RuntimeFileWatcher::new(
             &root,
             move || {
                 // watcher 回调只返回汇总结果，具体增量清理和重建仍交给 sync 管线。
+                // 如果 sync 管线报告 recoverable skipped，这里转成 watcher 能识别的
+                // skipped 标志，让 watcher 保留 pending、保持 active、稍后重试，而
+                // 不是把跳过当成正常完成。
                 let result = sync_facade_database(&sync_root, Instant::now());
                 let files_changed =
                     result.files_added + result.files_modified + result.files_removed;
                 Ok(SyncRunResult {
                     files_changed,
                     duration_ms: result.duration_ms,
+                    skipped: result.memory_skipped,
                 })
             },
             RuntimeWatchOptions {
                 debounce_ms: Some(debounce_ms),
+                max_debounce_ms,
+                min_sync_interval_ms,
                 ..RuntimeWatchOptions::default()
             },
         )));

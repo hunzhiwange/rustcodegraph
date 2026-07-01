@@ -89,6 +89,7 @@ pub fn update_facade_runtime_watcher(
                 PendingInfo {
                     first_seen_ms: pending.first_seen_ms,
                     last_seen_ms: pending.last_seen_ms,
+                    indexing: pending.indexing,
                 },
             )
         })
@@ -119,7 +120,7 @@ pub fn facade_pending_files(project_root: impl AsRef<Path>) -> Vec<PendingFile> 
             path: path.clone(),
             first_seen_ms: info.first_seen_ms,
             last_seen_ms: info.last_seen_ms,
-            indexing: false,
+            indexing: info.indexing,
         })
         .collect()
 }
@@ -165,6 +166,7 @@ pub(super) fn ingest_facade_event_for_tests(project_root: &Path, rel_path: &str)
         PendingInfo {
             first_seen_ms,
             last_seen_ms: now,
+            indexing: false,
         },
     );
     true

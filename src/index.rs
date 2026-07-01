@@ -44,6 +44,8 @@ pub use crate::sync::watcher::{
 };
 pub use crate::types::*;
 pub use crate::utils::{FileLock, MemoryMonitor, Mutex, debounce, process_in_batches, throttle};
+#[allow(deprecated)]
+pub use crate::utils::{current_watch_memory_usage_bytes, set_watch_memory_reader_for_tests};
 
 use crate::directory::{create_directory, remove_directory, validate_directory};
 use crate::extraction::extraction_version::EXTRACTION_VERSION;
@@ -124,6 +126,11 @@ pub struct SyncResult {
     pub nodes_updated: usize,
     pub duration_ms: u64,
     pub changed_file_paths: Option<Vec<String>>,
+    /// Compatibility field retained for older callers.
+    ///
+    /// RustCodeGraph's built-in sync path no longer skips work based on process
+    /// memory readings, so this remains `false` for normal `sync` results.
+    pub memory_skipped: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -137,6 +144,8 @@ pub struct ChangedFiles {
 #[serde(rename_all = "camelCase")]
 pub struct WatchOptions {
     pub debounce_ms: Option<u64>,
+    pub max_debounce_ms: Option<u64>,
+    pub min_sync_interval_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -256,6 +265,7 @@ mod test_edges;
 mod value_edges;
 mod watch_methods;
 
+pub use crate::utils::debug_rss as debug_rss_pub;
 use class_members::*;
 use database::*;
 use edge_resolution::*;
@@ -272,10 +282,14 @@ use member_resolution::*;
 use node_builders::*;
 use pending::*;
 use php_ruby_refs::*;
+pub use post_index::facade_synthesis_nodes_loaded;
 use post_index::*;
 use property_edges::*;
 use relations::*;
 use scoped_resolution::*;
+pub use syncing::facade_file_content_reads;
+#[allow(deprecated)]
+pub use syncing::facade_watch_memory_skips;
 use syncing::*;
 use syntax_utils::*;
 use test_edges::*;

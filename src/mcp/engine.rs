@@ -99,6 +99,36 @@ impl MCPEngine {
 }
 
 pub fn parse_debounce_env(raw: Option<&str>) -> Option<u64> {
+    parse_watch_duration_env(raw)
+}
+
+pub fn parse_watch_policy_from_env() -> crate::WatchOptions {
+    parse_watch_policy_env(
+        std::env::var("RUSTCODEGRAPH_WATCH_DEBOUNCE_MS")
+            .ok()
+            .as_deref(),
+        std::env::var("RUSTCODEGRAPH_WATCH_MAX_DEBOUNCE_MS")
+            .ok()
+            .as_deref(),
+        std::env::var("RUSTCODEGRAPH_WATCH_MIN_SYNC_INTERVAL_MS")
+            .ok()
+            .as_deref(),
+    )
+}
+
+pub fn parse_watch_policy_env(
+    debounce_ms: Option<&str>,
+    max_debounce_ms: Option<&str>,
+    min_sync_interval_ms: Option<&str>,
+) -> crate::WatchOptions {
+    crate::WatchOptions {
+        debounce_ms: parse_watch_duration_env(debounce_ms),
+        max_debounce_ms: parse_watch_duration_env(max_debounce_ms),
+        min_sync_interval_ms: parse_watch_duration_env(min_sync_interval_ms),
+    }
+}
+
+fn parse_watch_duration_env(raw: Option<&str>) -> Option<u64> {
     let raw = raw?;
     let raw = raw.trim();
     if raw.is_empty() {

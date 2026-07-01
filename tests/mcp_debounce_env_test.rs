@@ -8,7 +8,7 @@
 //!
 //! This is the Rust port of `__tests__/mcp-debounce-env.test.ts`.
 
-use rustcodegraph::mcp::engine::parse_debounce_env;
+use rustcodegraph::mcp::engine::{parse_debounce_env, parse_watch_policy_env};
 
 mod parse_debounce_env {
     use super::*;
@@ -50,5 +50,45 @@ mod parse_debounce_env {
         // Number('1e3') === 1000, Number.isInteger(1000) === true. Power users
         // who write debounce as 1e3 should not be surprised; the clamp still applies.
         assert_eq!(parse_debounce_env(Some("1e3")), Some(1000));
+    }
+}
+
+mod parse_watch_policy_env {
+    use super::*;
+
+    #[test]
+    fn returns_empty_options_for_unset_empty_values() {
+        let options = parse_watch_policy_env(None, Some(""), Some("   "));
+
+        assert_eq!(options.debounce_ms, None);
+        assert_eq!(options.max_debounce_ms, None);
+        assert_eq!(options.min_sync_interval_ms, None);
+    }
+
+    #[test]
+    fn accepts_one_minute_batch_policy_values() {
+        let options = parse_watch_policy_env(Some("60000"), Some("60000"), Some("60000"));
+
+        assert_eq!(options.debounce_ms, Some(60_000));
+        assert_eq!(options.max_debounce_ms, Some(60_000));
+        assert_eq!(options.min_sync_interval_ms, Some(60_000));
+    }
+
+    #[test]
+    fn rejects_invalid_batch_policy_values_and_lets_defaults_win() {
+        let options = parse_watch_policy_env(Some("abc"), Some("-500"), Some("500.5"));
+
+        assert_eq!(options.debounce_ms, None);
+        assert_eq!(options.max_debounce_ms, None);
+        assert_eq!(options.min_sync_interval_ms, None);
+    }
+
+    #[test]
+    fn rejects_values_above_one_minute() {
+        let options = parse_watch_policy_env(Some("60001"), Some("60001"), Some("60001"));
+
+        assert_eq!(options.debounce_ms, None);
+        assert_eq!(options.max_debounce_ms, None);
+        assert_eq!(options.min_sync_interval_ms, None);
     }
 }

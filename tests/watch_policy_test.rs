@@ -166,6 +166,7 @@ mod file_watcher_honors_the_watch_policy {
             Ok(SyncRunResult {
                 files_changed: 0,
                 duration_ms: 0,
+                skipped: false,
             })
         };
         let mut watcher = FileWatcher::new(test_dir.path(), sync_fn, WatchOptions::default());
