@@ -376,15 +376,3 @@ impl ToolHandler {
 fn should_catch_up_before_tool(tool_name: &str) -> bool {
     !matches!(tool_name, "rustcodegraph_status")
 }
-
-#[cfg(test)]
-mod tests {
-    use super::should_catch_up_before_tool;
-
-    #[test]
-    fn status_is_diagnostic_and_does_not_trigger_catch_up() {
-        assert!(!should_catch_up_before_tool("rustcodegraph_status"));
-        assert!(should_catch_up_before_tool("rustcodegraph_search"));
-        assert!(should_catch_up_before_tool("rustcodegraph_explore"));
-    }
-}

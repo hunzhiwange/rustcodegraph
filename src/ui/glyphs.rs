@@ -64,16 +64,12 @@ pub static ASCII_GLYPHS: Glyphs = Glyphs {
 
 static CACHED: OnceLock<RwLock<Option<Glyphs>>> = OnceLock::new();
 
-#[cfg(test)]
 static PLATFORM_OVERRIDE: OnceLock<RwLock<Option<&'static str>>> = OnceLock::new();
 
 fn current_platform() -> &'static str {
-    #[cfg(test)]
-    {
-        let cell = PLATFORM_OVERRIDE.get_or_init(|| RwLock::new(None));
-        if let Some(platform) = *cell.read().expect("platform override poisoned") {
-            return platform;
-        }
+    let cell = PLATFORM_OVERRIDE.get_or_init(|| RwLock::new(None));
+    if let Some(platform) = *cell.read().expect("platform override poisoned") {
+        return platform;
     }
 
     if cfg!(windows) {
@@ -126,14 +122,14 @@ pub fn reset_glyphs_cache() {
     }
 }
 
-#[cfg(test)]
-pub fn set_platform_for_test(platform: &'static str) {
+#[doc(hidden)]
+pub fn __set_platform_for_tests(platform: &'static str) {
     let cell = PLATFORM_OVERRIDE.get_or_init(|| RwLock::new(None));
     *cell.write().expect("platform override poisoned") = Some(platform);
 }
 
-#[cfg(test)]
-pub fn reset_platform_for_test() {
+#[doc(hidden)]
+pub fn __reset_platform_for_tests() {
     if let Some(cell) = PLATFORM_OVERRIDE.get() {
         *cell.write().expect("platform override poisoned") = None;
     }

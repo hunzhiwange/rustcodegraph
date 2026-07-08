@@ -12,7 +12,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use rustcodegraph::CodeGraph;
+use rustcodegraph::{CodeGraph, IndexOptions};
 use serde_json::{Value, json};
 
 const BIN: &str = env!("CARGO_BIN_EXE_rustcodegraph");
@@ -212,6 +212,69 @@ fn file_uri(path: &Path) -> String {
 
 mod mcp_project_resolution_via_roots_list_issue_196 {
     use super::*;
+
+    #[test]
+    fn status_is_diagnostic_and_does_not_run_catch_up_sync() {
+        let project_dir = TempDir::new("codegraph-mcp-status-");
+        fs::write(
+            project_dir.path().join("original.ts"),
+            "export function original() { return 1; }\n",
+        )
+        .expect("fixture source should be written");
+        let mut cg = CodeGraph::init_sync(project_dir.path()).expect("CodeGraph should initialize");
+        let result = cg.index_all(IndexOptions::default());
+        assert!(
+            result.success,
+            "index_all should succeed, errors: {:?}",
+            result.errors
+        );
+        cg.close();
+        fs::write(
+            project_dir.path().join("added-after-index.ts"),
+            "export function addedAfterIndex() { return 2; }\n",
+        )
+        .expect("post-index fixture source should be written");
+
+        let mut child = spawn_server(project_dir.path());
+        send(
+            &mut child,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 0,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": client_info(),
+                    "rootUri": file_uri(project_dir.path()),
+                },
+            }),
+        );
+        wait_for_message(
+            &mut child.messages,
+            |m| m.get("id") == Some(&json!(0)) && m.get("result").is_some(),
+            5_000,
+        );
+
+        send(
+            &mut child,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": { "name": "rustcodegraph_status", "arguments": {} },
+            }),
+        );
+
+        let resp = wait_for_message(
+            &mut child.messages,
+            |m| m.get("id") == Some(&json!(1)),
+            8_000,
+        );
+        let text = response_text(&resp);
+        assert!(text.contains("RustCodeGraph Status"), "{text}");
+        assert!(text.contains("**Files indexed:** 1"), "{text}");
+    }
 
     #[test]
     fn resolves_the_project_from_the_client_roots_list_when_no_root_uri_is_sent() {

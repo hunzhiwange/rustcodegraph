@@ -438,19 +438,6 @@ fn with_mcp_index_state_notice(text: String, project_root: &Path) -> String {
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::should_catch_up_before_tool;
-
-    #[test]
-    fn status_is_diagnostic_and_does_not_trigger_catch_up() {
-        assert!(!should_catch_up_before_tool("rustcodegraph_status"));
-        assert!(!should_catch_up_before_tool("status"));
-        assert!(should_catch_up_before_tool("rustcodegraph_search"));
-        assert!(should_catch_up_before_tool("rustcodegraph_explore"));
-    }
-}
-
 fn mcp_project_root(default_root: &Path, arguments: &Value) -> PathBuf {
     mcp_string_arg(arguments, &["projectPath", "path"])
         .map(|path| resolve_project_path(Some(path)))

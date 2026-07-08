@@ -149,6 +149,23 @@ mod mcp_catch_up_gate {
     }
 
     #[test]
+    fn status_is_diagnostic_and_does_not_trigger_catch_up() {
+        let mut fixture = Fixture::new();
+        let await_count = Arc::new(AtomicUsize::new(0));
+        let await_count_in_gate = Arc::clone(&await_count);
+        fixture.handler.set_catch_up_gate(move || {
+            await_count_in_gate.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+
+        let res = fixture.handler.execute("rustcodegraph_status", &Map::new());
+
+        assert_ne!(res.is_error, Some(true));
+        assert_eq!(await_count.load(Ordering::SeqCst), 0);
+        assert!(first_text(&res).contains("RustCodeGraph Status"));
+    }
+
+    #[test]
     fn drops_the_gate_after_first_await_second_call_does_not_re_wait() {
         let mut fixture = Fixture::new();
         let await_count = Arc::new(AtomicUsize::new(0));

@@ -11,13 +11,9 @@ use std::env;
 use std::ffi::OsString;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-#[allow(dead_code)]
-#[path = "../src/ui/glyphs.rs"]
-mod glyphs;
-
-use glyphs::{
-    ASCII_GLYPHS, Glyphs, UNICODE_GLYPHS, get_glyphs, reset_glyphs_cache, reset_platform_for_test,
-    set_platform_for_test, supports_unicode,
+use rustcodegraph::ui::glyphs::{
+    __reset_platform_for_tests, __set_platform_for_tests, ASCII_GLYPHS, Glyphs, UNICODE_GLYPHS,
+    get_glyphs, reset_glyphs_cache, supports_unicode,
 };
 
 static TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
@@ -67,7 +63,7 @@ impl Drop for EnvGuard {
                 }
             }
         }
-        reset_platform_for_test();
+        __reset_platform_for_tests();
         reset_glyphs_cache();
     }
 }
@@ -78,7 +74,7 @@ fn with_env(patch: &[(&'static str, Option<&'static str>)], fn_body: impl FnOnce
 }
 
 fn set_platform(value: &'static str) {
-    set_platform_for_test(value);
+    __set_platform_for_tests(value);
 }
 
 fn glyph_keys() -> Vec<&'static str> {

@@ -165,21 +165,14 @@ pub(super) fn identifier_tokens(input: &str) -> Vec<String> {
 
 pub(super) fn call_names(input: &str) -> Vec<String> {
     let mut names = Vec::new();
-    let bytes = input.as_bytes();
-    let mut idx = 0usize;
-    while idx < bytes.len() {
-        if input[idx..].starts_with("this.") {
-            let after_this = idx + 5;
-            if let Some(name) = first_identifier(&input[after_this..]) {
-                let after_name = after_this + name.len();
-                if input[after_name..].trim_start().starts_with('(') {
-                    names.push(name.to_owned());
-                }
-                idx = after_name;
-                continue;
+    for (idx, _) in input.match_indices("this.") {
+        let after_this = idx + "this.".len();
+        if let Some(name) = first_identifier(&input[after_this..]) {
+            let after_name = after_this + name.len();
+            if input[after_name..].trim_start().starts_with('(') {
+                names.push(name.to_owned());
             }
         }
-        idx += 1;
     }
     names
 }

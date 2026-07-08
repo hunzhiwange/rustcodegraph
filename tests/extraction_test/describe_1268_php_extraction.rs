@@ -59,4 +59,29 @@ class ChildController extends BaseController implements Serializable, JsonSerial
         assert_contains(&implements, "Serializable");
         assert_contains(&implements, "JsonSerializable");
     }
+    #[test]
+    fn indexes_utf8_exception_messages_without_char_boundary_panic() {
+        let temp = TempDir::new("codegraph-php-utf8-exception");
+        temp.write(
+            "CustomerService.php",
+            r#"<?php
+
+class CustomerService
+{
+    public function create(array $arrIn)
+    {
+        if ($arrIn['mobile']) {
+            throw new \Exception("当前已存在手机号为‘{$arrIn['mobile']}’的客户");
+        }
+    }
+}
+"#,
+        );
+
+        let mut cg = index_project(&temp);
+        assert!(
+            !cg.search_nodes("CustomerService", None).is_empty(),
+            "expected indexed PHP class to be searchable"
+        );
+    }
 }
