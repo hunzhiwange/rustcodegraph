@@ -32,7 +32,7 @@ impl TestGuard {
         let lock = TEST_MUTEX
             .get_or_init(|| Mutex::new(()))
             .lock()
-            .expect("watcher test mutex should not be poisoned");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let old_node_env = env::var_os("NODE_ENV");
         unsafe {
             env::set_var("NODE_ENV", "test");

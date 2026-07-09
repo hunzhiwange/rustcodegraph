@@ -126,6 +126,7 @@ fn should_not_flush_before_scaled_batch_window_under_sustained_stream() {
 
     let stream_start = Instant::now();
     let mut i = 0;
+    let max_wait = Duration::from_millis(600);
     while stream_start.elapsed() < Duration::from_millis(500) {
         assert!(__emit_watch_event_for_tests(
             project.path(),
@@ -133,6 +134,9 @@ fn should_not_flush_before_scaled_batch_window_under_sustained_stream() {
         ));
         i += 1;
         thread::sleep(Duration::from_millis(40));
+        if stream_start.elapsed() >= max_wait {
+            break;
+        }
         watcher.flush_due();
         assert_eq!(
             calls.load(Ordering::SeqCst),

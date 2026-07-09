@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-07-09
+
+### Fixes
+
+- Published a maintenance release with the latest packaging and release workflow updates.
+
 ## [1.2.2] - 2026-07-09
 
 ### Fixes
