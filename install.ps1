@@ -46,8 +46,8 @@ New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Expand-Archive -Path $zip -DestinationPath $dest -Force
 $binDir = Join-Path $dest 'bin'
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-$exe = Join-Path $dest "rustcodegraph-$artifactTarget\bin\rustcodegraph.exe"
-if (-not (Test-Path $exe)) { throw "rustcodegraph: downloaded archive did not contain rustcodegraph-$artifactTarget\bin\rustcodegraph.exe" }
+$exe = Join-Path $dest 'rustcodegraph.exe'
+if (-not (Test-Path $exe)) { throw "rustcodegraph: downloaded archive did not contain rustcodegraph.exe" }
 Move-Item -Path $exe -Destination (Join-Path $binDir 'rustcodegraph.exe') -Force
 if (-not (Test-Path (Join-Path $dest 'package.json'))) {
   @{ name = 'rustcodegraph'; version = $version.TrimStart('v') } |

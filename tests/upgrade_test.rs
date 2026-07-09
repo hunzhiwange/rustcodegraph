@@ -362,10 +362,13 @@ mod version_helpers {
         assert!(arm.contains("github.com/hunzhiwange/rustcodegraph/releases/download/v1.2.3/"));
         assert!(arm.contains("releases/download/v1.2.3/rustcodegraph-aarch64-pc-windows-msvc.zip"));
         assert!(arm.contains(r"$dest='C:\cg\current'"));
-        assert!(arm.contains("downloaded archive did not contain bin\\rustcodegraph.exe"));
+        assert!(arm.contains("$newExe=Join-Path $stage 'rustcodegraph.exe'"));
+        assert!(arm.contains("downloaded archive did not contain rustcodegraph.exe"));
         assert!(arm.contains("Rename-Item"));
         assert!(arm.contains("rustcodegraph.exe.old-"));
-        assert!(!arm.contains("Join-Path $dest 'rustcodegraph.exe'"));
+        assert!(arm.contains("Copy-Item -Path $newExe -Destination $exe"));
+        assert!(arm.contains("Join-Path $dest 'rustcodegraph.exe'"));
+        assert!(!arm.contains("Join-Path $src"));
         let remove_dest = Regex::new(r"Remove-Item[^;]*\$dest'?\s*;").unwrap();
         assert!(!remove_dest.is_match(&arm));
 
@@ -600,11 +603,13 @@ mod run_upgrade_orchestration {
         assert_eq!(calls_ref.runs[0].cmd, "powershell.exe");
         let decoded = decode_encoded_command(&calls_ref.runs[0].args);
         assert!(decoded.contains("releases/download/v0.9.9/rustcodegraph-"));
-        assert!(decoded.contains("downloaded archive did not contain bin\\rustcodegraph.exe"));
+        assert!(decoded.contains("downloaded archive did not contain rustcodegraph.exe"));
+        assert!(decoded.contains("$newExe=Join-Path $stage 'rustcodegraph.exe'"));
         assert!(decoded.contains("Rename-Item"));
         assert!(decoded.contains("rustcodegraph.exe.old-"));
         assert!(decoded.contains("Copy-Item"));
-        assert!(!decoded.contains("Join-Path $dest 'rustcodegraph.exe'"));
+        assert!(decoded.contains("Copy-Item -Path $newExe -Destination $exe"));
+        assert!(!decoded.contains("Join-Path $src"));
     }
 
     #[test]

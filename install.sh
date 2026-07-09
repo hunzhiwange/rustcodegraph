@@ -81,8 +81,8 @@ rm -rf "$dest"
 mkdir -p "$dest"
 tar -xJf "$tmp/cg.tar.xz" -C "$dest"
 mkdir -p "$dest/bin"
-found="$dest/rustcodegraph-${artifact_target}/bin/rustcodegraph"
-[ -f "$found" ] || { echo "rustcodegraph: downloaded archive did not contain rustcodegraph-${artifact_target}/bin/rustcodegraph" >&2; exit 1; }
+found="$dest/rustcodegraph-${artifact_target}/rustcodegraph"
+[ -f "$found" ] || { echo "rustcodegraph: downloaded archive did not contain rustcodegraph-${artifact_target}/rustcodegraph" >&2; exit 1; }
 mv "$found" "$dest/bin/rustcodegraph"
 if [ ! -f "$dest/package.json" ]; then
   printf '{\n  "name": "rustcodegraph",\n  "version": "%s"\n}\n' "${version#v}" > "$dest/package.json"

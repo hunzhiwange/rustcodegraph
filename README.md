@@ -58,6 +58,8 @@ rustcodegraph install
 
 The installer auto-detects supported agents and writes the MCP configuration they need to launch RustCodeGraph.
 
+Optional for Codex users: add the bundled [RustCodeGraph skill](skills/rustcodegraph/SKILL.md) and keep `rustcodegraph watch --path <project-root>` running during active development so Codex is prompted to use fresh indexed context for code search, navigation, flow tracing, and impact analysis.
+
 ### 3. Index a Project
 
 ```bash

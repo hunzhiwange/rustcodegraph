@@ -58,6 +58,8 @@ rustcodegraph install
 
 安装器会自动检测支持的代理，并写入启动 RustCodeGraph MCP 服务所需的配置。
 
+Codex 用户可选：加入仓库内置的 [RustCodeGraph 技能](skills/rustcodegraph/SKILL.md)，并在开发时配合常驻运行 `rustcodegraph watch --path <project-root>`，让 Codex 使用持续保鲜的索引上下文完成搜索、导航、流程追踪和影响分析。
+
 ### 3. 索引项目
 
 ```bash
