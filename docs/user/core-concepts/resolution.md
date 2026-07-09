@@ -14,7 +14,7 @@ RustCodeGraph 如何连接引用并将路由链接到处理程序。
 
 ## 框架意识
 
-RustCodeGraph 识别 Web 框架路由文件并发出由 `references` 边链接到其处理程序类或函数的 `route` 节点 - 因此查询视图或控制器的调用者会显示绑定它的 URL 模式。 请参阅 [Framework Routes](../guides/framework-routes.md) 了解公认框架的完整列表。
+RustCodeGraph 识别 Web 框架路由文件并发出由 `references` 边链接到其处理程序类或函数的 `route` 节点 - 因此查询视图或控制器的调用者会显示绑定它的 URL 模式。 请参阅[框架路由](../guides/framework-routes.md)了解公认框架的完整列表。
 
 ## 动态调度覆盖范围
 

@@ -2,7 +2,7 @@
 
 RustCodeGraph通过MCP向AI代理公开的工具。
 
-RustCodeGraph作为[[[Model Context Protocol]]] (https://modelcontextprotocol.io/)服务器运行。开始时间：
+RustCodeGraph 作为[模型上下文协议 (MCP)](https://modelcontextprotocol.io/)服务器运行。开始时间：
 
 ```bash
 rustcodegraph serve --mcp

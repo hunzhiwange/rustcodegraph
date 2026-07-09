@@ -2,7 +2,7 @@
 
 RustCodeGraph 是什么，以及为什么它使 AI 编码代理更快、更便宜。
 
-RustCodeGraph 是一个**本地优先的代码智能工具**。 它使用 [[[tree-sitter]]]（https://tree-sitter.github.io/), 将每个符号、边和文件存储在本地 SQLite 数据库中）解析您的代码库，并将结果公开为可查询的**知识图** — 通过 [Model Context Protocol (MCP)](../reference/mcp-server.md)、CLI 和 Rust 库。
+RustCodeGraph 是一个**本地优先的代码智能工具**。 它使用 [tree-sitter](https://tree-sitter.github.io/) 解析您的代码库，将每个符号、边和文件存储在本地 SQLite 数据库中，并将结果公开为可查询的**知识图** — 通过 [模型上下文协议 (MCP)](../reference/mcp-server.md)、CLI 和 Rust 库。
 
 它的存在是为了让 AI 编码代理 — Claude Code、Cursor、Codex CLI、opencode、Hermes Agent、Gemini CLI、Antigravity IDE 和 Kiro — **无需扫描文件即可回答结构问题**。 代理无需在 `grep`、`glob` 和 `Read` 上散开来重建代码如何组合在一起，而是查询预先构建的索引并在几次调用中获得答案。
 
@@ -31,4 +31,4 @@ RustCodeGraph 是一个**本地优先的代码智能工具**。 它使用 [[[tre
 
 没有数据离开您的机器。 没有 API 密钥，没有外部服务——只有 `.rustcodegraph/` 中的 SQLite 数据库。
 
-准备好尝试了吗？ 前往[Quickstart](./quickstart.md)。
+准备好尝试了吗？ 前往[快速开始](./quickstart.md)。

@@ -4,7 +4,7 @@
 
 交互式安装程序会自动检测并配置每个受支持的代理 - 连接 MCP 服务器并写入其说明文件。
 
-## Supported agents
+## 支持的代理
 
 - **Claude Code**
 - **Cursor**
@@ -15,7 +15,7 @@
 - **Antigravity IDE**
 - **Kiro**
 
-运行 `rustcodegraph install` 并选择您的代理；有关非交互式标志，请参阅 [Installation](../getting-started/installation.md)。
+运行 `rustcodegraph install` 并选择您的代理；有关非交互式标志，请参阅[安装](../getting-started/installation.md)。
 
 ## 手动设置
 

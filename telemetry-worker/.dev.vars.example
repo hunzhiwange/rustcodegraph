@@ -1,3 +1,0 @@
-# Copy to .dev.vars for local development (`wrangler dev`).
-# The real key lives only in the deployed secret (`wrangler secret put POSTHOG_KEY`).
-POSTHOG_KEY="phc_dev_placeholder"

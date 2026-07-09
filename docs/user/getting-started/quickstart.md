@@ -35,4 +35,4 @@ rustcodegraph init -i
 
 就是这样——当 `.rustcodegraph/` 目录存在时，您的代理将自动使用 RustCodeGraph 工具。
 
-接下来：构建 [Your First Graph](./your-first-graph.md)，或查看完整的 [Installation](./installation.md) 选项。
+接下来：构建[你的第一张图](./your-first-graph.md)，或查看完整的[安装](./installation.md)选项。

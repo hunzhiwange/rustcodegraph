@@ -27,8 +27,8 @@ cargo test --test extraction_test TypeScript -- --test-threads=1
 ```
 
 The npm package is now a thin npm launcher around the Rust binary.
-Root tests and builds are Rust-owned; site and telemetry side projects keep
-their own package-level tooling.
+Root tests and builds are Rust-owned; side projects such as the site keep their
+own package-level tooling.
 
 ## Architecture
 

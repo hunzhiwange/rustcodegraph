@@ -23,4 +23,4 @@
 
 ## 缺少符号
 
-MCP服务器在保存时自动同步（等待几秒钟）。如果需要，手动运行`rustcodegraph sync`。检查文件的语言是否为[[[supported]]] (./reference/languages.md) ，并且未被`.gitignore`排除。
+MCP服务器在保存时自动同步（等待几秒钟）。如果需要，手动运行`rustcodegraph sync`。检查文件语言是否[受支持](./reference/languages.md)，并且未被`.gitignore`排除。

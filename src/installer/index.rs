@@ -1,7 +1,7 @@
 //! Installer orchestrator translation.
 //!
 //! This module keeps the TypeScript install/uninstall control flow traceable:
-//! target resolution, location/default handling, print-config, telemetry-shaped
+//! target resolution, location/default handling, print-config reporting,
 //! lifecycle records, and local-project initialization decisions. It does not
 //! run interactive prompts or write agent config files yet.
 //!

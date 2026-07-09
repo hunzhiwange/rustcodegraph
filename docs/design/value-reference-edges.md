@@ -460,10 +460,8 @@ dodge this entirely: they're `import`-kind nodes, not `const`/`var`, so never ta
 
 ## Extending to another language
 
-The step-by-step runbook — wiring checklist, validation scripts, FP hunts, per-language
-declarator types, and traps — is in
-[`value-reference-edges-playbook.md`](./value-reference-edges-playbook.md). Point a fresh
-session at it and say "Start on language X." In short: decide whether the language's
-constants are file/module-scope (fits) or class-scope (bigger change); confirm the declarator
-node type for the shadow prune; sweep small/medium/large public OSS repos; fix FP clusters;
-add a matrix row here + a test.
+逐步操作手册（接线清单、验证脚本、误报排查、每种语言的声明符类型和陷阱）位于
+[值引用边操作手册](./value-reference-edges-playbook.md)。打开一个新会话并对它说
+“从 X 语言开始”。简而言之：判断该语言的常量是文件/模块作用域（适配当前方案）还是
+类作用域（需要更大的改动）；确认用于 shadow 剪枝的声明符节点类型；扫描小型/中型/大型
+公共 OSS 仓库；修复误报集群；然后在这里添加矩阵行和测试。

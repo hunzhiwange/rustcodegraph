@@ -136,10 +136,6 @@ pub mod sync {
     pub mod worktree;
 }
 
-pub mod telemetry {
-    pub mod index;
-}
-
 pub mod ui {
     pub mod glyphs;
     pub mod shimmer_progress;

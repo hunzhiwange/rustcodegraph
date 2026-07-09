@@ -16,7 +16,7 @@ files → Extraction (tree-sitter) → DB (nodes/edges/files)
 
 ## 1. 提取
 
-[[[tree-sitter]]]（https://tree-sitter.github.io/) 将源代码解析为 AST。特定于语言的查询提取 **节点**（函数、类、方法、类型...）和 **边缘**（调用、导入、扩展、实现）。繁重的解析在主线程中运行。
+[tree-sitter](https://tree-sitter.github.io/) 将源代码解析为 AST。特定于语言的查询提取 **节点**（函数、类、方法、类型...）和 **边缘**（调用、导入、扩展、实现）。繁重的解析在主线程中运行。
 
 ## 2. 储存
 
@@ -24,7 +24,7 @@ files → Extraction (tree-sitter) → DB (nodes/edges/files)
 
 ## 3. 分辨率
 
-提取后，引用被解析：函数调用→定义、导入→源文件、类继承和特定于框架的模式。 一些动态调度边界（回调、观察者、React 重新渲染、JSX 子级）由合成器桥接，因此流可以端到端连接。 请参阅[Resolution & Frameworks](./resolution.md)。
+提取后，引用被解析：函数调用→定义、导入→源文件、类继承和特定于框架的模式。 一些动态调度边界（回调、观察者、React 重新渲染、JSX 子级）由合成器桥接，因此流可以端到端连接。 请参阅[解析与框架](./resolution.md)。
 
 ## 4.自动同步
 

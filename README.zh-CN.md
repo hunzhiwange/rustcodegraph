@@ -78,7 +78,7 @@ rustcodegraph uninit     # 删除当前项目索引
 | 面向代理的上下文 | `rustcodegraph_explore` 一次返回相关源码、关系和流程路径。 |
 | 搜索与导航 | 通过 CLI 或 MCP 查询符号、调用者、被调用者和影响范围。 |
 | 自动同步 | 原生文件监听器会在编辑后更新图谱。 |
-| 框架感知 | 识别 Django、Flask、FastAPI、Express、NestJS、Laravel、Rails、Spring、Gin、Axum、Vapor、React Router、SvelteKit、Vue/Nuxt、Astro 等常见路由。 |
+| 框架感知 | 把路由、组件、框架约定和桥接边界连接到实际处理它们的代码。见[支持的框架和桥接](#支持的框架和桥接)。 |
 | 跨语言桥接 | 连接 Swift/Objective-C、React Native、Expo Modules 和原生视图等常见跨语言流程。 |
 | 隐私优先 | 代码、路径、文件名、符号名和查询内容都留在本机。 |
 
@@ -99,7 +99,6 @@ rustcodegraph callers login        # 查看调用点
 rustcodegraph callees login        # 查看被调用者
 rustcodegraph impact login         # 查看影响范围
 rustcodegraph affected --stdin     # 根据变更文件推导受影响测试
-rustcodegraph telemetry off        # 关闭匿名使用统计
 rustcodegraph upgrade              # 更新已安装版本
 ```
 
@@ -131,24 +130,21 @@ RustCodeGraph 默认暴露一组为编程代理优化过的 MCP 工具：
 
 ## 支持的语言
 
-TypeScript、JavaScript、Python、Go、Rust、Java、C#、PHP、Ruby、C、C++、Objective-C、Swift、Kotlin、Scala、Dart、Svelte、Vue、Astro、Liquid、Pascal/Delphi、Lua、Luau 和 R。
+**源码语言：** TypeScript/TSX、JavaScript/JSX、Python、Go、Rust、Java、C、C++、C#、PHP、Ruby、Swift、Kotlin、Dart、Pascal/Delphi、Scala、Lua、Luau、Objective-C 和 R。
+
+**组件、模板和配置格式：** Razor/Blazor、Svelte、Vue、Astro、Liquid、YAML、Twig、XML 和 Java `.properties`。
 
 语言支持会根据文件扩展名自动启用。RustCodeGraph 默认跳过常见依赖、构建和缓存目录，尊重 `.gitignore`，并忽略超过 1 MB 的文件。
 
-## 使用统计
+## 支持的框架和桥接
 
-RustCodeGraph 可以收集匿名使用统计，用来判断哪些语言和代理支持最值得改进。它不会上传代码、路径、文件名、符号名、查询内容或 IP 地址。
+**后端和 Web 路由：** Django、Flask、FastAPI、Express、NestJS、Laravel、Drupal、Rails、Spring、Play Framework、Gin、chi、gorilla/mux、Axum、actix、Rocket、ASP.NET 和 Vapor。
 
-随时可以关闭：
+**前端路由和组件：** React、React Router、Next.js、Svelte/SvelteKit、Vue/Vue Router/Nuxt 和 Astro。
 
-```bash
-rustcodegraph telemetry off
-# 或
-RUSTCODEGRAPH_TELEMETRY=0
-DO_NOT_TRACK=1
-```
+**原生、移动端和跨语言流程：** SwiftUI、UIKit、Swift/Objective-C 桥接、React Native legacy bridge、React Native TurboModules、React Native native events、Expo Modules 和 Fabric/Paper native views。
 
-完整字段见 [TELEMETRY.md](TELEMETRY.md)。
+**工作区约定：** Cargo workspaces、TypeScript path aliases、SvelteKit `$lib` 和 Nuxt/Vue auto imports。
 
 ## 故障排查
 
@@ -168,7 +164,6 @@ DO_NOT_TRACK=1
 
 - [完整文档](docs/user/README.md)
 - [更新日志](CHANGELOG.md)
-- [Telemetry 说明](TELEMETRY.md)
 
 ## 许可证
 

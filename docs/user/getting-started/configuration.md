@@ -6,7 +6,7 @@ RustCodeGraph 是零配置的——没有配置文件。
 
 ## 它从盒子里跳过了什么
 
-- **依赖项、构建和缓存目录** - 每个 [supported stack](../reference/languages.md) 中的 `node_modules`、`vendor`、`dist`、`build`、`target`、`.venv`、`Pods`、`.next` 等 - 因此图表是您的代码，而不是第三方的代码 噪音。 即使没有 `.gitignore`，这也成立。 
+- **依赖项、构建和缓存目录** - 每个 [受支持的技术栈](../reference/languages.md) 中的 `node_modules`、`vendor`、`dist`、`build`、`target`、`.venv`、`Pods`、`.next` 等 - 因此图表是您的代码，而不是第三方的代码 噪音。 即使没有 `.gitignore`，这也成立。
 - **`.gitignore` 中的任何内容** — 通过 git 在 git 存储库中获得荣誉，在非 git 项目中则通过直接读取 `.gitignore`（根和嵌套）获得荣誉。 
 - **大于 1 MB 的文件** — 生成的包、缩小的 JS、供应商的 blob。
 

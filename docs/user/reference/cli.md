@@ -52,4 +52,4 @@ rustcodegraph impact AuthMiddleware --depth 3
 
 ## 受影响测试
 
-间接跟踪导入依赖项以查找哪些测试文件受到更改的源文件的影响。See [Affected Tests in CI](../guides/affected-tests.md) for options and a CI example.
+间接跟踪导入依赖项以查找哪些测试文件受到更改的源文件的影响。请参阅 [CI 中受影响的测试](../guides/affected-tests.md)，了解可用选项和 CI 示例。

@@ -252,12 +252,6 @@ pub fn command_specs() -> Vec<CliCommandSpec> {
             responsibilities: vec!["resolve installer targets", "plan agent config removals"],
         },
         CliCommandSpec {
-            name: "telemetry [action]",
-            description: "Show or change anonymous usage telemetry",
-            options: vec![],
-            responsibilities: vec!["status", "on", "off"],
-        },
-        CliCommandSpec {
             name: "upgrade [version]",
             description: "Update RustCodeGraph to the latest release or a specific version",
             options: vec![

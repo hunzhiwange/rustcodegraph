@@ -36,8 +36,8 @@ rustcodegraph impact AuthMiddleware      # what a change would affect
 rustcodegraph context "fix the login flow"   # build task-focused context
 ```
 
-每个都接受 `--json` 作为机器可读的输出。 See the full [CLI reference](../reference/cli.md).
+每个都接受 `--json` 作为机器可读的输出。请参阅完整的[命令行界面参考](../reference/cli.md)。
 
 ## 交给你的代理人
 
-如果存在 `.rustcodegraph/` 目录并配置了代理（请参阅 [Installation](./installation.md)），您的代理将自动使用 [MCP tools](../reference/mcp-server.md) — 无需额外步骤。
+如果存在 `.rustcodegraph/` 目录并配置了代理（请参阅[安装](./installation.md)），您的代理将自动使用 [MCP 工具](../reference/mcp-server.md) — 无需额外步骤。

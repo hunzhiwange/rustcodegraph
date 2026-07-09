@@ -82,7 +82,7 @@ rustcodegraph uninit     # remove the current project's index
 | Agent-first context | `rustcodegraph_explore` returns relevant source, relationships, and flow paths in one response. |
 | Search and navigation | Find symbols, callers, callees, and impact radius from CLI or MCP. |
 | Auto-sync | Native file watchers keep the graph fresh after edits. |
-| Framework awareness | Links routes to handlers across common web frameworks such as Django, Flask, FastAPI, Express, NestJS, Laravel, Rails, Spring, Gin, Axum, Vapor, React Router, SvelteKit, Vue/Nuxt, and Astro. |
+| Framework awareness | Links routes, components, framework conventions, and bridge boundaries to the code that handles them. See [Supported Frameworks and Bridges](#supported-frameworks-and-bridges). |
 | Cross-language bridges | Connects common Swift/Objective-C, React Native, Expo Modules, and native-view flows that plain static parsing usually misses. |
 | Privacy-first | Code, paths, filenames, symbol names, and queries stay on your machine. |
 
@@ -103,7 +103,6 @@ rustcodegraph callers login        # show call sites
 rustcodegraph callees login        # show outgoing calls
 rustcodegraph impact login         # show affected code
 rustcodegraph affected --stdin     # map changed files to affected tests
-rustcodegraph telemetry off        # disable anonymous usage telemetry
 rustcodegraph upgrade              # update the installed binary
 ```
 
@@ -135,24 +134,21 @@ If a workspace has no `.rustcodegraph/` index, the MCP server reports itself ina
 
 ## Supported Languages
 
-TypeScript, JavaScript, Python, Go, Rust, Java, C#, PHP, Ruby, C, C++, Objective-C, Swift, Kotlin, Scala, Dart, Svelte, Vue, Astro, Liquid, Pascal/Delphi, Lua, Luau, and R.
+**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, and R.
+
+**Component, template, and config formats:** Razor/Blazor, Svelte, Vue, Astro, Liquid, YAML, Twig, XML, and Java `.properties`.
 
 Language support is selected automatically from file extensions. RustCodeGraph skips common dependency, build, and cache directories, honors `.gitignore`, and ignores files larger than 1 MB by default.
 
-## Telemetry
+## Supported Frameworks and Bridges
 
-RustCodeGraph can collect anonymous usage totals to guide language and agent support work. It does not send code, paths, filenames, symbol names, queries, or IP addresses.
+**Backend and web routes:** Django, Flask, FastAPI, Express, NestJS, Laravel, Drupal, Rails, Spring, Play Framework, Gin, chi, gorilla/mux, Axum, actix, Rocket, ASP.NET, and Vapor.
 
-Disable it any time:
+**Frontend routes and components:** React, React Router, Next.js, Svelte/SvelteKit, Vue/Vue Router/Nuxt, and Astro.
 
-```bash
-rustcodegraph telemetry off
-# or
-RUSTCODEGRAPH_TELEMETRY=0
-DO_NOT_TRACK=1
-```
+**Native, mobile, and cross-language flows:** SwiftUI, UIKit, Swift/Objective-C bridging, React Native legacy bridge, React Native TurboModules, React Native native events, Expo Modules, and Fabric/Paper native views.
 
-See [TELEMETRY.md](TELEMETRY.md) for the full field list.
+**Workspace conventions:** Cargo workspaces, TypeScript path aliases, SvelteKit `$lib`, and Nuxt/Vue auto imports.
 
 ## Troubleshooting
 
@@ -172,7 +168,6 @@ Install `rustcodegraph` and make sure your MCP configuration points at the Rust 
 
 - [User documentation](docs/user/README.md)
 - [Changelog](CHANGELOG.md)
-- [Telemetry details](TELEMETRY.md)
 
 ## License
 
