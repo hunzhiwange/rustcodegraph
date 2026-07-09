@@ -10,6 +10,10 @@
 
 [完整文档](docs/user/README.md) · [反馈问题](https://github.com/hunzhiwange/rustcodegraph/issues)
 
+[![npm version](https://img.shields.io/npm/v/rustcodegraph.svg)](https://www.npmjs.com/package/rustcodegraph)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Rust native](https://img.shields.io/badge/Rust-native-brightgreen.svg)](https://github.com/hunzhiwange/rustcodegraph/releases)
+
 </div>
 
 ## 这是什么

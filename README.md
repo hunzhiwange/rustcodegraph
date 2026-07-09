@@ -12,7 +12,7 @@ Semantic code intelligence for Claude Code, Cursor, Codex CLI, opencode, Hermes 
 
 [![npm version](https://img.shields.io/npm/v/rustcodegraph.svg)](https://www.npmjs.com/package/rustcodegraph)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Self-contained](https://img.shields.io/badge/Rust-native%20%C2%B7%20no%20Node%20runtime-brightgreen.svg)](https://github.com/hunzhiwange/rustcodegraph/releases)
+[![Rust native](https://img.shields.io/badge/Rust-native-brightgreen.svg)](https://github.com/hunzhiwange/rustcodegraph/releases)
 
 </div>
 
