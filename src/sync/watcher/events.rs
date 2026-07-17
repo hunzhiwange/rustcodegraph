@@ -117,6 +117,44 @@ impl FileWatcher {
         }
     }
 
+    fn handle_directory_event(&mut self, dir: &Path) {
+        if self.should_ignore_dir(dir) {
+            return;
+        }
+        if self.recursive_watcher.is_some() {
+            // macOS/Windows 的递归 watcher 已经覆盖新目录。这里绝不能再调用
+            // watch_tree，否则每次目录事件都会额外创建一棵逐目录 watcher。
+            // 只补记本轮 watcher 快照里尚不存在的源码，保留整目录复制的同步语义。
+            self.mark_new_source_files(dir);
+        } else {
+            // Linux 逐目录模式必须为新目录及其子目录补挂 watch。
+            self.watch_tree(dir, true);
+        }
+    }
+
+    fn mark_new_source_files(&mut self, dir: &Path) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                if !self.should_ignore_dir(&path) {
+                    self.mark_new_source_files(&path);
+                }
+                continue;
+            }
+
+            let rel = relative_posix(&self.project_root, &path);
+            if !self.poll_snapshot.contains_key(&rel) {
+                self.handle_change(&rel);
+            }
+        }
+    }
+
     pub(super) fn drain_watch_events(&mut self) {
         // 先 drain 再处理，避免持有底层队列锁时递归挂载新目录或调度同步。
         let recursive_events = self
@@ -256,9 +294,7 @@ impl FileWatcher {
             .map(|metadata| metadata.is_dir())
             .unwrap_or(false)
         {
-            if !self.should_ignore_dir(&full) {
-                self.watch_tree(&full, true);
-            }
+            self.handle_directory_event(&full);
             return;
         }
 
@@ -281,10 +317,7 @@ impl FileWatcher {
         let rel = relative_posix(&self.project_root, &full);
         match fs::metadata(&full) {
             Ok(metadata) if metadata.is_dir() => {
-                // 新目录事件要补挂载 watch，并把目录中已有文件标记为 pending。
-                if !self.should_ignore_dir(&full) {
-                    self.watch_tree(&full, true);
-                }
+                self.handle_directory_event(&full);
             }
             Ok(_) => self.handle_change(&rel),
             Err(_) if is_source_file(&rel) => self.handle_change(&rel),

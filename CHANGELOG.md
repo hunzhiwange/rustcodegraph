@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 
+## [1.2.5] - 2026-07-17
+
+### Fixes
+
+- Fixed `rustcodegraph watch` on macOS and Windows creating a watcher thread for every directory after folder changes, so large projects keep a constant watcher footprint while copied folders still sync automatically.
+
 ## [1.2.4] - 2026-07-09
 
 ### Fixes
@@ -77,3 +83,4 @@
 - Published a maintenance release with the latest packaging and release workflow updates.
 [1.2.0]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.0
 [1.2.4]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.4
+[1.2.5]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.5
