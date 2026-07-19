@@ -11,9 +11,9 @@ use rustcodegraph::directory::get_code_graph_dir;
 use rustcodegraph::extraction::extraction_version::EXTRACTION_VERSION;
 use rustcodegraph::upgrade::index::{
     BundleOs, DetectInput, InstallMethod, NPM_PACKAGE, NpmScope, UpgradeDeps, UpgradeOptions,
-    build_windows_upgrade_script, compare_versions, derive_install_dir, detect_install_method,
-    is_update_available, normalize_version, parse_latest_tag_from_location, parse_semver,
-    reindex_advisory, run_upgrade, strip_v,
+    UpgradePlan, build_windows_upgrade_script, compare_versions, derive_install_dir,
+    detect_install_method, is_update_available, normalize_version, parse_latest_tag_from_location,
+    parse_semver, plan_upgrade, reindex_advisory, run_upgrade, strip_v,
 };
 use rustcodegraph::{CodeGraph, IndexOptions, InitOptions};
 
@@ -221,7 +221,30 @@ mod detect_install_method {
         assert_eq!(
             method,
             InstallMethod::Source {
-                root: repo.to_owned()
+                root: repo.to_owned(),
+                os: BundleOs::Unix,
+                executable: filename,
+            }
+        );
+    }
+
+    #[test]
+    fn source_checkout_detection_preserves_an_external_current_executable() {
+        let repo = "/home/u/dev/rustcodegraph";
+        let filename = "/home/u/.rustcodegraph/bin/rustcodegraph";
+        let present = BTreeSet::from([format!("{repo}/Cargo.toml"), format!("{repo}/.git")]);
+        let method = detect_install_method(DetectInput {
+            filename,
+            platform: "linux",
+            cwd: repo,
+            exists: bundle_exists(present),
+        });
+        assert_eq!(
+            method,
+            InstallMethod::Source {
+                root: repo.to_owned(),
+                os: BundleOs::Unix,
+                executable: filename.to_owned(),
             }
         );
     }
@@ -353,6 +376,33 @@ mod version_helpers {
         let advisory = reindex_advisory();
         assert!(advisory.contains("rustcodegraph sync"));
         assert!(advisory.contains("rustcodegraph index -f"));
+    }
+
+    #[test]
+    fn source_upgrade_plan_uses_the_release_installer_and_current_binary_directory() {
+        let plan = plan_upgrade(
+            UpgradeOptions {
+                force: true,
+                ..UpgradeOptions::default()
+            },
+            "0.9.9",
+            "v0.9.9",
+            InstallMethod::Source {
+                root: "/dev/rustcodegraph".to_owned(),
+                os: BundleOs::Unix,
+                executable: "/custom/bin/rustcodegraph".to_owned(),
+            },
+        );
+        let UpgradePlan::Run {
+            command, args, env, ..
+        } = plan
+        else {
+            panic!("source upgrade should produce an executable plan");
+        };
+        assert_eq!(command, "sh");
+        assert!(args.join(" ").contains("install.sh"));
+        assert!(env.contains(&("RUSTCODEGRAPH_BIN_DIR".to_owned(), "/custom/bin".to_owned())));
+        assert!(env.contains(&("RUSTCODEGRAPH_VERSION".to_owned(), "v0.9.9".to_owned())));
     }
 
     #[test]
@@ -728,18 +778,78 @@ mod run_upgrade_orchestration {
     }
 
     #[test]
-    fn source_tells_the_user_to_git_pull_runs_nothing() {
+    fn source_checkout_on_unix_downloads_the_release_binary_without_modifying_the_repo() {
         let (deps, calls) = make_deps(
             InstallMethod::Source {
                 root: "/dev/rustcodegraph".to_owned(),
+                os: BundleOs::Unix,
+                executable: "/dev/rustcodegraph/target/release/rustcodegraph".to_owned(),
+            },
+            "0.9.9",
+        );
+        let code = run_upgrade(
+            UpgradeOptions {
+                force: true,
+                ..UpgradeOptions::default()
+            },
+            deps,
+        );
+        assert_eq!(code, 0);
+        let calls_ref = calls.borrow();
+        assert_eq!(calls_ref.runs.len(), 1);
+        assert_eq!(calls_ref.runs[0].cmd, "sh");
+        assert!(calls_ref.runs[0].args[1].contains("install.sh"));
+        assert_eq!(
+            env_value(&calls_ref.runs[0], "RUSTCODEGRAPH_VERSION"),
+            Some("v0.9.9".to_owned())
+        );
+        assert_eq!(
+            env_value(&calls_ref.runs[0], "RUSTCODEGRAPH_INSTALL_DIR"),
+            None
+        );
+        assert_eq!(
+            env_value(&calls_ref.runs[0], "RUSTCODEGRAPH_BIN_DIR"),
+            Some("/dev/rustcodegraph/target/release".to_owned())
+        );
+        drop(calls_ref);
+
+        let logs = joined_logs(&calls);
+        assert!(logs.contains("RustCodeGraph  current v0.9.9  latest v0.9.9"));
+        assert!(logs.contains("source checkout at /dev/rustcodegraph"));
+        assert!(!logs.contains("git pull"));
+        assert!(!logs.contains("cargo build --release"));
+    }
+
+    #[test]
+    fn source_checkout_on_windows_runs_the_release_installer() {
+        let (deps, calls) = make_deps_with(
+            InstallMethod::Source {
+                root: "C:/dev/rustcodegraph".to_owned(),
+                os: BundleOs::Windows,
+                executable: "C:/dev/rustcodegraph/target/release/rustcodegraph.exe".to_owned(),
             },
             "0.9.8",
+            0,
+            |_| true,
+            "win32",
         );
         let code = run_upgrade(UpgradeOptions::default(), deps);
         assert_eq!(code, 0);
-        assert_eq!(calls.borrow().runs.len(), 0);
-        assert!(joined_logs(&calls).contains("git pull"));
-        assert!(joined_logs(&calls).contains("cargo build --release"));
+        let calls_ref = calls.borrow();
+        assert_eq!(calls_ref.runs.len(), 1);
+        assert_eq!(calls_ref.runs[0].cmd, "powershell.exe");
+        assert_eq!(
+            env_value(&calls_ref.runs[0], "RUSTCODEGRAPH_VERSION"),
+            Some("v0.9.9".to_owned())
+        );
+        let decoded = decode_encoded_command(&calls_ref.runs[0].args);
+        assert!(decoded.contains("install.ps1"));
+        assert!(!decoded.contains("C:/dev/rustcodegraph"));
+        drop(calls_ref);
+
+        let logs = joined_logs(&calls);
+        assert!(logs.contains("source checkout at C:/dev/rustcodegraph"));
+        assert!(!logs.contains("git pull"));
     }
 }
 

@@ -190,6 +190,7 @@ mod shared_mcp_daemon_issue_411 {
     where
         F: FnMut() -> Option<T>,
     {
+        let timeout_ms = test_timeout_ms(timeout_ms);
         let started = Instant::now();
         loop {
             if let Some(value) = predicate() {
@@ -198,6 +199,36 @@ mod shared_mcp_daemon_issue_411 {
             assert!(
                 started.elapsed() <= Duration::from_millis(timeout_ms),
                 "Timed out after {timeout_ms}ms"
+            );
+            thread::sleep(Duration::from_millis(25));
+        }
+    }
+
+    fn test_timeout_ms(timeout_ms: u64) -> u64 {
+        // GitHub's windows-latest runners have fewer cores and noticeably higher
+        // process-startup latency. These tests launch several binaries and detached
+        // daemons in parallel, so preserve the relative deadlines while giving
+        // Windows enough headroom to avoid treating scheduler delay as failure.
+        if cfg!(windows) {
+            timeout_ms.saturating_mul(3)
+        } else {
+            timeout_ms
+        }
+    }
+
+    fn wait_for_response(server: &SpawnedServer, root: &Path, id: i64, timeout_ms: u64) -> Value {
+        let timeout_ms = test_timeout_ms(timeout_ms);
+        let started = Instant::now();
+        loop {
+            if let Some(response) = find_response(&server.stdout_lines(), id) {
+                return response;
+            }
+            assert!(
+                started.elapsed() <= Duration::from_millis(timeout_ms),
+                "Timed out after {timeout_ms}ms waiting for response {id}.\nstdout:\n{}\nstderr:\n{}\ndaemon log:\n{}",
+                server.stdout_lines().join("\n"),
+                server.stderr_lines().join("\n"),
+                read_daemon_log(root),
             );
             thread::sleep(Duration::from_millis(25));
         }
@@ -233,6 +264,7 @@ mod shared_mcp_daemon_issue_411 {
     }
 
     fn wait_process_exit(pid: u32, timeout_ms: u64) -> bool {
+        let timeout_ms = test_timeout_ms(timeout_ms);
         let started = Instant::now();
         while started.elapsed() <= Duration::from_millis(timeout_ms) {
             if !is_alive(pid) {
@@ -809,10 +841,7 @@ mod shared_mcp_daemon_issue_411 {
         ];
         let server = h.spawn(&env);
         send_initialize(&mut h.servers[server].child, &h.project.root_uri(), 1);
-        wait_for(
-            || find_response(&h.servers[server].stdout_lines(), 1),
-            10_000,
-        );
+        wait_for_response(&h.servers[server], h.project.real_root(), 1, 10_000);
         wait_for(
             || {
                 h.servers[server]

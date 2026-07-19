@@ -372,7 +372,7 @@ dependencies = [
 
 [[package]]
 name = "rustcodegraph"
-version = "1.2.5"
+version = "1.2.6"
 dependencies = [
  "notify",
  "regex",

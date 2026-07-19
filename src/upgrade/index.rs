@@ -9,6 +9,8 @@ pub const REPO: &str = "hunzhiwange/rustcodegraph";
 pub const NPM_PACKAGE: &str = "rustcodegraph";
 pub const INSTALL_SH_URL: &str =
     "https://raw.githubusercontent.com/hunzhiwange/rustcodegraph/main/install.sh";
+pub const INSTALL_PS1_URL: &str =
+    "https://raw.githubusercontent.com/hunzhiwange/rustcodegraph/main/install.ps1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstallMethod {
@@ -22,9 +24,11 @@ pub enum InstallMethod {
         scope: NpmScope,
     },
     Npx,
-    /// 源码检出只能给出人工命令，避免在用户仓库里擅自 git pull 或重建。
+    /// 源码检出使用正式安装器安装发布制品，不修改用户的源码仓库。
     Source {
         root: String,
+        os: BundleOs,
+        executable: String,
     },
     Unknown {
         reason: String,
@@ -123,15 +127,28 @@ where
         };
     }
 
+    let source_os = if is_win {
+        BundleOs::Windows
+    } else {
+        BundleOs::Unix
+    };
     if let Some(repo_root) = find_source_checkout(&filename, input.cwd, &input.exists) {
-        return InstallMethod::Source { root: repo_root };
+        return InstallMethod::Source {
+            root: repo_root,
+            os: source_os,
+            executable: filename.clone(),
+        };
     }
 
     let repo_root = resolve_target_path(&bin_dir, &["..", ".."]);
     if (input.exists)(&join_target_path(&repo_root, "package.json"))
         && (input.exists)(&join_target_path(&repo_root, ".git"))
     {
-        return InstallMethod::Source { root: repo_root };
+        return InstallMethod::Source {
+            root: repo_root,
+            os: source_os,
+            executable: filename,
+        };
     }
     InstallMethod::Unknown {
         reason: format!("unrecognized install layout at {}", input.filename),
@@ -431,7 +448,9 @@ pub fn run_upgrade(opts: UpgradeOptions, mut deps: UpgradeDeps<'_>) -> i32 {
     } else {
         "latest"
     };
-    (deps.log)(&format!("CodeGraph  current {current}  {label} {latest}"));
+    (deps.log)(&format!(
+        "RustCodeGraph  current {current}  {label} {latest}"
+    ));
 
     if opts.check {
         if update_available {
@@ -458,6 +477,7 @@ pub fn run_upgrade(opts: UpgradeOptions, mut deps: UpgradeDeps<'_>) -> i32 {
             ..
         } => upgrade_unix_bundle(
             install_dir,
+            None,
             opts.version.as_ref().map(|_| latest),
             &mut deps,
         ),
@@ -481,10 +501,23 @@ pub fn run_upgrade(opts: UpgradeOptions, mut deps: UpgradeDeps<'_>) -> i32 {
             ));
             0
         }
-        InstallMethod::Source { root } => {
+        InstallMethod::Source {
+            root,
+            os: BundleOs::Unix,
+            executable,
+        } => {
             (deps.warn)(&format!("Running from a source checkout at {root}."));
-            (deps.log)("Upgrade it with: git pull && cargo build --release");
-            0
+            (deps.log)("Installing the released binary without modifying the source checkout.");
+            upgrade_unix_bundle(None, Some(dirname(&executable)), Some(latest), &mut deps)
+        }
+        InstallMethod::Source {
+            root,
+            os: BundleOs::Windows,
+            ..
+        } => {
+            (deps.warn)(&format!("Running from a source checkout at {root}."));
+            (deps.log)("Installing the released binary without modifying the source checkout.");
+            upgrade_windows_source(&latest, &mut deps)
         }
         InstallMethod::Unknown { reason } => {
             (deps.error)(&format!(
@@ -585,9 +618,34 @@ pub fn plan_upgrade(
         InstallMethod::Npx => UpgradePlan::NothingToDo(
             "npx always runs the latest version on demand - nothing to upgrade.".to_owned(),
         ),
-        InstallMethod::Source { root } => {
-            UpgradePlan::Manual(format!("Running from a source checkout at {root}."))
-        }
+        InstallMethod::Source {
+            os: BundleOs::Unix,
+            executable,
+            ..
+        } => UpgradePlan::Run {
+            command: "sh".to_owned(),
+            args: vec!["-c".to_owned(), format!("curl -fsSL {INSTALL_SH_URL} | sh")],
+            env: vec![
+                ("RUSTCODEGRAPH_BIN_DIR".to_owned(), dirname(&executable)),
+                ("RUSTCODEGRAPH_VERSION".to_owned(), latest),
+            ],
+            advisory: reindex_advisory(),
+        },
+        InstallMethod::Source {
+            os: BundleOs::Windows,
+            ..
+        } => UpgradePlan::Run {
+            command: "powershell.exe".to_owned(),
+            args: vec![
+                "-NoProfile".to_owned(),
+                "-ExecutionPolicy".to_owned(),
+                "Bypass".to_owned(),
+                "-EncodedCommand".to_owned(),
+                encode_powershell_command(&windows_source_install_script()),
+            ],
+            env: vec![("RUSTCODEGRAPH_VERSION".to_owned(), latest)],
+            advisory: reindex_advisory(),
+        },
         InstallMethod::Unknown { reason } => UpgradePlan::Error(format!(
             "Couldn't determine how RustCodeGraph was installed ({reason})."
         )),
@@ -596,6 +654,7 @@ pub fn plan_upgrade(
 
 fn upgrade_unix_bundle(
     install_dir: Option<String>,
+    bin_dir: Option<String>,
     pinned: Option<String>,
     deps: &mut UpgradeDeps<'_>,
 ) -> i32 {
@@ -619,6 +678,9 @@ fn upgrade_unix_bundle(
     let mut env = Vec::new();
     if let Some(dir) = install_dir {
         env.push(("RUSTCODEGRAPH_INSTALL_DIR".to_owned(), dir));
+    }
+    if let Some(dir) = bin_dir {
+        env.push(("RUSTCODEGRAPH_BIN_DIR".to_owned(), dir));
     }
     if let Some(version) = pinned {
         env.push(("RUSTCODEGRAPH_VERSION".to_owned(), version));
@@ -664,6 +726,31 @@ fn upgrade_windows_bundle(bundle_root: &str, latest: &str, deps: &mut UpgradeDep
     (deps.log)("Upgrade complete. Open a new terminal to be safe (PATH/version cache).");
     (deps.log)(&reindex_advisory());
     0
+}
+
+fn upgrade_windows_source(latest: &str, deps: &mut UpgradeDeps<'_>) -> i32 {
+    (deps.log)(&format!("Downloading and installing {latest}..."));
+    let args = vec![
+        "-NoProfile".to_owned(),
+        "-ExecutionPolicy".to_owned(),
+        "Bypass".to_owned(),
+        "-EncodedCommand".to_owned(),
+        encode_powershell_command(&windows_source_install_script()),
+    ];
+    let env = vec![("RUSTCODEGRAPH_VERSION".to_owned(), latest.to_owned())];
+    let code = (deps.run)("powershell.exe", &args, &env);
+    if code != 0 {
+        (deps.error)(&format!("Installer exited with code {code}."));
+        return 1;
+    }
+    (deps.log)("");
+    (deps.log)("Upgrade complete. Open a new terminal to pick up the installed release.");
+    (deps.log)(&reindex_advisory());
+    0
+}
+
+fn windows_source_install_script() -> String {
+    format!("Invoke-RestMethod -Uri '{INSTALL_PS1_URL}' | Invoke-Expression")
 }
 
 fn upgrade_npm(scope: NpmScope, version_spec: &str, deps: &mut UpgradeDeps<'_>) -> i32 {

@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 
+## [1.2.6] - 2026-07-19
+
+### Fixes
+
+- `rustcodegraph upgrade` now installs the published native release when run from a source checkout instead of telling users to pull and rebuild the repository, and its version status consistently uses the RustCodeGraph name.
+
 ## [1.2.5] - 2026-07-17
 
 ### Fixes
@@ -84,3 +90,4 @@
 [1.2.0]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.0
 [1.2.4]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.4
 [1.2.5]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.5
+[1.2.6]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.6
