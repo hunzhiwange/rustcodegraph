@@ -7,12 +7,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::*;
 
-/// 累计构造动态边合成上下文时一次性 load 进内存的节点数。
-/// 用于观测增量同步的内存修复（OOM）：增量路径应按需查 DB（计数为 0），
-/// 只有全量路径才允许把整库节点一次性 load 进 `Vec<Node>`。
+/// 累计增量动态边合成回退到全量内存上下文时 load 的节点数。
+/// 用于观测增量同步的内存修复（OOM）：正常增量路径应按需查 DB（计数为 0）。
+/// 全量索引的正常 eager load 不计入，避免并行全量索引污染增量路径的观测值。
 static FACADE_SYNTHESIS_NODES_LOADED: AtomicU64 = AtomicU64::new(0);
 
-/// 读取自进程启动以来动态边合成上下文一次性 load 进内存的累计节点数。
+/// 读取自进程启动以来增量合成回退所 load 的累计节点数。
 pub fn facade_synthesis_nodes_loaded() -> u64 {
     FACADE_SYNTHESIS_NODES_LOADED.load(Ordering::Relaxed)
 }
@@ -78,7 +78,6 @@ pub(super) fn synthesize_facade_dynamic_edges(project_root: &Path, full_rebuild:
         // 全量索引保持原行为：一次性 load 整库节点供合成上下文做 O(1) 内存查询。
         let mut queries = QueryBuilder::new(db.get_db());
         let nodes = queries.get_all_nodes().unwrap_or_default();
-        FACADE_SYNTHESIS_NODES_LOADED.fetch_add(nodes.len() as u64, Ordering::Relaxed);
         let files = queries
             .get_all_files()
             .unwrap_or_default()

@@ -302,8 +302,17 @@ mod watch_sync_memory {
         );
 
         let loaded_before = facade_synthesis_nodes_loaded();
+
+        // A concurrent test may legitimately run a full rebuild while this
+        // incremental sync is in flight. Full rebuild loads must not pollute
+        // the incremental-fallback metric (the original CI failure reported
+        // exactly the 16 nodes loaded by another test's 8-file full index).
+        let (other_project, mut other_cg) = indexed_project("codegraph-synth-counter-isolation", 8);
         let _ = cg.sync(IndexOptions::default());
         let loaded = facade_synthesis_nodes_loaded() - loaded_before;
+
+        other_cg.destroy();
+        drop(other_project);
 
         // A full in-memory context would load every node (well over n). The
         // DB-backed incremental context loads them on demand, not eagerly.
