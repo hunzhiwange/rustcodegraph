@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-08-14
+
+### Fixes
+
+- Published a maintenance release with the latest packaging and release workflow updates.
+
 ## [1.2.8] - 2026-08-14
 
 ### Fixes
