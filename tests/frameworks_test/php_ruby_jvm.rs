@@ -77,6 +77,19 @@ public List<User> listUsers() {
         assert_eq!(result.references[0].reference_name, "listUsers");
     }
 
+    #[test]
+    fn utf8_window_extracts_route_when_spring_limit_splits_a_character() {
+        let annotation = "@GetMapping(\"/users\")";
+        let mut src = format!("{annotation}\npublic List<User> listUsers() {{}}\n");
+        let window_end = annotation.len() + 600;
+        src.push_str(&"a".repeat(window_end - src.len() - 1));
+        src.push_str("中tail");
+
+        let result = SPRING_RESOLVER.extract("UserController.java", &src);
+        assert_eq!(result.nodes[0].name, "GET /users");
+        assert_eq!(result.references[0].reference_name, "listUsers");
+    }
+
     // it('extracts a Kotlin @GetMapping with a fun handler')
     #[test]
     fn extracts_a_kotlin_get_mapping_with_a_fun_handler() {

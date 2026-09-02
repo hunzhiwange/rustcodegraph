@@ -304,16 +304,15 @@ pub(super) fn skip_whitespace(source: &str, start: usize, end: usize) -> usize {
 }
 
 pub(super) fn line_col_at(source: &str, index: usize) -> (u64, u64) {
-    let mut line = 1u64;
-    let mut column = 0u64;
-    for ch in source[..index.min(source.len())].chars() {
-        if ch == '\n' {
-            line += 1;
-            column = 0;
-        } else {
-            column += 1;
-        }
-    }
+    let end = index.min(source.len());
+    let line = crate::utils::line_number_at_byte(source, end);
+    let line_start = source.as_bytes()[..end]
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map_or(0, |newline| newline + 1);
+    let column = crate::utils::utf8_byte_window(source, line_start, end - line_start)
+        .chars()
+        .count() as u64;
     (line, column)
 }
 

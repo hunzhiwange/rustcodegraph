@@ -115,7 +115,8 @@ fn should_not_flush_before_scaled_batch_window_under_sustained_stream() {
     let _guard = TestGuard::new();
     let project = TempProject::new("codegraph-watcher");
     let (calls, sync_fn) = sync_mock(Vec::new(), Ok(ok(1, 10)));
-    let mut options = inert_options(120);
+    let debounce = Duration::from_millis(120);
+    let mut options = inert_options(debounce.as_millis() as u64);
     options.max_debounce_ms = Some(5_000);
     let mut watcher = FileWatcher::new(project.path(), sync_fn, options);
 
@@ -128,14 +129,21 @@ fn should_not_flush_before_scaled_batch_window_under_sustained_stream() {
     let mut i = 0;
     let max_wait = Duration::from_millis(5_000);
     let ci_pause_margin = Duration::from_millis(1_000);
+    let debounce_pause_margin = Duration::from_millis(20);
     while stream_start.elapsed() < Duration::from_millis(1_000) {
+        let event_sent_at = Instant::now();
         assert!(__emit_watch_event_for_tests(
             project.path(),
             format!("src/batch{i}.ts")
         ));
         i += 1;
         thread::sleep(Duration::from_millis(40));
-        if max_wait.saturating_sub(stream_start.elapsed()) <= ci_pause_margin {
+        // A heavily loaded CI runner may deschedule this thread for longer than the
+        // deliberately tiny, scaled debounce window. In that case flush_due() is
+        // expected to flush, so stop sampling instead of asserting on stale timing.
+        if max_wait.saturating_sub(stream_start.elapsed()) <= ci_pause_margin
+            || debounce.saturating_sub(event_sent_at.elapsed()) <= debounce_pause_margin
+        {
             break;
         }
         watcher.flush_due();

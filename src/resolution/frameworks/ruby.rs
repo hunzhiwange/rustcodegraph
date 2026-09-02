@@ -11,6 +11,7 @@ use crate::resolution::types::{
     make_node, make_reference,
 };
 use crate::types::{Language, NodeKind, ReferenceKind};
+use crate::utils::line_number_at_byte;
 
 const PLURAL_ACTIONS: &[&str] = &[
     "index", "create", "new", "show", "edit", "update", "destroy",
@@ -367,11 +368,7 @@ fn list_option(tail: &str, key: &str) -> Option<Vec<String>> {
 }
 
 fn line_for_offset(content: &str, offset: usize) -> u64 {
-    (content[..offset.min(content.len())]
-        .bytes()
-        .filter(|b| *b == b'\n')
-        .count()
-        + 1) as u64
+    line_number_at_byte(content, offset)
 }
 
 fn is_pascal_word(value: &str) -> bool {

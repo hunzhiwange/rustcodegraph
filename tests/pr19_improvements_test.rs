@@ -20,8 +20,8 @@ use rustcodegraph::db::migrations::{CURRENT_SCHEMA_VERSION, get_pending_migratio
 use rustcodegraph::db::queries::QueryBuilder;
 use rustcodegraph::db::sqlite_adapter::{PragmaOptions, SqliteValue};
 use rustcodegraph::extraction::grammars::{
-    clear_parser_cache, get_parser, get_supported_languages, get_unavailable_grammar_errors,
-    init_grammars, is_language_supported, load_all_grammars,
+    clear_parser_cache, detect_language, get_parser, get_supported_languages,
+    get_unavailable_grammar_errors, init_grammars, is_language_supported, load_all_grammars,
 };
 use rustcodegraph::extraction::tree_sitter::extract_from_source;
 use rustcodegraph::mcp::tools::{ToolHandler, truncate_output};
@@ -195,6 +195,15 @@ fn find_symbol_matches(cg: &mut CodeGraph, symbol: &str) -> Vec<Node> {
         .next()
         .map(|result| vec![result.node])
         .unwrap_or_default()
+}
+
+#[test]
+fn detects_header_language_when_utf8_crosses_sample_limit() {
+    let mut source = String::from("class Widget {};\n");
+    source.push_str(&"x".repeat(8191 - source.len()));
+    source.push('中');
+
+    assert_eq!(detect_language("widget.h", Some(&source)), Language::Cpp);
 }
 
 include!("pr19_improvements_test/lazy_grammar_loading.rs");

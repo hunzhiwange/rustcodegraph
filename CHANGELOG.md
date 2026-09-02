@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- Fixed indexing and sync panics across TypeScript/React, Java, C#, Rust, Dart, Ruby, PHP/Drupal, and C/C++ sources when lookahead windows, summaries, or line calculations ended inside Chinese, emoji, or other multibyte UTF-8 characters.
+
 ## [1.2.9] - 2026-08-14
 
 ### Fixes

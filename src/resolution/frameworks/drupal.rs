@@ -10,6 +10,7 @@ use crate::resolution::types::{
     make_node, make_reference,
 };
 use crate::types::{Language, NodeKind, ReferenceKind};
+use crate::utils::line_number_at_byte;
 
 const HOOK_FILE_EXTENSIONS: &[&str] = &[".module", ".install", ".theme", ".inc"];
 
@@ -324,9 +325,5 @@ fn looks_like_controller_ref(name: &str) -> bool {
 }
 
 fn line_for_byte(content: &str, offset: usize) -> u64 {
-    (content[..offset.min(content.len())]
-        .bytes()
-        .filter(|b| *b == b'\n')
-        .count()
-        + 1) as u64
+    line_number_at_byte(content, offset)
 }

@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 
 use crate::types::Language;
+use crate::utils::truncate_utf8_bytes;
 use crate::web_tree_sitter::{Language as RuntimeLanguage, Parser};
 
 pub type GrammarLanguage = Language;
@@ -272,7 +273,7 @@ fn extension_with_dot(file_path: &str) -> Option<String> {
 }
 
 fn looks_like_cpp(source: &str) -> bool {
-    let sample = &source[..source.len().min(8192)];
+    let sample = truncate_utf8_bytes(source, 8192);
     [
         "namespace",
         "template<",
@@ -289,7 +290,7 @@ fn looks_like_cpp(source: &str) -> bool {
 }
 
 fn looks_like_objc(source: &str) -> bool {
-    let sample = &source[..source.len().min(8192)];
+    let sample = truncate_utf8_bytes(source, 8192);
     ["@interface", "@implementation", "@protocol", "@synthesize"]
         .iter()
         .any(|needle| sample.contains(needle))

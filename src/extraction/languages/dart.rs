@@ -5,6 +5,7 @@ use crate::extraction::tree_sitter_types::{
     ExtractorContext, ImportInfo, LanguageExtractor, NodeExtra, Visibility,
 };
 use crate::types::NodeKind;
+use crate::utils::truncate_utf8_bytes;
 use crate::web_tree_sitter::SyntaxNode;
 
 pub struct DartExtractor;
@@ -225,12 +226,12 @@ impl LanguageExtractor for DartExtractor {
         };
         let value_node = name_node.next_named_sibling();
         let init_value = value_node.map(|value| {
-            let mut text = get_node_text(&value, ctx.source());
+            let text = get_node_text(&value, ctx.source());
             if text.len() > 100 {
-                text.truncate(100);
-                text.push_str("...");
+                format!("{}...", truncate_utf8_bytes(&text, 100))
+            } else {
+                text
             }
-            text
         });
         let extra = NodeExtra {
             signature: init_value.map(|value| format!("= {value}")),

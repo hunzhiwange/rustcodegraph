@@ -12,6 +12,7 @@ use crate::resolution::types::{
     make_node, make_reference,
 };
 use crate::types::{Language, Node, NodeKind, ReferenceKind};
+use crate::utils::utf8_byte_window;
 
 const HTTP_METHODS: &[&str] = &[
     "Get", "Post", "Put", "Patch", "Delete", "Head", "Options", "All",
@@ -388,7 +389,7 @@ fn read_args(source: &str, open_index: usize) -> Option<(String, usize)> {
 }
 
 fn method_name_after(source: &str, start: usize) -> Option<String> {
-    let tail = &source[start..(start + 800).min(source.len())];
+    let tail = utf8_byte_window(source, start, 800);
     Regex::new(r"(?s)^\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:public\s+|private\s+|protected\s+|async\s+|static\s+)*([A-Za-z_$][\w$]*)\s*\(")
         .unwrap()
         .captures(tail)
@@ -594,7 +595,7 @@ fn collect_module_controllers(source: &str, out: &mut std::collections::HashMap<
 }
 
 fn class_name_after(source: &str, start: usize) -> Option<String> {
-    let tail = &source[start..(start + 800).min(source.len())];
+    let tail = utf8_byte_window(source, start, 800);
     Regex::new(r"(?s)^\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)")
         .unwrap()
         .captures(tail)

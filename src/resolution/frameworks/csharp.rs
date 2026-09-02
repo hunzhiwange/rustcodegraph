@@ -11,6 +11,7 @@ use crate::resolution::types::{
     line_for_byte, make_node, make_reference, resolve_by_name_and_kind,
 };
 use crate::types::{Language, NodeKind, ReferenceKind};
+use crate::utils::utf8_byte_window;
 
 const CONTROLLER_DIRS: &[&str] = &["/Controllers/"];
 const SERVICE_DIRS: &[&str] = &["/Services/", "/Service/", "/Application/"];
@@ -188,8 +189,8 @@ impl FrameworkResolver for AspNetResolver {
                 None,
                 None,
             ));
-            let tail_end = (whole.end() + 600).min(safe.len());
-            if let Some(method_caps) = method_re.captures(&safe[whole.end()..tail_end]) {
+            let tail = utf8_byte_window(&safe, whole.end(), 600);
+            if let Some(method_caps) = method_re.captures(tail) {
                 // 属性和方法声明之间可能有其它 attribute；限定窗口避免跨到下一个方法。
                 let handler = method_caps.get(1).unwrap().as_str();
                 result.references.push(make_reference(

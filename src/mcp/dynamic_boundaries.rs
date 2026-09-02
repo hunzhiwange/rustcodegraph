@@ -10,6 +10,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::resolution::strip_comments::{CommentLang, strip_comments_for_regex};
+use crate::utils::truncate_utf8_bytes;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -443,7 +444,7 @@ fn snippet_around(text: &str, index: usize) -> String {
         .unwrap_or(text.len());
     let line = text[start..end].trim();
     if line.len() > 120 {
-        format!("{}...", &line[..117])
+        format!("{}...", truncate_utf8_bytes(line, 117))
     } else {
         line.to_string()
     }

@@ -11,6 +11,7 @@ use crate::resolution::types::{
     line_for_byte, make_node, make_reference, resolve_by_name_and_kind,
 };
 use crate::types::{Language, Node, NodeKind, ReferenceKind};
+use crate::utils::utf8_byte_window;
 
 const SERVICE_DIRS: &[&str] = &["/service/", "/services/"];
 const REPO_DIRS: &[&str] = &["/repository/", "/repositories/"];
@@ -237,7 +238,7 @@ impl FrameworkResolver for SpringResolver {
                 None,
                 None,
             ));
-            let tail = &content[whole.end()..(whole.end() + 600).min(content.len())];
+            let tail = utf8_byte_window(content, whole.end(), 600);
             if let Some(method_caps) = method_decl_re.captures(tail) {
                 // 注解和方法声明之间可能有其它注解/修饰符，限定窗口避免跨方法匹配。
                 let handler = method_caps
@@ -272,7 +273,7 @@ impl FrameworkResolver for SpringResolver {
                 .get(1)
                 .map(|m| m.as_str().trim_start_matches('(').trim_end_matches(')'))
                 .unwrap_or("");
-            let after = &content[whole.end()..(whole.end() + 600).min(content.len())];
+            let after = utf8_byte_window(content, whole.end(), 600);
             if request_mapping_class_re.is_match(after) {
                 continue;
             }

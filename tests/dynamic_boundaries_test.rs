@@ -49,6 +49,21 @@ mod scan_dynamic_dispatch {
     }
 
     #[test]
+    fn renders_long_utf8_dynamic_boundary_snippet() {
+        let body = format!("aa{}this.handlers[action.type](payload);", "中".repeat(39));
+        let matches = scan_dynamic_dispatch(&body, "typescript", 1);
+
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0].snippet.ends_with("..."));
+        assert!(
+            matches[0]
+                .snippet
+                .is_char_boundary(matches[0].snippet.len())
+        );
+        assert!(matches[0].snippet.len() <= 120);
+    }
+
+    #[test]
     fn does_not_fire_on_dispatch_shapes_inside_comments_or_strings() {
         let body = lines(&[
             "function safe() {",

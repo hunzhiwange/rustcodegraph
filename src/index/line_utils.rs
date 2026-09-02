@@ -379,9 +379,5 @@ pub(super) fn facade_skip_whitespace(source: &str, start: usize, end: usize) -> 
 }
 
 pub(super) fn facade_line_number_at(source: &str, index: usize) -> u64 {
-    source[..index.min(source.len())]
-        .chars()
-        .filter(|ch| *ch == '\n')
-        .count() as u64
-        + 1
+    crate::utils::line_number_at_byte(source, index)
 }

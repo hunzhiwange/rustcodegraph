@@ -14,9 +14,14 @@ use rustcodegraph::resolution::frameworks::index::{
 };
 use rustcodegraph::resolution::types::{
     FrameworkExtractionResult, FrameworkResolver, ImportMapping, ResolutionContext, ResolvedBy,
-    ResolvedRef, UnresolvedRef, now_ms,
+    ResolvedRef, UnresolvedRef, line_for_byte, now_ms,
 };
 use rustcodegraph::types::{Language, Node, NodeKind, ReferenceKind};
+
+#[test]
+fn line_for_byte_accepts_utf8_mid_character_offset() {
+    assert_eq!(line_for_byte("first\n中\nthird", 7), 2);
+}
 
 #[derive(Default)]
 struct MockResolutionContext {

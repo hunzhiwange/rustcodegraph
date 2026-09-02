@@ -85,6 +85,19 @@ let app = Router::new()
         assert_eq!(result.references[0].reference_name, "get_user");
     }
 
+    #[test]
+    fn utf8_window_extracts_route_when_actix_limit_splits_a_character() {
+        let resource = "web::resource(\"/user/{id}\")";
+        let mut src = format!("{resource}.route(web::get().to(get_user))");
+        let window_end = resource.len() + 500;
+        src.push_str(&"a".repeat(window_end - src.len() - 1));
+        src.push_str("中tail");
+
+        let result = RUST_RESOLVER.extract("main.rs", &src);
+        assert_eq!(result.nodes[0].name, "GET /user/{id}");
+        assert_eq!(result.references[0].reference_name, "get_user");
+    }
+
     // it('extracts actix web::resource(\"/\").to(handler) (all methods)')
     #[test]
     fn extracts_actix_web_resource_to_handler_all_methods() {

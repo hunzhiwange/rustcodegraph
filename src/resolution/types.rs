@@ -14,6 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{ColumnNumber, Count, Language, LineNumber, Node, NodeKind, ReferenceKind};
+use crate::utils::line_number_at_byte;
 
 use super::go_module::GoModule;
 use super::path_aliases::AliasMap;
@@ -257,11 +258,7 @@ pub fn now_ms() -> i64 {
 }
 
 pub fn line_for_byte(content: &str, byte_index: usize) -> LineNumber {
-    (content[..byte_index.min(content.len())]
-        .bytes()
-        .filter(|byte| *byte == b'\n')
-        .count()
-        + 1) as LineNumber
+    line_number_at_byte(content, byte_index) as LineNumber
 }
 
 pub fn language_for_path(file_path: &str) -> Language {

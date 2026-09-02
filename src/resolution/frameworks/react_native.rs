@@ -12,6 +12,7 @@ use crate::resolution::types::{
     make_node,
 };
 use crate::types::{Language, NodeKind};
+use crate::utils::line_number_at_byte;
 
 const RN_EMITTER_BUILTINS: &[&str] = &[
     "addListener",
@@ -356,9 +357,5 @@ fn build_rn_maps(context: &mut dyn ResolutionContext) -> HashMap<String, Vec<Nat
 }
 
 fn line_for_offset(source: &str, offset: usize) -> u64 {
-    (source[..offset.min(source.len())]
-        .bytes()
-        .filter(|b| *b == b'\n')
-        .count()
-        + 1) as u64
+    line_number_at_byte(source, offset)
 }

@@ -18,6 +18,18 @@ public IActionResult ListUsers()
         assert_eq!(result.nodes[0].name, "GET /users");
         assert_eq!(result.references[0].reference_name, "ListUsers");
     }
+
+    #[test]
+    fn utf8_window_extracts_route_when_csharp_limit_splits_a_character() {
+        let mut src = "[HttpGet(\"/users\")]\npublic IActionResult ListUsers() {}".to_string();
+        let window_end = "[HttpGet(\"/users\")]".len() + 600;
+        src.push_str(&"a".repeat(window_end - src.len() - 1));
+        src.push_str("中tail");
+
+        let result = ASPNET_RESOLVER.extract("UserController.cs", &src);
+        assert_eq!(result.nodes[0].name, "GET /users");
+        assert_eq!(result.references[0].reference_name, "ListUsers");
+    }
 }
 
 mod vapor_resolver_extract {

@@ -138,4 +138,21 @@ void publicFunction() {}
         assert_eq!(private.visibility, Some(Visibility::Private));
         assert_eq!(public.visibility, Some(Visibility::Public));
     }
+
+    #[test]
+    fn indexes_long_utf8_dart_initializer() {
+        let initializer = format!("'a{}'", "中".repeat(40));
+        let code = format!("class Labels {{\n  static final message = {initializer};\n}}\n");
+        let result = extract("labels.dart", &code);
+        let constant = find_node(&result, NodeKind::Constant, "message")
+            .expect("message constant should be extracted");
+        let signature = constant
+            .signature
+            .as_deref()
+            .expect("initializer preview should be present");
+
+        assert!(signature.ends_with("..."));
+        assert!(signature.is_char_boundary(signature.len()));
+        assert!(signature.strip_prefix("= ").unwrap().len() <= 103);
+    }
 }

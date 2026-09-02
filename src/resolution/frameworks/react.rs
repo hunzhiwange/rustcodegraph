@@ -10,6 +10,7 @@ use crate::resolution::types::{
     line_for_byte, make_node, make_reference,
 };
 use crate::types::{Language, NodeKind, ReferenceKind};
+use crate::utils::utf8_byte_window;
 
 const BUILT_IN_TYPES: &[&str] = &[
     "Array",
@@ -135,8 +136,7 @@ fn extract_components(file_path: &str, content: &str, result: &mut FrameworkExtr
         for caps in re.captures_iter(content) {
             let whole = caps.get(0).unwrap();
             let name = caps.get(1).unwrap().as_str();
-            let after_end = (whole.end() + 500).min(content.len());
-            let after = &content[whole.end()..after_end];
+            let after = utf8_byte_window(content, whole.end(), 500);
             if !(after.contains('<') && (after.contains("/>") || after.contains("</"))) {
                 continue;
             }
@@ -193,8 +193,7 @@ fn extract_react_routes(file_path: &str, content: &str, result: &mut FrameworkEx
     let route_component_re = Regex::new(r"\bcomponent\s*=\s*\{\s*([A-Z][A-Za-z0-9_]*)").unwrap();
     let route_element_re = Regex::new(r"\belement\s*=\s*\{\s*<\s*([A-Z][A-Za-z0-9_]*)").unwrap();
     for mat in route_tag_re.find_iter(content) {
-        let end = (mat.start() + 400).min(content.len());
-        let window = &content[mat.start()..end];
+        let window = utf8_byte_window(content, mat.start(), 400);
         let Some(route_path) = attr_value(window, "path") else {
             continue;
         };
@@ -245,7 +244,7 @@ fn extract_react_routes(file_path: &str, content: &str, result: &mut FrameworkEx
     let path_component_re = Regex::new(r"\bComponent\s*:\s*([A-Z][A-Za-z0-9_]*)").unwrap();
     for caps in path_re.captures_iter(content) {
         let whole = caps.get(0).unwrap();
-        let window = &content[whole.start()..(whole.start() + 300).min(content.len())];
+        let window = utf8_byte_window(content, whole.start(), 300);
         let component = path_element_re
             .captures(window)
             .or_else(|| path_component_re.captures(window))
@@ -458,4 +457,35 @@ fn attr_value(window: &str, attr: &str) -> Option<String> {
 fn is_pascal_case(value: &str) -> bool {
     let mut chars = value.chars();
     matches!(chars.next(), Some('A'..='Z')) && chars.all(|ch| ch.is_ascii_alphanumeric())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn utf8_window_never_splits_multibyte_characters() {
+        for (max_bytes, character) in [(300, "的"), (400, "🚀"), (500, "的")] {
+            let mut content = "a".repeat(max_bytes - 1);
+            content.push_str(character);
+            content.push_str("tail");
+
+            let window = utf8_byte_window(&content, 0, max_bytes);
+
+            assert_eq!(window.len(), max_bytes - 1);
+            assert!(content.is_char_boundary(window.len()));
+        }
+    }
+
+    #[test]
+    fn extracts_pascal_case_component_when_chinese_crosses_lookahead_boundary() {
+        let declaration = "const ProviderImpl = (props: ContextProviderProps<T>) =>";
+        let jsx = "<div />";
+        let padding = "a".repeat(500 - jsx.len() - 1);
+        let content = format!("{declaration}{jsx}{padding}的闭包引用");
+
+        let result = REACT_RESOLVER.extract("src/context.tsx", &content);
+
+        assert!(result.nodes.iter().any(|node| node.name == "ProviderImpl"));
+    }
 }

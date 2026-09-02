@@ -9,6 +9,7 @@ use crate::resolution::types::{
     FrameworkExtractionResult, FrameworkResolver, ResolutionContext, make_node,
 };
 use crate::types::{Language, NodeKind};
+use crate::utils::line_number_at_byte;
 
 pub struct ExpoModulesResolver;
 
@@ -129,9 +130,5 @@ fn extract_expo_methods(
 }
 
 fn line_for_offset(source: &str, offset: usize) -> u64 {
-    (source[..offset.min(source.len())]
-        .bytes()
-        .filter(|b| *b == b'\n')
-        .count()
-        + 1) as u64
+    line_number_at_byte(source, offset)
 }

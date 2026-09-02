@@ -26,6 +26,20 @@ export class UsersController {
         assert_eq!(result.references[0].from_node_id, result.nodes[0].id);
     }
 
+    #[test]
+    fn utf8_window_extracts_route_when_nestjs_limit_splits_a_character() {
+        let decorator = "@Get()";
+        let prefix = "@Controller('users')\nexport class UsersController {\n  ";
+        let mut src = format!("{prefix}{decorator}\n  findAll() {{ return []; }}");
+        let window_end = prefix.len() + decorator.len() + 800;
+        src.push_str(&"a".repeat(window_end - src.len() - 1));
+        src.push_str("中tail\n}");
+
+        let result = NESTJS_RESOLVER.extract("users.controller.ts", &src);
+        assert_eq!(result.nodes[0].name, "GET /users");
+        assert_eq!(result.references[0].reference_name, "findAll");
+    }
+
     // it('joins controller prefix with a method-level path param')
     #[test]
     fn joins_controller_prefix_with_a_method_level_path_param() {

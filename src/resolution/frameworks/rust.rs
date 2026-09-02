@@ -12,6 +12,7 @@ use crate::resolution::types::{
     line_for_byte, make_node, make_reference, resolve_by_name_and_kind,
 };
 use crate::types::{Language, NodeKind, ReferenceKind};
+use crate::utils::utf8_byte_window;
 
 const HANDLER_DIRS: &[&str] = &[
     "/handlers/",
@@ -212,8 +213,7 @@ fn extract_actix_routes(file_path: &str, content: &str, result: &mut FrameworkEx
             .find("web::resource")
             .map(|idx| after + idx)
             .unwrap_or(content.len());
-        let end = (after + 500).min(next_res);
-        let chain = &content[after..end];
+        let chain = utf8_byte_window(content, after, next_res.saturating_sub(after).min(500));
         let mut found = false;
         for method_caps in method_to_re.captures_iter(chain) {
             let line = start_line + line_for_byte(chain, method_caps.get(0).unwrap().start()) - 1;

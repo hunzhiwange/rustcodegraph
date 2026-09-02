@@ -142,6 +142,45 @@ pub fn normalize_path(file_path: &str) -> String {
     file_path.replace('\\', "/")
 }
 
+/// Returns at most `max_bytes` bytes starting at `start`, without splitting UTF-8.
+///
+/// The budget is measured from the requested byte offset. An offset inside a
+/// character advances to the next boundary, while the end retreats to the
+/// previous boundary.
+pub fn utf8_byte_window(value: &str, start: usize, max_bytes: usize) -> &str {
+    let requested_start = start.min(value.len());
+    let mut safe_start = requested_start;
+    while safe_start < value.len() && !value.is_char_boundary(safe_start) {
+        safe_start += 1;
+    }
+
+    let mut safe_end = requested_start.saturating_add(max_bytes).min(value.len());
+    while safe_end > safe_start && !value.is_char_boundary(safe_end) {
+        safe_end -= 1;
+    }
+
+    if safe_end < safe_start {
+        &value[safe_start..safe_start]
+    } else {
+        &value[safe_start..safe_end]
+    }
+}
+
+/// Truncates `value` to at most `max_bytes`, preserving valid UTF-8.
+pub fn truncate_utf8_bytes(value: &str, max_bytes: usize) -> &str {
+    utf8_byte_window(value, 0, max_bytes)
+}
+
+/// Returns the one-based line number at an arbitrary byte offset.
+pub fn line_number_at_byte(value: &str, byte_offset: usize) -> u64 {
+    1 + value
+        .as_bytes()
+        .iter()
+        .take(byte_offset.min(value.len()))
+        .filter(|&&byte| byte == b'\n')
+        .count() as u64
+}
+
 pub struct FileLock {
     lock_path: PathBuf,
     held: bool,
@@ -812,5 +851,43 @@ pub fn current_watch_memory_usage_bytes() -> u64 {
 pub fn set_watch_memory_reader_for_tests(reader: Option<WatchMemoryReader>) {
     if let Ok(mut slot) = WATCH_MEMORY_READER.lock() {
         *slot = reader;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn utf8_byte_window_clamps_to_character_boundary() {
+        let text = "ab中文🚀cd";
+
+        assert_eq!(utf8_byte_window(text, 0, 2), "ab");
+        assert_eq!(utf8_byte_window(text, 2, 4), "中");
+        assert_eq!(utf8_byte_window(text, 2, 7), "中文");
+        assert_eq!(utf8_byte_window(text, 2, usize::MAX), "中文🚀cd");
+        assert_eq!(utf8_byte_window(text, text.len(), 10), "");
+        assert_eq!(utf8_byte_window(text, text.len() + 10, 10), "");
+    }
+
+    #[test]
+    fn truncate_utf8_bytes_preserves_valid_text() {
+        let text = "ab中文🚀cd";
+
+        assert_eq!(truncate_utf8_bytes(text, 0), "");
+        assert_eq!(truncate_utf8_bytes(text, 4), "ab");
+        assert_eq!(truncate_utf8_bytes(text, 5), "ab中");
+        assert_eq!(truncate_utf8_bytes(text, usize::MAX), text);
+    }
+
+    #[test]
+    fn line_number_at_byte_accepts_mid_character_offsets() {
+        let text = "甲🚀\n乙\n丙";
+
+        assert_eq!(line_number_at_byte(text, 0), 1);
+        assert_eq!(line_number_at_byte(text, 1), 1);
+        assert_eq!(line_number_at_byte(text, 4), 1);
+        assert_eq!(line_number_at_byte(text, 8), 2);
+        assert_eq!(line_number_at_byte(text, usize::MAX), 3);
     }
 }
