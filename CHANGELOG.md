@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+
+## [1.2.10] - 2026-09-02
+
 ### Fixes
 
 - Fixed indexing and sync panics across TypeScript/React, Java, C#, Rust, Dart, Ruby, PHP/Drupal, and C/C++ sources when lookahead windows, summaries, or line calculations ended inside Chinese, emoji, or other multibyte UTF-8 characters.
@@ -106,3 +109,4 @@
 [1.2.4]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.4
 [1.2.5]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.5
 [1.2.6]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.6
+[1.2.10]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.10
