@@ -6,25 +6,27 @@
 use super::*;
 
 pub(super) fn index_facade_database(project_root: &Path, started: Instant) -> IndexResult {
-    index_facade_database_inner(project_root, started, None)
+    index_facade_database_inner(project_root, started, None, None)
 }
 
 pub(super) fn index_facade_changed_files(
     project_root: &Path,
     started: Instant,
     changes: &ChangedFiles,
+    progress: IndexProgressCallback<'_>,
 ) -> IndexResult {
     let mut selected_paths = HashSet::new();
     selected_paths.extend(changes.added.iter().cloned());
     selected_paths.extend(changes.modified.iter().cloned());
     selected_paths.extend(changes.removed.iter().cloned());
-    index_facade_database_inner(project_root, started, Some(selected_paths))
+    index_facade_database_inner(project_root, started, Some(selected_paths), progress)
 }
 
 pub(super) fn index_facade_database_inner(
     project_root: &Path,
     started: Instant,
     selected_paths: Option<HashSet<String>>,
+    mut progress: IndexProgressCallback<'_>,
 ) -> IndexResult {
     let mut conn = match ensure_facade_database(project_root) {
         Ok(conn) => conn,
@@ -35,6 +37,7 @@ pub(super) fn index_facade_database_inner(
     if let Some(selected_paths) = selected_paths.as_ref() {
         files.retain(|path| selected_paths.contains(path));
     }
+    let total_files = files.len();
     let indexed_at = now_ms();
     let mut files_indexed = 0usize;
     let mut files_skipped = 0usize;
@@ -46,7 +49,14 @@ pub(super) fn index_facade_database_inner(
     let mut unresolved_refs = Vec::new();
     let framework_resolvers = get_all_framework_resolvers();
 
-    for file_path in files {
+    for (file_index, file_path) in files.into_iter().enumerate() {
+        emit_index_progress(
+            &mut progress,
+            "Parsing code",
+            file_index + 1,
+            total_files,
+            Some(file_path.clone()),
+        );
         let abs = project_root.join(&file_path);
         let source = match fs::read_to_string(&abs) {
             Ok(source) => source,
@@ -257,6 +267,7 @@ pub(super) fn index_facade_database_inner(
         files_indexed,
         nodes.len()
     ));
+    emit_index_progress(&mut progress, "Resolving references", 0, 0, None);
     dedupe_facade_nodes(&mut nodes);
     let mut edges = resolve_facade_edges_rich(&nodes, pending_edges, &direct_edges);
     edges.append(&mut direct_edges);
@@ -271,6 +282,7 @@ pub(super) fn index_facade_database_inner(
     dedupe_facade_edges_by_node_names(&mut edges, &nodes);
     crate::utils::debug_rss("inner:after cross-file edges + dedupe");
 
+    emit_index_progress(&mut progress, "Writing database", 0, 0, None);
     let tx = match conn.transaction() {
         Ok(tx) => tx,
         Err(err) => {
@@ -509,6 +521,7 @@ pub(super) fn index_facade_database_inner(
 
     crate::utils::debug_rss("inner:after tx.commit, before resolve queue");
     let post_resolution_edges = if files_indexed > 0 {
+        emit_index_progress(&mut progress, "Synthesizing graph", 0, 0, None);
         // resolver 和动态边合成在事务提交后运行，因为它们需要查询刚写入的完整索引。
         // full_rebuild 时全量 load 节点；增量同步走按需 DB 查询，避免单文件改动吃满内存。
         resolve_facade_reference_queue(project_root, full_rebuild)

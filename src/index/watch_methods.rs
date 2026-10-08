@@ -23,7 +23,7 @@ impl CodeGraph {
                 // 如果 sync 管线报告 recoverable skipped，这里转成 watcher 能识别的
                 // skipped 标志，让 watcher 保留 pending、保持 active、稍后重试，而
                 // 不是把跳过当成正常完成。
-                let result = sync_facade_database(&sync_root, Instant::now());
+                let result = sync_facade_database(&sync_root, Instant::now(), None);
                 let files_changed =
                     result.files_added + result.files_modified + result.files_removed;
                 Ok(SyncRunResult {

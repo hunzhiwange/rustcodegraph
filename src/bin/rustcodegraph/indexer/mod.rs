@@ -33,7 +33,7 @@ pub(crate) struct IndexSummary {
     pub(crate) duration_ms: u128,
 }
 
-pub(super) struct IndexProgressRenderer {
+pub(crate) struct IndexProgressRenderer {
     enabled: bool,
     glyphs: Glyphs,
     phase: String,
@@ -42,7 +42,7 @@ pub(super) struct IndexProgressRenderer {
 }
 
 impl IndexProgressRenderer {
-    fn new(enabled: bool) -> Self {
+    pub(crate) fn new(enabled: bool) -> Self {
         Self {
             enabled,
             glyphs: get_glyphs(),
@@ -85,7 +85,21 @@ impl IndexProgressRenderer {
         self.render(phase, None, message.into(), true);
     }
 
-    fn finish(&mut self) {
+    pub(crate) fn on_progress(&mut self, progress: &rustcodegraph::IndexProgress) {
+        if !self.enabled {
+            return;
+        }
+        let suffix = progress
+            .current_file
+            .as_deref()
+            .map(|file| format!("{}/{}  {file}", progress.current, progress.total))
+            .unwrap_or_default();
+        let percent = (progress.total > 0)
+            .then(|| ((progress.current as f64 / progress.total as f64) * 100.0).round() as i32);
+        self.render(&progress.phase, percent, suffix, false);
+    }
+
+    pub(crate) fn finish(&mut self) {
         if !self.enabled || self.phase.is_empty() {
             return;
         }
@@ -120,7 +134,12 @@ impl IndexProgressRenderer {
             .copied()
             .unwrap_or(".");
         let detail = if let Some(percent) = percent {
-            format!("{}  {}%", render_bar(&self.glyphs, percent), percent)
+            let progress = format!("{}  {}%", render_bar(&self.glyphs, percent), percent);
+            if suffix.is_empty() {
+                progress
+            } else {
+                format!("{progress}  {suffix}")
+            }
         } else if suffix.is_empty() {
             String::new()
         } else {

@@ -29,8 +29,13 @@ pub fn facade_watch_memory_skips() -> u64 {
     0
 }
 
-pub(super) fn sync_facade_database(project_root: &Path, started: Instant) -> SyncResult {
+pub(super) fn sync_facade_database(
+    project_root: &Path,
+    started: Instant,
+    mut progress: IndexProgressCallback<'_>,
+) -> SyncResult {
     crate::utils::debug_rss("sync:start");
+    emit_index_progress(&mut progress, "Scanning changes", 0, 0, None);
     let files_checked = existing_source_files(project_root).len();
     crate::utils::debug_rss("sync:after existing_source_files");
     let changes = changed_facade_files(project_root).unwrap_or_default();
@@ -44,7 +49,7 @@ pub(super) fn sync_facade_database(project_root: &Path, started: Instant) -> Syn
         0
     } else {
         // 这里重用完整索引管线的“选中文件”模式，保证增量和全量产生同一种边解析结果。
-        let result = index_facade_changed_files(project_root, Instant::now(), &changes);
+        let result = index_facade_changed_files(project_root, Instant::now(), &changes, progress);
         crate::utils::debug_rss("sync:after index_facade_changed_files");
         result.nodes_created
     };

@@ -17,7 +17,7 @@ use super::super::args::{
     CLI_NAME, command_path_arg, guard_safe_root, has_flag, option_value, path_option,
     print_index_summary, print_sync_summary, resolve_init_path, resolve_project_path,
 };
-use super::super::indexer::build_sqlite_index;
+use super::super::indexer::{IndexProgressRenderer, build_sqlite_index};
 use super::super::storage::{
     database_path, initialize_sqlite_database, is_sqlite_initialized, open_sqlite_database,
     read_last_indexed_at, read_sqlite_stats, unix_ms_to_iso,
@@ -88,7 +88,11 @@ pub(crate) fn command_sync(args: &[String]) -> Result<(), String> {
         ));
     }
 
-    let result = run_cli_sync(&project_root)?;
+    let mut progress = IndexProgressRenderer::new(!quiet);
+    let result = run_cli_sync_with_progress(&project_root, |event| {
+        progress.on_progress(&event);
+    })?;
+    progress.finish();
 
     if !quiet {
         print_sync_summary(&result);
@@ -230,6 +234,26 @@ fn run_cli_sync(project_root: &Path) -> Result<rustcodegraph::SyncResult, String
     )
     .map_err(|err| err.message().to_owned())?;
     let result = graph.sync(rustcodegraph::IndexOptions::default());
+    graph.close();
+    Ok(result)
+}
+
+fn run_cli_sync_with_progress<F>(
+    project_root: &Path,
+    on_progress: F,
+) -> Result<rustcodegraph::SyncResult, String>
+where
+    F: FnMut(rustcodegraph::IndexProgress),
+{
+    let mut graph = rustcodegraph::CodeGraph::open(
+        project_root,
+        rustcodegraph::OpenOptions {
+            sync: false,
+            read_only: false,
+        },
+    )
+    .map_err(|err| err.message().to_owned())?;
+    let result = graph.sync_with_progress(rustcodegraph::IndexOptions::default(), on_progress);
     graph.close();
     Ok(result)
 }

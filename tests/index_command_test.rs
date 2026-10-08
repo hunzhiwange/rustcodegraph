@@ -211,6 +211,35 @@ mod codegraph_index_full_re_index_keeps_the_graph_populated_874 {
     }
 
     #[test]
+    fn sync_progress_reports_incremental_work_and_quiet_suppresses_it() {
+        let temp_dir = TempDir::new("codegraph-sync-progress-");
+        run_codegraph(&["init", "-i"], temp_dir.path());
+
+        fs::write(
+            temp_dir.path().join("progress.rs"),
+            "pub fn sync_progress_symbol() -> usize { 11 }\n",
+        )
+        .expect("progress fixture should be written");
+
+        let output = run_codegraph_raw(&["sync"], temp_dir.path());
+        assert!(output.status.success(), "{output:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("Scanning changes"), "{stderr}");
+        assert!(stderr.contains("Parsing code"), "{stderr}");
+        assert!(stderr.contains("Writing database"), "{stderr}");
+
+        fs::write(
+            temp_dir.path().join("progress.rs"),
+            "pub fn sync_progress_symbol() -> usize { 12 }\n",
+        )
+        .expect("progress fixture should be updated");
+        let quiet = run_codegraph_raw(&["sync", "--quiet"], temp_dir.path());
+        assert!(quiet.status.success(), "{quiet:?}");
+        assert!(quiet.stdout.is_empty(), "{quiet:?}");
+        assert!(quiet.stderr.is_empty(), "{quiet:?}");
+    }
+
+    #[test]
     fn explicit_uninitialized_subdir_path_is_not_promoted_to_the_parent_project() {
         let temp_dir = TempDir::new("codegraph-index-cmd-");
         fs::create_dir(temp_dir.path().join("child"))

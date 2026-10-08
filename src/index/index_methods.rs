@@ -26,7 +26,18 @@ impl CodeGraph {
     }
 
     pub fn sync(&mut self, _options: IndexOptions) -> SyncResult {
-        sync_facade_database(&self.project_root, Instant::now())
+        sync_facade_database(&self.project_root, Instant::now(), None)
+    }
+
+    pub fn sync_with_progress<F>(
+        &mut self,
+        _options: IndexOptions,
+        mut on_progress: F,
+    ) -> SyncResult
+    where
+        F: FnMut(IndexProgress),
+    {
+        sync_facade_database(&self.project_root, Instant::now(), Some(&mut on_progress))
     }
 
     pub fn is_indexing(&self) -> bool {

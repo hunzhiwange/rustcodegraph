@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### New Features
+
+- `rustcodegraph sync` now shows live scanning, parsing, resolution, and database progress so long incremental refreshes no longer appear stuck.
 
 ## [1.2.10] - 2026-09-02
 

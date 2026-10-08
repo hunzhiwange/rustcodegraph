@@ -88,6 +88,25 @@ pub struct IndexProgress {
     pub current_file: Option<String>,
 }
 
+pub(crate) type IndexProgressCallback<'a> = Option<&'a mut dyn FnMut(IndexProgress)>;
+
+pub(crate) fn emit_index_progress(
+    callback: &mut IndexProgressCallback<'_>,
+    phase: &str,
+    current: usize,
+    total: usize,
+    current_file: Option<String>,
+) {
+    if let Some(callback) = callback.as_deref_mut() {
+        callback(IndexProgress {
+            phase: phase.to_owned(),
+            current,
+            total,
+            current_file,
+        });
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexResult {
