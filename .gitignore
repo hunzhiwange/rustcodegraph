@@ -67,4 +67,5 @@ assets/__pycache__/
 assets/generate-waitlist.py
 
 target/
+build-dir/
 .codex-tmp/
