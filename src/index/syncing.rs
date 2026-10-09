@@ -85,13 +85,13 @@ pub(super) fn changed_facade_files(project_root: &Path) -> Result<ChangedFiles, 
 
         // 预筛：已知文件且磁盘 size+mtime 与 DB 记录一致 → 直接判未变更，不读内容。
         // metadata 取不到（权限/竞态）时退回读内容确认，保证不漏判。
-        if let Some(stored) = stored {
-            if let Ok(metadata) = fs::metadata(project_root.join(&path)) {
-                let disk_size = metadata.len() as ByteSize;
-                let disk_mtime = metadata.modified().ok().map(system_time_ms);
-                if disk_size == stored.size && disk_mtime == Some(stored.modified_at) {
-                    continue;
-                }
+        if let Some(stored) = stored
+            && let Ok(metadata) = fs::metadata(project_root.join(&path))
+        {
+            let disk_size = metadata.len() as ByteSize;
+            let disk_mtime = metadata.modified().ok().map(system_time_ms);
+            if disk_size == stored.size && disk_mtime == Some(stored.modified_at) {
+                continue;
             }
         }
 

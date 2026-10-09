@@ -398,7 +398,10 @@ fn syntax_node_from_native(
 
     // 深度转换 children/named_children，同时把 field name 映射到对应 child 索引。
     for index in 0..child_count {
-        let Some(native_child) = node.child(index) else {
+        let Ok(native_index) = u32::try_from(index) else {
+            break;
+        };
+        let Some(native_child) = node.child(native_index) else {
             continue;
         };
         let mut child = syntax_node_from_native(&native_child, source, Some(parent_stub.clone()));

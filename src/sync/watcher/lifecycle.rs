@@ -240,13 +240,13 @@ impl FileWatcher {
             // 背靠背节流：debounce 已到期，但若距上次重型同步完成还不够最小间隔，
             // 就把这次 flush 推迟到间隔满足时，而不是紧贴着再跑一轮重型同步。
             // 间隔有上限（见 MAX_MIN_SYNC_INTERVAL_MS），pending 不会被永久饿死。
-            if self.scheduled_kind == Some(super::types::ScheduledSyncKind::Debounce) {
-                if let Some(remaining_ms) = self.throttle_remaining_ms() {
-                    self.scheduled_at = Some(Instant::now());
-                    self.scheduled_delay_ms = Some(remaining_ms);
-                    self.scheduled_kind = Some(super::types::ScheduledSyncKind::Debounce);
-                    return;
-                }
+            if self.scheduled_kind == Some(super::types::ScheduledSyncKind::Debounce)
+                && let Some(remaining_ms) = self.throttle_remaining_ms()
+            {
+                self.scheduled_at = Some(Instant::now());
+                self.scheduled_delay_ms = Some(remaining_ms);
+                self.scheduled_kind = Some(super::types::ScheduledSyncKind::Debounce);
+                return;
             }
             self.scheduled_at = None;
             self.scheduled_delay_ms = None;

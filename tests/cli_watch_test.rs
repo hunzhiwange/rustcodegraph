@@ -220,8 +220,7 @@ fn watch_cli_auto_syncs_new_files_until_interrupted() {
             ) else {
                 return false;
             };
-            let found = !cg.search_nodes("added", None).is_empty();
-            found
+            !cg.search_nodes("added", None).is_empty()
         },
         10_000,
     );

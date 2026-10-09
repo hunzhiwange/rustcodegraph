@@ -512,7 +512,9 @@ fn decode_encoded_command(args: &[String]) -> String {
         .expect("no -EncodedCommand in args");
     let bytes = base64_decode(&args[index + 1]);
     let units = bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
         .collect::<Vec<_>>();
     String::from_utf16(&units).expect("encoded PowerShell payload should be UTF-16LE")

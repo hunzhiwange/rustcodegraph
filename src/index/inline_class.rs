@@ -232,10 +232,9 @@ pub(super) fn top_level_value_from_line(
         (NodeKind::Constant, after_const)
     } else if let Some(after_let) = rest.strip_prefix("let ") {
         (NodeKind::Variable, after_let)
-    } else if let Some(after_var) = rest.strip_prefix("var ") {
-        (NodeKind::Variable, after_var)
     } else {
-        return None;
+        let after_var = rest.strip_prefix("var ")?;
+        (NodeKind::Variable, after_var)
     };
 
     let name = first_identifier(after_decl).map(trim_identifier)?;

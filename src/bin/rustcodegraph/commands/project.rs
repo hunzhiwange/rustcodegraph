@@ -142,11 +142,11 @@ pub(crate) fn command_watch(args: &[String]) -> Result<(), String> {
             max_debounce_ms: Some(timing.max_debounce_ms),
             min_sync_interval_ms: Some(timing.min_sync_interval_ms),
             on_sync_complete: Some(Box::new(move |result| {
-                if let Ok(mut slot) = print_latest_auto_sync.lock() {
-                    if let Some(sync_result) = slot.take() {
-                        print_sync_summary(&sync_result);
-                        return;
-                    }
+                if let Ok(mut slot) = print_latest_auto_sync.lock()
+                    && let Some(sync_result) = slot.take()
+                {
+                    print_sync_summary(&sync_result);
+                    return;
                 }
                 println!(
                     "Synced {} changed file(s) in {}ms",

@@ -93,7 +93,7 @@ fn index_and_read_event_edges(project_root: &Path, extra_where: Option<&str>) ->
     let mut stmt = conn
         .prepare(&sql)
         .unwrap_or_else(|err| panic!("failed to prepare event-edge query: {err}"));
-    let rows = stmt
+    stmt
         .query_map([], |row| {
             Ok(EventEdgeRow {
                 source_name: row.get("source_name")?,
@@ -106,9 +106,7 @@ fn index_and_read_event_edges(project_root: &Path, extra_where: Option<&str>) ->
         })
         .expect("event-edge query should run")
         .collect::<Result<Vec<_>, _>>()
-        .expect("event-edge rows should decode");
-
-    rows
+        .expect("event-edge rows should decode")
 }
 
 mod rn_event_channel_synthesizer {
