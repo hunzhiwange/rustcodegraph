@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### New Features
+
+- Indexing now parses files with bounded parallel workers while preserving file order in the resulting graph.
+
 ### Fixes
 
 - Incremental sync now defers automatic WAL checkpoints during database writes to avoid repeatedly flushing the same data.

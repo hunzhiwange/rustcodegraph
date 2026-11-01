@@ -53,217 +53,240 @@ pub(super) fn index_facade_database_inner(
     let mut unresolved_refs = Vec::new();
     let framework_resolvers = get_all_framework_resolvers();
 
-    for (file_index, file_path) in files.into_iter().enumerate() {
-        emit_index_progress(
-            &mut progress,
-            "Parsing code",
-            file_index + 1,
-            total_files,
-            Some(file_path.clone()),
+    // Keep source/result buffering bounded while allowing idle workers to pass a slow file.
+    for (batch_index, batch) in files.chunks(32).enumerate() {
+        let prepared = crate::extraction::parse_worker::schedule_parses(
+            batch,
+            256 * 1024 * 1024,
+            64 * 1024 * 1024,
+            |file_path| {
+                let source = fs::read_to_string(project_root.join(file_path)).ok()?;
+                let language = detect_language(file_path, Some(&source));
+                let result = should_index_with_native_parser(language, &source)
+                    .then(|| extract_source_now(file_path, &source, Some(language), None));
+                Some((source, language, result))
+            },
         );
-        let abs = project_root.join(&file_path);
-        let source = match fs::read_to_string(&abs) {
-            Ok(source) => source,
-            Err(_) => {
+        for (offset, (file_path, prepared)) in batch.iter().cloned().zip(prepared).enumerate() {
+            let file_index = batch_index * 32 + offset;
+            emit_index_progress(
+                &mut progress,
+                "Parsing code",
+                file_index + 1,
+                total_files,
+                Some(file_path.clone()),
+            );
+            let abs = project_root.join(&file_path);
+            let Some((source, language, native_result)) = prepared else {
                 files_skipped += 1;
                 continue;
-            }
-        };
-        let metadata = fs::metadata(&abs).ok();
-        let language = detect_language(&file_path, Some(&source));
-        crate::utils::debug_rss(&format!(
-            "  file:start ({file_path}, lang={language:?}, native={})",
-            should_index_with_native_parser(language, &source)
-        ));
-        let mut file_errors = Vec::new();
-        let (mut file_nodes, mut file_pending_edges, mut file_edges, mut file_unresolved_refs) =
-            if should_index_with_native_parser(language, &source) {
-                // 小文件优先走原生 tree-sitter，之后再用 facade fallback 针对语言缺口补齐节点和边。
-                crate::utils::debug_rss("    native:before extract_source_now");
-                let mut result = extract_source_now(&file_path, &source, Some(language), None);
-                crate::utils::debug_rss("    native:after extract_source_now");
-                let mut pending_edges = result
-                    .unresolved_references
-                    .iter()
-                    .filter_map(pending_edge_from_unresolved_reference)
-                    .collect::<Vec<_>>();
-                if matches!(language, Language::C | Language::Cpp) {
-                    pending_edges.retain(|edge| !facade_pending_is_fn_ref(edge));
-                }
-                for reference in &mut result.unresolved_references {
-                    reference.file_path.get_or_insert_with(|| file_path.clone());
-                    reference.language.get_or_insert(language);
-                }
-                let mut nodes = result.nodes;
-                apply_native_source_namespace(&file_path, &source, language, &mut nodes);
-                apply_native_ts_js_class_field_kinds(&file_path, &source, language, &mut nodes);
-                let mut edges = result.edges;
-                let file_node_id = format!("file:{file_path}");
-                if !nodes.iter().any(|node| node.id == file_node_id) {
+            };
+            let metadata = fs::metadata(&abs).ok();
+            crate::utils::debug_rss(&format!(
+                "  file:start ({file_path}, lang={language:?}, native={})",
+                should_index_with_native_parser(language, &source)
+            ));
+            let mut file_errors = Vec::new();
+            let (mut file_nodes, mut file_pending_edges, mut file_edges, mut file_unresolved_refs) =
+                if should_index_with_native_parser(language, &source) {
+                    // 小文件优先走原生 tree-sitter，之后再用 facade fallback 针对语言缺口补齐节点和边。
+                    crate::utils::debug_rss("    native:before extract_source_now");
+                    let mut result = native_result.expect("native parse prepared");
+                    crate::utils::debug_rss("    native:after extract_source_now");
+                    let mut pending_edges = result
+                        .unresolved_references
+                        .iter()
+                        .filter_map(pending_edge_from_unresolved_reference)
+                        .collect::<Vec<_>>();
+                    if matches!(language, Language::C | Language::Cpp) {
+                        pending_edges.retain(|edge| !facade_pending_is_fn_ref(edge));
+                    }
+                    for reference in &mut result.unresolved_references {
+                        reference.file_path.get_or_insert_with(|| file_path.clone());
+                        reference.language.get_or_insert(language);
+                    }
+                    let mut nodes = result.nodes;
+                    apply_native_source_namespace(&file_path, &source, language, &mut nodes);
+                    apply_native_ts_js_class_field_kinds(&file_path, &source, language, &mut nodes);
+                    let mut edges = result.edges;
+                    let file_node_id = format!("file:{file_path}");
+                    if !nodes.iter().any(|node| node.id == file_node_id) {
+                        nodes.insert(
+                            0,
+                            facade_file_node(&file_path, &source, language, indexed_at),
+                        );
+                    }
+                    if language == Language::CSharp
+                        && !nodes.iter().any(|node| {
+                            node.file_path == file_path && facade_supertype_bearing(node.kind)
+                        })
+                    {
+                        append_facade_csharp_inline_namespace_types(
+                            &file_path,
+                            &source,
+                            indexed_at,
+                            &file_node_id,
+                            &mut nodes,
+                            &mut edges,
+                        );
+                    }
+                    let needs_csharp_fallback = language == Language::CSharp
+                        && !nodes.iter().any(|node| {
+                            node.file_path == file_path && facade_supertype_bearing(node.kind)
+                        });
+                    let needs_objc_fallback = language == Language::ObjC
+                        && !nodes.iter().any(|node| {
+                            node.file_path == file_path && facade_supertype_bearing(node.kind)
+                        });
+                    let has_cpp_pointer_class = (source.contains("class ")
+                        || source.contains("struct "))
+                        && source.contains('*');
+                    let needs_cpp_fallback = matches!(language, Language::C | Language::Cpp)
+                        && (has_cpp_pointer_class
+                            || (source.contains("::")
+                                && !nodes.iter().any(|node| {
+                                    node.file_path == file_path
+                                        && matches!(
+                                            node.kind,
+                                            NodeKind::Method | NodeKind::Function
+                                        )
+                                        && node.qualified_name.contains("::")
+                                })));
+                    let needs_value_ref_fallback =
+                        needs_facade_value_ref_fallback(language, &source);
+                    if language == Language::Java
+                        || language == Language::Php
+                        || needs_csharp_fallback
+                        || needs_objc_fallback
+                        || needs_cpp_fallback
+                        || needs_value_ref_fallback
+                        || (language == Language::Go
+                            && go_facade_fallback_file(&file_path, &source))
+                    {
+                        // fallback 节点放在前面，后续去重会保留首个 id；这让补洞结果能覆盖原生抽取漏掉的结构。
+                        crate::utils::debug_rss(
+                            "    native:before extract_facade_symbols_rich (fallback)",
+                        );
+                        let (mut fallback_nodes, mut fallback_pending_edges, mut fallback_edges) =
+                            extract_facade_symbols_rich(
+                                &file_path,
+                                &source,
+                                language,
+                                indexed_at,
+                                &[],
+                            );
+                        crate::utils::debug_rss(
+                            "    native:after extract_facade_symbols_rich (fallback)",
+                        );
+                        fallback_nodes.append(&mut nodes);
+                        nodes = fallback_nodes;
+                        pending_edges.append(&mut fallback_pending_edges);
+                        edges.append(&mut fallback_edges);
+                    }
+                    crate::utils::debug_rss("    native:before framework_extraction");
+                    let framework_pending_start = pending_edges.len();
+                    append_facade_framework_extraction(
+                        &file_path,
+                        &source,
+                        language,
+                        &framework_resolvers,
+                        &file_node_id,
+                        &mut nodes,
+                        &mut pending_edges,
+                        &mut edges,
+                    );
+                    result.unresolved_references.extend(
+                        // framework resolver 产出的引用也进入 unresolved_refs，复用统一 resolver 的命名解析规则。
+                        pending_edges[framework_pending_start..]
+                            .iter()
+                            .map(|edge| facade_unresolved_reference(edge, &file_path, language)),
+                    );
+                    file_errors = result.errors;
+                    (nodes, pending_edges, edges, result.unresolved_references)
+                } else {
+                    let (mut nodes, pending_edges, edges) = extract_facade_symbols_rich(
+                        &file_path,
+                        &source,
+                        language,
+                        indexed_at,
+                        &framework_resolvers,
+                    );
                     nodes.insert(
                         0,
                         facade_file_node(&file_path, &source, language, indexed_at),
                     );
-                }
-                if language == Language::CSharp
-                    && !nodes.iter().any(|node| {
-                        node.file_path == file_path && facade_supertype_bearing(node.kind)
-                    })
-                {
-                    append_facade_csharp_inline_namespace_types(
-                        &file_path,
-                        &source,
-                        indexed_at,
-                        &file_node_id,
-                        &mut nodes,
-                        &mut edges,
-                    );
-                }
-                let needs_csharp_fallback = language == Language::CSharp
-                    && !nodes.iter().any(|node| {
-                        node.file_path == file_path && facade_supertype_bearing(node.kind)
-                    });
-                let needs_objc_fallback = language == Language::ObjC
-                    && !nodes.iter().any(|node| {
-                        node.file_path == file_path && facade_supertype_bearing(node.kind)
-                    });
-                let has_cpp_pointer_class = (source.contains("class ")
-                    || source.contains("struct "))
-                    && source.contains('*');
-                let needs_cpp_fallback = matches!(language, Language::C | Language::Cpp)
-                    && (has_cpp_pointer_class
-                        || (source.contains("::")
-                            && !nodes.iter().any(|node| {
-                                node.file_path == file_path
-                                    && matches!(node.kind, NodeKind::Method | NodeKind::Function)
-                                    && node.qualified_name.contains("::")
-                            })));
-                let needs_value_ref_fallback = needs_facade_value_ref_fallback(language, &source);
-                if language == Language::Java
-                    || language == Language::Php
-                    || needs_csharp_fallback
-                    || needs_objc_fallback
-                    || needs_cpp_fallback
-                    || needs_value_ref_fallback
-                    || (language == Language::Go && go_facade_fallback_file(&file_path, &source))
-                {
-                    // fallback 节点放在前面，后续去重会保留首个 id；这让补洞结果能覆盖原生抽取漏掉的结构。
-                    crate::utils::debug_rss(
-                        "    native:before extract_facade_symbols_rich (fallback)",
-                    );
-                    let (mut fallback_nodes, mut fallback_pending_edges, mut fallback_edges) =
-                        extract_facade_symbols_rich(&file_path, &source, language, indexed_at, &[]);
-                    crate::utils::debug_rss(
-                        "    native:after extract_facade_symbols_rich (fallback)",
-                    );
-                    fallback_nodes.append(&mut nodes);
-                    nodes = fallback_nodes;
-                    pending_edges.append(&mut fallback_pending_edges);
-                    edges.append(&mut fallback_edges);
-                }
-                crate::utils::debug_rss("    native:before framework_extraction");
-                let framework_pending_start = pending_edges.len();
-                append_facade_framework_extraction(
-                    &file_path,
-                    &source,
-                    language,
-                    &framework_resolvers,
-                    &file_node_id,
-                    &mut nodes,
-                    &mut pending_edges,
-                    &mut edges,
-                );
-                result.unresolved_references.extend(
-                    // framework resolver 产出的引用也进入 unresolved_refs，复用统一 resolver 的命名解析规则。
-                    pending_edges[framework_pending_start..]
+                    let unresolved_refs = pending_edges
                         .iter()
-                        .map(|edge| facade_unresolved_reference(edge, &file_path, language)),
-                );
-                file_errors = result.errors;
-                (nodes, pending_edges, edges, result.unresolved_references)
-            } else {
-                let (mut nodes, pending_edges, edges) = extract_facade_symbols_rich(
+                        .map(|edge| facade_unresolved_reference(edge, &file_path, language))
+                        .collect::<Vec<_>>();
+                    (nodes, pending_edges, edges, unresolved_refs)
+                };
+            if language == Language::CSharp {
+                append_facade_csharp_inline_namespace_types(
                     &file_path,
                     &source,
-                    language,
                     indexed_at,
-                    &framework_resolvers,
+                    &format!("file:{file_path}"),
+                    &mut file_nodes,
+                    &mut file_edges,
                 );
-                nodes.insert(
-                    0,
-                    facade_file_node(&file_path, &source, language, indexed_at),
-                );
-                let unresolved_refs = pending_edges
-                    .iter()
-                    .map(|edge| facade_unresolved_reference(edge, &file_path, language))
-                    .collect::<Vec<_>>();
-                (nodes, pending_edges, edges, unresolved_refs)
-            };
-        if language == Language::CSharp {
-            append_facade_csharp_inline_namespace_types(
+            }
+            crate::utils::debug_rss(&format!("  file:after extract ({})", file_path));
+            append_facade_function_ref_edges(
                 &file_path,
                 &source,
-                indexed_at,
+                language,
                 &format!("file:{file_path}"),
-                &mut file_nodes,
-                &mut file_edges,
+                &file_nodes,
+                &mut file_pending_edges,
             );
+            crate::utils::debug_rss("  file:after function_ref_edges");
+            append_facade_react_native_member_call_edges(
+                &file_path,
+                &source,
+                language,
+                &file_nodes,
+                &mut file_pending_edges,
+            );
+            crate::utils::debug_rss("  file:after react_native_edges");
+            append_facade_class_member_reference_edges(
+                &file_path,
+                &source,
+                language,
+                indexed_at,
+                &file_nodes,
+                &mut file_pending_edges,
+            );
+            crate::utils::debug_rss("  file:after class_member_ref_edges");
+            append_facade_relation_edges(&source, language, &file_nodes, &mut file_pending_edges);
+            crate::utils::debug_rss("  file:after relation_edges");
+            let node_count = file_nodes.len();
+            sources.push((file_path.clone(), source.clone()));
+            file_records.push(FileRecord {
+                path: file_path.clone(),
+                content_hash: hash_content(&source),
+                language,
+                size: metadata
+                    .as_ref()
+                    .map(|metadata| metadata.len())
+                    .unwrap_or(0) as ByteSize,
+                modified_at: metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.modified().ok())
+                    .map(system_time_ms)
+                    .unwrap_or(0),
+                indexed_at,
+                node_count: node_count as u64,
+                errors: (!file_errors.is_empty()).then_some(file_errors.clone()),
+            });
+            nodes.append(&mut file_nodes);
+            pending_edges.append(&mut file_pending_edges);
+            direct_edges.append(&mut file_edges);
+            file_unresolved_refs
+                .retain(|reference| reference.reference_kind != ReferenceKind::FunctionRef);
+            unresolved_refs.append(&mut file_unresolved_refs);
+            files_indexed += 1;
         }
-        crate::utils::debug_rss(&format!("  file:after extract ({})", file_path));
-        append_facade_function_ref_edges(
-            &file_path,
-            &source,
-            language,
-            &format!("file:{file_path}"),
-            &file_nodes,
-            &mut file_pending_edges,
-        );
-        crate::utils::debug_rss("  file:after function_ref_edges");
-        append_facade_react_native_member_call_edges(
-            &file_path,
-            &source,
-            language,
-            &file_nodes,
-            &mut file_pending_edges,
-        );
-        crate::utils::debug_rss("  file:after react_native_edges");
-        append_facade_class_member_reference_edges(
-            &file_path,
-            &source,
-            language,
-            indexed_at,
-            &file_nodes,
-            &mut file_pending_edges,
-        );
-        crate::utils::debug_rss("  file:after class_member_ref_edges");
-        append_facade_relation_edges(&source, language, &file_nodes, &mut file_pending_edges);
-        crate::utils::debug_rss("  file:after relation_edges");
-        let node_count = file_nodes.len();
-        sources.push((file_path.clone(), source.clone()));
-        file_records.push(FileRecord {
-            path: file_path.clone(),
-            content_hash: hash_content(&source),
-            language,
-            size: metadata
-                .as_ref()
-                .map(|metadata| metadata.len())
-                .unwrap_or(0) as ByteSize,
-            modified_at: metadata
-                .as_ref()
-                .and_then(|metadata| metadata.modified().ok())
-                .map(system_time_ms)
-                .unwrap_or(0),
-            indexed_at,
-            node_count: node_count as u64,
-            errors: (!file_errors.is_empty()).then_some(file_errors.clone()),
-        });
-        nodes.append(&mut file_nodes);
-        pending_edges.append(&mut file_pending_edges);
-        direct_edges.append(&mut file_edges);
-        file_unresolved_refs
-            .retain(|reference| reference.reference_kind != ReferenceKind::FunctionRef);
-        unresolved_refs.append(&mut file_unresolved_refs);
-        files_indexed += 1;
     }
 
     crate::utils::debug_rss(&format!(

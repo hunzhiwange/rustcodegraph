@@ -125,3 +125,44 @@ fn panic_message(err: Box<dyn std::any::Any + Send>) -> String {
         "unknown panic".to_owned()
     }
 }
+
+/// Run a bounded window of independent jobs, assigning the next job to whichever
+/// worker finishes first. Results retain input order; callers bound queued memory.
+pub fn schedule_parses<T: Sync, R: Send>(
+    jobs: &[T],
+    memory_budget: usize,
+    bytes_per_worker: usize,
+    parse: impl Fn(&T) -> R + Sync,
+) -> Vec<R> {
+    let workers = jobs
+        .len()
+        .min(std::thread::available_parallelism().map_or(1, usize::from))
+        .min((memory_budget / bytes_per_worker.max(1)).max(1));
+    if workers <= 1 {
+        return jobs.iter().map(parse).collect();
+    }
+    let cursor = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                let parse = &parse;
+                let cursor = &cursor;
+                scope.spawn(move || {
+                    let mut results = Vec::new();
+                    loop {
+                        let i = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(job) = jobs.get(i) else { break };
+                        results.push((i, parse(job)));
+                    }
+                    results
+                })
+            })
+            .collect();
+        let mut results: Vec<_> = handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("parse worker panicked"))
+            .collect();
+        results.sort_by_key(|(i, _)| *i);
+        results.into_iter().map(|(_, result)| result).collect()
+    })
+}
