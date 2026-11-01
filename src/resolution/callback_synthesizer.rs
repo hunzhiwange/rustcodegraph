@@ -51,7 +51,7 @@ pub fn synthesize_callback_edges(
         let _ = queries.insert_edges(&go_method_contains);
     }
 
-    let go_impl = go_implements_edges(queries);
+    let go_impl = go_implements_edges(queries, ctx);
     if !go_impl.is_empty() {
         let _ = queries.insert_edges(&go_impl);
     }

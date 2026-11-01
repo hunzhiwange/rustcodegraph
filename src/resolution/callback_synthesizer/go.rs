@@ -73,15 +73,18 @@ pub(super) fn go_cross_file_method_contains_edges(queries: &mut QueryBuilder) ->
     edges
 }
 
-pub(super) fn go_implements_edges(queries: &mut QueryBuilder) -> Vec<Edge> {
+pub(super) fn go_implements_edges(
+    queries: &mut QueryBuilder,
+    ctx: &mut dyn ResolutionContext,
+) -> Vec<Edge> {
     // Go 没有显式 implements；这里用“struct 方法集合覆盖 interface 方法集合”
     // 合成 implements 边，限制候选数量以避免大包里 O(N*M) 过度膨胀。
     let mut edges = Vec::new();
     let mut seen = HashSet::new();
-    let method_names = |queries: &mut QueryBuilder, id: &str| -> HashSet<String> {
+    let mut method_names = |queries: &mut QueryBuilder, id: &str| -> Option<HashSet<String>> {
         children_of_kind(queries, id, NodeKind::Method)
             .into_iter()
-            .map(|node| node.name)
+            .map(|node| Some(format!("{}:{}", node.name, go_signature(&node, ctx)?)))
             .collect()
     };
     let go_structs = queries
@@ -101,12 +104,19 @@ pub(super) fn go_implements_edges(queries: &mut QueryBuilder) -> Vec<Edge> {
         if iface.language != Language::Go {
             continue;
         }
-        let want = method_names(queries, &iface.id);
+        let Some(want) = method_names(queries, &iface.id) else {
+            continue;
+        };
         if want.is_empty() {
             continue;
         }
         for strct in go_structs.iter().take(MAX_CALLBACKS_PER_CHANNEL) {
-            let have = struct_methods.get(&strct.id).cloned().unwrap_or_default();
+            let Some(have) = struct_methods
+                .get(&strct.id)
+                .and_then(|methods| methods.as_ref())
+            else {
+                continue;
+            };
             if want.iter().all(|name| have.contains(name)) {
                 let key = format!("{}>{}", strct.id, iface.id);
                 if seen.insert(key) {
@@ -170,7 +180,6 @@ pub(super) fn go_interface_assignment_edges(ctx: &mut dyn ResolutionContext) -> 
     let mut interfaces: HashMap<String, GoInterfaceDecl> = HashMap::new();
     let mut variables = Vec::new();
     let mut assignments = Vec::new();
-    let mut sources = HashMap::new();
     for file in files {
         let Some(content) = ctx.read_file(&file) else {
             continue;
@@ -183,7 +192,6 @@ pub(super) fn go_interface_assignment_edges(ctx: &mut dyn ResolutionContext) -> 
         }
         variables.extend(go_interface_vars(&safe, &file));
         assignments.extend(go_interface_assignments(&safe, &file));
-        sources.insert(file, safe);
     }
 
     let variables_by_name = variables
@@ -208,8 +216,7 @@ pub(super) fn go_interface_assignment_edges(ctx: &mut dyn ResolutionContext) -> 
             || !go_type_satisfies_methods(
                 &assignment.impl_name,
                 &assignment.file_path,
-                &interface.methods,
-                &sources,
+                interface,
                 ctx,
             )
         {
@@ -288,21 +295,37 @@ fn go_interface_source_node(
 fn go_type_satisfies_methods(
     impl_name: &str,
     impl_file: &str,
-    methods: &HashSet<String>,
-    sources: &HashMap<String, String>,
+    interface: &GoInterfaceDecl,
     ctx: &mut dyn ResolutionContext,
 ) -> bool {
-    // 优先信任已抽取 method 节点；抽取漏掉时再用源码 regex 兜底，避免接口桥接
-    // 被单个漏抽方法阻断。
-    methods.iter().all(|method| {
-        ctx.get_nodes_by_name(method).into_iter().any(|node| {
-            node.language == Language::Go
-                && node.file_path == impl_file
-                && node.kind == NodeKind::Method
-                && go_receiver_from_qualified_name(&node.qualified_name) == Some(impl_name)
-        }) || sources
-            .get(impl_file)
-            .is_some_and(|source| go_source_has_method(source, impl_name, method))
+    interface.methods.iter().all(|method| {
+        let declarations = ctx.get_nodes_by_name(method);
+        let wanted = declarations
+            .iter()
+            .filter(|n| {
+                n.kind == NodeKind::Method
+                    && n.file_path == interface.file_path
+                    && go_receiver_from_qualified_name(&n.qualified_name)
+                        == Some(interface.name.as_str())
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        declarations
+            .iter()
+            .filter(|node| {
+                node.language == Language::Go
+                    && node.file_path == impl_file
+                    && node.kind == NodeKind::Method
+                    && go_receiver_from_qualified_name(&node.qualified_name) == Some(impl_name)
+            })
+            .any(|node| {
+                let Some(have) = go_signature(node, ctx) else {
+                    return false;
+                };
+                wanted
+                    .iter()
+                    .any(|want| go_signature(want, ctx).as_ref() == Some(&have))
+            })
     })
 }
 
@@ -412,17 +435,6 @@ fn go_interface_method_name(line: &str) -> Option<&str> {
     Some(name)
 }
 
-fn go_source_has_method(source: &str, impl_name: &str, method: &str) -> bool {
-    let pattern = format!(
-        r"(?m)^\s*func\s*\([^)]*\*?\s*{}\s*\)\s*{}\s*\(",
-        regex::escape(impl_name),
-        regex::escape(method)
-    );
-    Regex::new(&pattern)
-        .map(|re| re.is_match(source))
-        .unwrap_or(false)
-}
-
 fn brace_delta_for_text(text: &str) -> isize {
     text.chars().fold(0isize, |acc, ch| match ch {
         '{' => acc + 1,
@@ -436,4 +448,130 @@ pub(super) fn go_receiver_from_qualified_name(qualified_name: &str) -> Option<&s
     let mut parts = qualified_name.rsplit("::");
     let _method = parts.next()?;
     parts.next()
+}
+
+// Compare stored Go signatures without erasing package identity. Unsupported
+// compound signatures are rejected rather than guessed from method names.
+fn go_signature(node: &Node, ctx: &mut dyn ResolutionContext) -> Option<String> {
+    let signature = node.signature.as_deref()?;
+    let (params, result) = signature.strip_prefix('(')?.split_once(')')?;
+    let result = result.trim().trim_start_matches('(').trim_end_matches(')');
+    let nodes = ctx.get_nodes_in_file(&node.file_path);
+    let mut canonical = |items: &str| -> Option<String> {
+        let mut out = Vec::new();
+        let items = items
+            .split(',')
+            .filter(|s| !s.trim().is_empty())
+            .collect::<Vec<_>>();
+        let mut written = Vec::new();
+        let mut carried = None;
+        for item in items.into_iter().rev() {
+            let item = item.trim();
+            let ty = if let Some((name, rest)) = item.split_once(char::is_whitespace) {
+                if name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric())
+                    && !matches!(name, "chan" | "map" | "func" | "struct" | "interface")
+                {
+                    carried = Some(rest.trim());
+                    rest.trim()
+                } else {
+                    item
+                }
+            } else if let Some(carried) = carried {
+                carried
+            } else {
+                item
+            };
+            written.push(ty);
+        }
+        for ty in written.into_iter().rev() {
+            if ty.contains(['(', ')', '{', '}']) {
+                return None;
+            }
+            let mut ty = ty
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>();
+            let source = strip_comments_for_regex(
+                &ctx.read_file(&node.file_path).unwrap_or_default(),
+                CommentLang::Go,
+            );
+            // Only true aliases preserve identity; defined types remain distinct.
+            let alias_re = Regex::new(r"(?m)^\s*type\s+(\w+)\s*=\s*([\w.*\[\]]+)\s*$").ok()?;
+            for _ in 0..8 {
+                let old = ty.clone();
+                for cap in alias_re.captures_iter(&source) {
+                    let word = Regex::new(&format!(r"\b{}\b", regex::escape(&cap[1]))).ok()?;
+                    ty = word.replace_all(&ty, &cap[2]).to_string();
+                }
+                if ty == old {
+                    break;
+                }
+            }
+            let mut imports = HashMap::new();
+            for import in nodes.iter().filter(|n| n.kind == NodeKind::Import) {
+                let path = import.name.trim_matches('"');
+                let alias = import
+                    .signature
+                    .as_deref()
+                    .and_then(|s| s.split_once(' '))
+                    .map(|(a, _)| a)
+                    .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path));
+                imports.insert(alias.to_string(), path.to_string());
+            }
+            let tokens = Regex::new(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?").ok()?;
+            let mut normalized = String::new();
+            let mut previous = 0;
+            for token in tokens.find_iter(&ty) {
+                normalized.push_str(&ty[previous..token.start()]);
+                let name = token.as_str();
+                if let Some((package, member)) = name.split_once('.') {
+                    normalized.push_str(&format!("[{}].{}", imports.get(package)?, member));
+                } else if matches!(
+                    name,
+                    "bool"
+                        | "string"
+                        | "int"
+                        | "int8"
+                        | "int16"
+                        | "int32"
+                        | "int64"
+                        | "uint"
+                        | "uint8"
+                        | "uint16"
+                        | "uint32"
+                        | "uint64"
+                        | "uintptr"
+                        | "float32"
+                        | "float64"
+                        | "complex64"
+                        | "complex128"
+                        | "byte"
+                        | "rune"
+                        | "error"
+                        | "any"
+                        | "map"
+                        | "chan"
+                ) {
+                    normalized.push_str(match name {
+                        "uint8" => "byte",
+                        "int32" => "rune",
+                        _ => name,
+                    });
+                } else {
+                    let directory = node
+                        .file_path
+                        .rsplit_once('/')
+                        .map(|(dir, _)| dir)
+                        .unwrap_or("");
+                    normalized.push_str(&format!("[{directory}].{name}"));
+                }
+                previous = token.end();
+            }
+            normalized.push_str(&ty[previous..]);
+            ty = normalized;
+            out.push(ty);
+        }
+        Some(out.join(","))
+    };
+    Some(format!("({})->{}", canonical(params)?, canonical(result)?))
 }
