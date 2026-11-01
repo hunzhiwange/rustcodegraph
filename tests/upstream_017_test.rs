@@ -64,3 +64,39 @@ fn case_017_native_results_match_serial() {
         assert_eq!(result.errors.len(), serial.errors.len());
     }
 }
+
+#[test]
+fn case_017_memory_snapshots_and_budget() {
+    use rustcodegraph::extraction::parse_worker::{parse_available_memory, parse_memory_budget};
+    assert_eq!(
+        parse_available_memory("MemTotal: 999 kB\nMemAvailable: 128 kB\n", "linux"),
+        Some(131072)
+    );
+    assert_eq!(
+        parse_available_memory(
+            "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 10.\nPages speculative: 2.\n",
+            "macos"
+        ),
+        Some(196608)
+    );
+    assert_eq!(parse_available_memory("128\r\n", "windows"), Some(131072));
+    for platform in ["linux", "macos", "windows"] {
+        assert_eq!(parse_available_memory("invalid", platform), None);
+    }
+    assert_eq!(parse_memory_budget(None), 0);
+    assert_eq!(parse_memory_budget(Some(0)), 0);
+    assert_eq!(
+        parse_memory_budget(Some(128 * 1024 * 1024)),
+        64 * 1024 * 1024
+    );
+    assert_eq!(parse_memory_budget(Some(usize::MAX)), 256 * 1024 * 1024);
+}
+
+#[test]
+fn case_017_host_memory_probe() {
+    let memory = rustcodegraph::extraction::parse_worker::available_parse_memory();
+    assert!(
+        memory.is_some(),
+        "supported test host must supply a memory snapshot"
+    );
+}

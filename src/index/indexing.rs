@@ -53,11 +53,14 @@ pub(super) fn index_facade_database_inner(
     let mut unresolved_refs = Vec::new();
     let framework_resolvers = get_all_framework_resolvers();
 
+    let parse_memory_budget = crate::extraction::parse_worker::parse_memory_budget(
+        crate::extraction::parse_worker::available_parse_memory(),
+    );
     // Keep source/result buffering bounded while allowing idle workers to pass a slow file.
     for (batch_index, batch) in files.chunks(32).enumerate() {
         let prepared = crate::extraction::parse_worker::schedule_parses(
             batch,
-            256 * 1024 * 1024,
+            parse_memory_budget,
             64 * 1024 * 1024,
             |file_path| {
                 let source = fs::read_to_string(project_root.join(file_path)).ok()?;

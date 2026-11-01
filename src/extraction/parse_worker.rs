@@ -166,3 +166,92 @@ pub fn schedule_parses<T: Sync, R: Send>(
         results.into_iter().map(|(_, result)| result).collect()
     })
 }
+
+/// Snapshot of memory currently available for additional work. Failure is
+/// conservative: callers run serially rather than assume unused memory exists.
+pub fn available_parse_memory() -> Option<usize> {
+    #[cfg(target_os = "linux")]
+    {
+        parse_available_memory(&std::fs::read_to_string("/proc/meminfo").ok()?, "linux")
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("/usr/bin/vm_stat")
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        parse_available_memory(std::str::from_utf8(&output.stdout).ok()?, "macos")
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let output = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory",
+            ])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        parse_available_memory(std::str::from_utf8(&output.stdout).ok()?, "windows")
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+/// Decode OS memory snapshots separately from acquisition for deterministic tests.
+#[doc(hidden)]
+pub fn parse_available_memory(text: &str, platform: &str) -> Option<usize> {
+    match platform {
+        "linux" => {
+            let value = text
+                .lines()
+                .find_map(|line| line.strip_prefix("MemAvailable:"))?;
+            let mut parts = value.split_whitespace();
+            let kb: usize = parts.next()?.parse().ok()?;
+            if parts.next()? != "kB" {
+                return None;
+            }
+            kb.checked_mul(1024)
+        }
+        "windows" => text.trim().parse::<usize>().ok()?.checked_mul(1024),
+        "macos" => {
+            let page_size: usize = text
+                .lines()
+                .next()?
+                .split("page size of ")
+                .nth(1)?
+                .split_whitespace()
+                .next()?
+                .parse()
+                .ok()?;
+            // Only count free/speculative pages; exclude inactive/compressed pages
+            // which may require reclaim or swap before they become usable.
+            let pages = |key: &str| -> Option<usize> {
+                text.lines()
+                    .find_map(|line| line.strip_prefix(key))?
+                    .trim()
+                    .trim_end_matches('.')
+                    .parse()
+                    .ok()
+            };
+            pages("Pages free:")?
+                .checked_add(pages("Pages speculative:")?)?
+                .checked_mul(page_size)
+        }
+        _ => None,
+    }
+}
+
+/// Reserve half of currently available memory for the application and OS, and
+/// cap parse concurrency to a modest working set even on very large machines.
+pub fn parse_memory_budget(available: Option<usize>) -> usize {
+    available.map_or(0, |bytes| (bytes / 2).min(256 * 1024 * 1024))
+}

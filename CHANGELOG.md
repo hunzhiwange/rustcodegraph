@@ -4,7 +4,7 @@
 
 ### New Features
 
-- Indexing now parses files with bounded parallel workers while preserving file order in the resulting graph.
+- Indexing now limits parallel parsing by available memory while preserving file order in the resulting graph.
 
 ### Fixes
 
