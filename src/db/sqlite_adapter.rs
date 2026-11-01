@@ -249,6 +249,11 @@ pub trait SqliteStatement {
 
 /// Database abstraction used by migrations, connection management, and queries.
 pub trait SqliteDatabase {
+    /// Available only for committed, file-backed native databases.
+    fn parallel_read_path(&self) -> Option<PathBuf> {
+        None
+    }
+
     fn prepare(&mut self, sql: &str) -> SqliteResult<Box<dyn SqliteStatement>>;
     fn exec(&mut self, sql: &str) -> SqliteResult<()>;
     fn pragma(
@@ -281,6 +286,13 @@ pub fn create_database(db_path: impl AsRef<Path>) -> SqliteResult<CreatedDatabas
     })
 }
 
+/// Open an isolated reader; no mutable connection crosses a thread boundary.
+pub fn create_readonly_database(path: &Path) -> SqliteResult<Box<dyn SqliteDatabase>> {
+    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(sqlite_error)?;
+    Ok(Box::new(RusqliteDatabase::new(conn)))
+}
+
 type SharedConnection = Rc<RefCell<Option<Connection>>>;
 
 struct RusqliteDatabase {
@@ -310,6 +322,15 @@ impl RusqliteStatement {
 }
 
 impl SqliteDatabase for RusqliteDatabase {
+    fn parallel_read_path(&self) -> Option<PathBuf> {
+        let guard = self.connection.borrow();
+        let conn = guard.as_ref()?;
+        if !conn.is_autocommit() {
+            return None;
+        }
+        conn.path().filter(|p| !p.is_empty()).map(PathBuf::from)
+    }
+
     fn prepare(&mut self, sql: &str) -> SqliteResult<Box<dyn SqliteStatement>> {
         // 先让 rusqlite 编译一次 SQL，提前暴露语法错误；实际执行时再重新
         // prepare，以便 statement 可以独立持有 SQL 而不用借用 connection。

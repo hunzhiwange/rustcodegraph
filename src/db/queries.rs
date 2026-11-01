@@ -378,6 +378,15 @@ pub struct QueryBuilder<'db> {
 }
 
 impl<'db> QueryBuilder<'db> {
+    pub(crate) fn parallel_read_path(&self) -> Option<std::path::PathBuf> {
+        self.db.parallel_read_path()
+    }
+    pub(crate) fn resolution_read_window(&mut self, begin: bool) -> bool {
+        self.db
+            .exec(if begin { "BEGIN IMMEDIATE" } else { "ROLLBACK" })
+            .is_ok()
+    }
+
     pub fn new(db: &'db mut dyn SqliteDatabase) -> Self {
         Self {
             db,

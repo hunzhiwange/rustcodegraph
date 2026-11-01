@@ -18,6 +18,77 @@ use crate::resolution::name_matcher::{
 };
 
 impl<'db> ReferenceResolver<'db> {
+    /// Compute independent chunks against a stable committed database view.
+    /// The caller remains the only writer; transactions/in-memory backends fall back.
+    pub fn resolve_all_readonly_parallel(
+        &mut self,
+        refs: &[UnresolvedReference],
+        workers: usize,
+    ) -> ResolutionResult {
+        let workers = workers.min(4).min(refs.len());
+        // Bound duplicated caches and task results; larger requests use the serial path.
+        if refs.len() > 1000 {
+            return self.resolve_all(refs, None);
+        }
+        let path = self.queries.parallel_read_path();
+        if workers < 2 || path.is_none() || !self.queries.resolution_read_window(true) {
+            return self.resolve_all(refs, None);
+        }
+        let path = path.unwrap();
+        let root = &self.project_root;
+        let tokens = self.queries.get_project_name_tokens();
+        let computed = std::thread::scope(|scope| {
+            let handles = refs
+                .chunks(refs.len().div_ceil(workers))
+                .map(|chunk| {
+                    let path = &path;
+                    scope.spawn(move || {
+                        let mut db =
+                            crate::db::sqlite_adapter::create_readonly_database(path).ok()?;
+                        let mut queries = crate::db::queries::QueryBuilder::new(db.as_mut());
+                        queries.set_project_name_tokens(tokens.clone());
+                        let mut resolver = ReferenceResolver::new(root.clone(), queries);
+                        let result = resolver.resolve_all(chunk, None);
+                        Some((
+                            result,
+                            resolver.deferred_chain_refs,
+                            resolver.deferred_this_member_refs,
+                        ))
+                    })
+                })
+                .collect::<Vec<_>>();
+            handles
+                .into_iter()
+                .map(|h| h.join().ok().flatten())
+                .collect::<Vec<_>>()
+                .into_iter()
+                .collect::<Option<Vec<_>>>()
+        });
+        let released = self.queries.resolution_read_window(false);
+        assert!(released, "failed to release resolution read window");
+        let Some(parts) = computed else {
+            return self.resolve_all(refs, None);
+        };
+        let mut result = ResolutionResult {
+            resolved: Vec::new(),
+            unresolved: Vec::new(),
+            stats: ResolutionStats::default(),
+        };
+        for (part, chain, this_member) in parts {
+            result.resolved.extend(part.resolved);
+            result.unresolved.extend(part.unresolved);
+            result.stats.total += part.stats.total;
+            result.stats.resolved += part.stats.resolved;
+            result.stats.unresolved += part.stats.unresolved;
+            for (method, count) in part.stats.by_method {
+                *result.stats.by_method.entry(method).or_default() += count;
+            }
+            self.deferred_chain_refs.extend(chain);
+            self.deferred_this_member_refs.extend(this_member);
+        }
+        result
+    }
+
     pub fn resolve_all(
         &mut self,
         unresolved_refs: &[UnresolvedReference],

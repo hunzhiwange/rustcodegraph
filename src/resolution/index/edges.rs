@@ -171,7 +171,8 @@ impl<'db> ReferenceResolver<'db> {
                 .into_iter()
                 .map(|(_, reference)| reference)
                 .collect::<Vec<_>>();
-            let result = self.resolve_all(&batch, None);
+            let workers = std::thread::available_parallelism().map_or(1, usize::from);
+            let result = self.resolve_all_readonly_parallel(&batch, workers);
             let edges = self.create_edges(&result.resolved);
             if !edges.is_empty() {
                 let _ = self.queries.insert_edges(&edges);
