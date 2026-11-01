@@ -74,7 +74,8 @@ install: release ## Install the release binary into ~/.cargo/bin.
 
 install-skill-bin: release ## Build release binary and replace ~/.rustcodegraph/bin/rustcodegraph.
 	@mkdir -p "$(dir $(SKILL_BIN))"
-	install -m 755 target/release/rustcodegraph "$(SKILL_BIN)"
+	@target_dir="$$( $(CARGO) metadata --no-deps --format-version=1 | $(NODE) -e 'let data = ""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => console.log(JSON.parse(data).target_directory));' )"; \
+		install -m 755 "$$target_dir/release/rustcodegraph" "$(SKILL_BIN)"
 	@echo "Installed rustcodegraph to $(SKILL_BIN)"
 
 # 将 package.json、Cargo.toml 和 package-lock.json 统一到目标版本。
