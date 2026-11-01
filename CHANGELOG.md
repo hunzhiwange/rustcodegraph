@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+
+## [1.2.11] - 2026-11-01
+
 ### New Features
 
 - `rustcodegraph sync` now shows live scanning, parsing, resolution, and database progress so long incremental refreshes no longer appear stuck.
@@ -113,3 +116,4 @@
 [1.2.5]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.5
 [1.2.6]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.6
 [1.2.10]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.10
+[1.2.11]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.11
