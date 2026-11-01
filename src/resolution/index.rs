@@ -40,6 +40,7 @@ pub struct ReferenceResolver<'db> {
     deferred_chain_refs: Vec<UnresolvedRef>,
     deferred_this_member_refs: Vec<UnresolvedRef>,
     razor_usings_cache: HashMap<String, Vec<String>>,
+    member_types: HashMap<String, HashMap<String, String>>,
     node_cache: LruCache<String, Vec<Node>>,
     file_cache: LruCache<String, Option<String>>,
     import_mapping_cache: LruCache<String, Vec<ImportMapping>>,

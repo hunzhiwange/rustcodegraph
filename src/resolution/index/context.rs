@@ -19,6 +19,15 @@ use crate::resolution::path_aliases::{AliasMap, load_project_aliases};
 use crate::resolution::workspace_packages::{WorkspacePackages, load_workspace_packages};
 
 impl<'db> ResolutionContext for ReferenceResolver<'db> {
+    fn get_member_receiver_type(&mut self, class: &Node, name: &str) -> Option<String> {
+        if !self.member_types.contains_key(&class.id) {
+            let nodes = self.get_nodes_in_file(&class.file_path);
+            let members = crate::resolution::name_matcher::typed::member_types(class, &nodes);
+            self.member_types.insert(class.id.clone(), members);
+        }
+        self.member_types.get(&class.id)?.get(name).cloned()
+    }
+
     fn get_nodes_in_file(&mut self, file_path: &str) -> Vec<Node> {
         let key = file_path.to_string();
         if let Some(cached) = self.node_cache.get(&key) {

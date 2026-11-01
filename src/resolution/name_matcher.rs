@@ -16,7 +16,7 @@ mod file_path;
 mod function_ref;
 mod fuzzy;
 mod method_call;
-mod typed;
+pub(crate) mod typed;
 
 use crate::resolution::types::{ResolutionContext, ResolvedRef, UnresolvedRef};
 use crate::types::{Language, ReferenceKind};

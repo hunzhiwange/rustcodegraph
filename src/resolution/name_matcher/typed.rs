@@ -150,23 +150,41 @@ pub(super) fn infer_java_field_receiver_type(
                 && node.end_line >= reference.line
         })
         .max_by_key(|node| node.start_line)?;
-    let field = in_file.iter().find(|node| {
-        node.kind == NodeKind::Field
-            && node.name == receiver_name
-            && node.language == reference.language
-            && node.start_line >= enclosing.start_line
-            && node.end_line <= enclosing.end_line
-    })?;
-    let signature = field.signature.as_ref()?;
-    let before_name = signature[..signature.rfind(&field.name)?].trim();
-    let without_generics = strip_angle_generics(before_name);
-    let normalized = without_generics.replace("[]", "").replace("...", "");
-    let last = normalized
-        .split(['.', ' ', '\t'])
-        .rfind(|part| !part.is_empty())?;
-    last.chars()
-        .next()
-        .map(|ch| ch.is_ascii_uppercase())
-        .unwrap_or(false)
-        .then(|| last.to_string())
+    context.get_member_receiver_type(enclosing, receiver_name)
+}
+
+pub(crate) fn member_types(
+    class: &crate::types::Node,
+    nodes: &[crate::types::Node],
+) -> std::collections::HashMap<String, String> {
+    nodes
+        .iter()
+        .filter(|field| {
+            field.kind == NodeKind::Field
+                && field.language == class.language
+                && field.start_line >= class.start_line
+                && field.end_line <= class.end_line
+                && !nodes.iter().any(|nested| {
+                    matches!(nested.kind, NodeKind::Class | NodeKind::Interface)
+                        && nested.id != class.id
+                        && nested.start_line >= class.start_line
+                        && nested.end_line <= class.end_line
+                        && nested.start_line <= field.start_line
+                        && nested.end_line >= field.end_line
+                })
+        })
+        .filter_map(|field| {
+            let signature = field.signature.as_ref()?;
+            let before_name = signature[..signature.rfind(&field.name)?].trim();
+            let without_generics = strip_angle_generics(before_name);
+            let normalized = without_generics.replace("[]", "").replace("...", "");
+            let last = normalized
+                .split(['.', ' ', '\t'])
+                .rfind(|part| !part.is_empty())?;
+            last.chars()
+                .next()?
+                .is_ascii_uppercase()
+                .then(|| (field.name.clone(), last.to_owned()))
+        })
+        .collect()
 }

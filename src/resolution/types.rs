@@ -150,6 +150,12 @@ pub trait ResolutionContext {
     fn get_nodes_by_lower_name(&mut self, lower_name: &str) -> Vec<Node>;
     fn get_import_mappings(&mut self, file_path: &str, language: Language) -> Vec<ImportMapping>;
 
+    /// Member signatures are analyzed once per declaration in a resolution batch.
+    fn get_member_receiver_type(&mut self, class: &Node, name: &str) -> Option<String> {
+        let nodes = self.get_nodes_in_file(&class.file_path);
+        crate::resolution::name_matcher::typed::member_types(class, &nodes).remove(name)
+    }
+
     fn get_supertypes(&mut self, _type_name: &str, _language: Language) -> Vec<String> {
         Vec::new()
     }
