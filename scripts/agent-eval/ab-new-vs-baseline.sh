@@ -21,35 +21,71 @@
 #   "<task>"        an implementation task, e.g. "Add X to Y and wire it through"
 #   [baseline-ref]  git ref for the BEFORE build (default: HEAD~1)
 # Env: AGENT_EVAL_OUT (default: /tmp/ab-new-vs-baseline)
-set -uo pipefail
+set -euo pipefail
 
 TARGET="${1:?usage: ab-new-vs-baseline.sh <indexed-repo> \"<task>\" [baseline-ref]}"
 TASK="${2:?task required}"
 BASE_REF="${3:-HEAD~1}"
 ENGINE="$(cd "$(dirname "$0")/../.." && pwd)"
-BIN="${RUSTCODEGRAPH_BIN:-$ENGINE/target/release/rustcodegraph}"
-OUT="${AGENT_EVAL_OUT:-/tmp/ab-new-vs-baseline}"
+OUT_ROOT="${AGENT_EVAL_OUT:-/tmp/ab-new-vs-baseline}"
+mkdir -p "$OUT_ROOT"
+OUT=$(mktemp -d "$OUT_ROOT/run.XXXXXX")
 PARSER_BIN="$OUT/codegraph-agent-eval-parser"
 
 command -v claude >/dev/null || { echo "claude CLI not on PATH"; exit 1; }
 [ -d "$TARGET/.rustcodegraph" ] || { echo "target not indexed: run 'rustcodegraph init $TARGET' first"; exit 1; }
-if ! git -C "$ENGINE" diff --quiet || ! git -C "$ENGINE" diff --cached --quiet; then
-  echo "engine repo has uncommitted changes — commit or stash first (this script checks files out)"; exit 1
-fi
-CHANGED=$(git -C "$ENGINE" diff --name-only "$BASE_REF" HEAD -- src 2>/dev/null)
-[ -n "$CHANGED" ] || { echo "no src/ changes between $BASE_REF and HEAD — nothing to A/B"; exit 1; }
-
-# On exit: kill any eval daemons + restore the engine to HEAD.
+DAEMON_PID=""
+SLOT_LOCK=""
+SNAPSHOT=""
+stop_daemon() {
+  if [ -n "$DAEMON_PID" ]; then
+    kill -KILL "$DAEMON_PID" 2>/dev/null || true
+    wait "$DAEMON_PID" 2>/dev/null || true
+    DAEMON_PID=""
+  fi
+}
+release_slot() {
+  if [ -n "$SLOT_LOCK" ]; then
+    rm -f "$SLOT_LOCK/owner"
+    rmdir "$SLOT_LOCK"
+    SLOT_LOCK=""
+  fi
+}
 cleanup() {
-  pkill -9 -f "serve --mcp --path $OUT/" 2>/dev/null
-  git -C "$ENGINE" checkout HEAD -- $CHANGED 2>/dev/null
-  ( cd "$ENGINE" && npm run build >/dev/null 2>&1 )
+  stop_daemon
+  release_slot
+  [ -z "$SNAPSHOT" ] || rm -rf "$SNAPSHOT"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+build_ref() {
+  local ref="$1" label="$2" n
+  SNAPSHOT=$(mktemp -d)
+  git -C "$ENGINE" archive "$ref" | tar -x -C "$SNAPSHOT"
+  mkdir -p "$ENGINE/target/rust-slot-locks"
+  while [ -z "$SLOT_LOCK" ]; do
+    for n in {1..10}; do
+      if mkdir "$ENGINE/target/rust-slot-locks/slot-$n.lock" 2>/dev/null; then
+        SLOT_LOCK="$ENGINE/target/rust-slot-locks/slot-$n.lock"
+        printf 'A/B task1 pid=%s ref=%s\n' "$$" "$ref" > "$SLOT_LOCK/owner"
+        export CARGO_TARGET_DIR="$ENGINE/target/rust-slot-$n"
+        break
+      fi
+    done
+    [ -n "$SLOT_LOCK" ] || sleep 1
+  done
+  (cd "$SNAPSHOT" && cargo build --release --bin rustcodegraph) > "$OUT/build-$label.log" 2>&1
+  cp "$CARGO_TARGET_DIR/release/rustcodegraph" "$OUT/rustcodegraph-$label"
+  release_slot
+  rm -rf "$SNAPSHOT"
+  SNAPSHOT=""
+}
 
 mkdir -p "$OUT"
 echo "###### engine=$ENGINE  baseline=$BASE_REF"
-echo "###### changed: $(echo "$CHANGED" | tr '\n' ' ')"
+
 echo "###### target=$TARGET"
 echo "###### task=$TASK"
 echo
@@ -60,8 +96,8 @@ rsync -a --exclude node_modules --exclude .git --exclude dist --exclude .rustcod
 cp -R "$OUT/t-new" "$OUT/t-base"
 
 prewarm() { # target — spawn a persistent daemon (current $BIN) and wait for its socket
-  pkill -9 -f "serve --mcp --path $1" 2>/dev/null
-  RUSTCODEGRAPH_DAEMON_IDLE_TIMEOUT_MS=1800000 "$BIN" serve --mcp --path "$1" </dev/null >/dev/null 2>&1 &
+  RUSTCODEGRAPH_DAEMON_INTERNAL=1 RUSTCODEGRAPH_DAEMON_IDLE_TIMEOUT_MS=1800000 "$BIN" serve --mcp --path "$1" </dev/null >/dev/null 2>&1 &
+  DAEMON_PID=$!
   node -e 'const fs=require("fs");let n=0;const t=setInterval(()=>{if(fs.existsSync(process.argv[1]+"/.rustcodegraph/daemon.sock")){clearInterval(t);process.exit(0)}if(n++>150){clearInterval(t);process.exit(1)}},100)' "$1" \
     && echo "  daemon warm: $1" || echo "  WARN: daemon never bound for $1 (arm may run without codegraph)"
 }
@@ -77,25 +113,18 @@ run_arm() { # label, target-copy
       --model "${MODEL:-sonnet}" --effort "${EFFORT:-high}" --max-budget-usd 4 --strict-mcp-config --mcp-config "$c" \
       </dev/null > "$OUT/run-$label.jsonl" 2>"$OUT/run-$label.err" )
   "$PARSER_BIN" agent-eval parse-run "$OUT/run-$label.jsonl" 2>&1 | grep -E "by type|Result" || echo "  (parse failed — see $OUT/run-$label.jsonl)"
-  pkill -9 -f "serve --mcp --path $tgt" 2>/dev/null
+  stop_daemon
   echo
 }
 
-echo "== NEW build (HEAD) =="
-( cd "$ENGINE" && npm run build >/dev/null 2>&1 ) && echo "  built"
-cp -f "$BIN" "$PARSER_BIN"
-"$BIN" init "$OUT/t-new" >/dev/null 2>&1 && echo "  indexed t-new"
+build_ref HEAD new
+build_ref "$BASE_REF" baseline
+BIN="$OUT/rustcodegraph-new"
+cp "$BIN" "$PARSER_BIN"
+"$BIN" init "$OUT/t-new"
 run_arm new "$OUT/t-new"
-
-echo "== BASELINE build ($BASE_REF) =="
-# Per-file: a file ADDED since baseline has no pathspec on the ref — and a
-# single multi-file checkout with one bad pathspec checks out NOTHING, which
-# silently ran the NEW build in the baseline arm. Absent-on-baseline → remove.
-for f in $CHANGED; do
-  git -C "$ENGINE" checkout "$BASE_REF" -- "$f" 2>/dev/null || rm -f "$ENGINE/$f"
-done
-( cd "$ENGINE" && npm run build >/dev/null 2>&1 ) && echo "  built"
-"$BIN" init "$OUT/t-base" >/dev/null 2>&1 && echo "  indexed t-base"
+BIN="$OUT/rustcodegraph-baseline"
+"$BIN" init "$OUT/t-base"
 run_arm baseline "$OUT/t-base"
 
 echo "###### DONE. Compare the [new] vs [baseline] 'by type' counts above"
