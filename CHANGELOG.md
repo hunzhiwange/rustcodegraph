@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Security
+
+- MCP sessions now keep sensitive default project folders inactive instead of exposing their indexed contents.
+
 
 ## [1.2.11] - 2026-11-01
 

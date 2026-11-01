@@ -173,7 +173,13 @@ pub fn resolve_daemon_root(explicit_path: Option<&Path>) -> Option<PathBuf> {
     let candidate = explicit_path
         .map(Path::to_path_buf)
         .or_else(|| env::current_dir().ok())?;
+    if crate::utils::validate_project_path(&candidate).is_some() {
+        return None;
+    }
     let root = find_nearest_code_graph_root(candidate)?;
+    if crate::utils::validate_project_path(&root).is_some() {
+        return None;
+    }
     Some(root.canonicalize().unwrap_or(root))
 }
 

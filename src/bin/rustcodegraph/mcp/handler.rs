@@ -15,8 +15,8 @@ use super::wire::{McpWireFormat, read_mcp_wire_message, write_mcp_wire_message};
 use crate::rustcodegraph_cli::args::resolve_project_path;
 use crate::rustcodegraph_cli::storage::{
     EdgeDirection, edge_matches_for_symbol, find_symbol_nodes, format_matches, format_mcp_status,
-    is_sqlite_initialized, open_sqlite_database, query_nodes, read_files, read_node_source,
-    read_numbered_file_range, read_sqlite_stats,
+    open_sqlite_database, query_nodes, read_files, read_node_source, read_numbered_file_range,
+    read_sqlite_stats,
 };
 
 pub(crate) fn handle_mcp_message<R: BufRead, W: Write>(
@@ -36,7 +36,7 @@ pub(crate) fn handle_mcp_message<R: BufRead, W: Write>(
     let response = match method {
         "initialize" => {
             session.capture_initialize_params(message.get("params"));
-            let initialized = is_sqlite_initialized(&session.project_root);
+            let initialized = super::session::default_project_active(&session.project_root);
             // 未索引时仍完成 initialize，但返回 inactive instructions；tools/list 再决定是否暴露工具。
             mcp_success(
                 id,
@@ -52,10 +52,10 @@ pub(crate) fn handle_mcp_message<R: BufRead, W: Write>(
             )
         }
         "tools/list" => {
-            if !is_sqlite_initialized(&session.project_root) {
+            if !super::session::default_project_active(&session.project_root) {
                 maybe_resolve_project_from_client_roots(session, reader, writer, wire)?;
             }
-            let initialized = is_sqlite_initialized(&session.project_root);
+            let initialized = super::session::default_project_active(&session.project_root);
             // 空工具列表是最清晰的“当前项目未激活”信号，比暴露会失败的工具更不容易误导 agent。
             mcp_success(
                 id,
@@ -75,7 +75,9 @@ pub(crate) fn handle_mcp_message<R: BufRead, W: Write>(
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
-            if !has_mcp_project_path(&arguments) && !is_sqlite_initialized(&session.project_root) {
+            if !has_mcp_project_path(&arguments)
+                && !super::session::default_project_active(&session.project_root)
+            {
                 maybe_resolve_project_from_client_roots(session, reader, writer, wire)?;
             }
             let tool_project_root = mcp_project_root(&session.project_root, &arguments);
@@ -84,7 +86,7 @@ pub(crate) fn handle_mcp_message<R: BufRead, W: Write>(
                 session.catch_up_once(&tool_project_root);
             }
             let result = if !has_mcp_project_path(&arguments)
-                && !is_sqlite_initialized(&session.project_root)
+                && !super::session::default_project_active(&session.project_root)
             {
                 mcp_tool_result(not_indexed_mcp_message(&session.project_root), false)
             } else {
@@ -101,12 +103,12 @@ pub(crate) fn handle_mcp_message<R: BufRead, W: Write>(
 
     write_mcp_wire_message(writer, &response, wire)?;
     // watcher 延迟到首次响应后启动，避免 initialize 本身被文件系统初始化成本拖慢。
-    let watcher_started = if is_sqlite_initialized(&session.project_root) {
+    let watcher_started = if super::session::default_project_active(&session.project_root) {
         session.start_watcher()
     } else {
         false
     };
-    if method == "initialize" && is_sqlite_initialized(&session.project_root) {
+    if method == "initialize" && super::session::default_project_active(&session.project_root) {
         if watcher_started {
             eprintln!("[RustCodeGraph MCP] File watcher active - graph will auto-sync on changes");
         } else if !session.watch_enabled {

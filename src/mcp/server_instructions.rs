@@ -1,3 +1,4 @@
+// Sensitive default project paths remain inactive, just like unindexed workspaces.
 //! Server-level MCP instructions sent in the initialize response.
 //!
 //! 这是 agent 看到的最高优先级 RustCodeGraph 使用说明。工具行为或推荐链路

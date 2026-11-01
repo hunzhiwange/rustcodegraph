@@ -64,7 +64,7 @@ impl McpStdioSession {
         if self.watcher.is_some() {
             return true;
         }
-        if !is_sqlite_initialized(&self.project_root) {
+        if !default_project_active(&self.project_root) {
             return false;
         }
         let Ok(mut graph) = rustcodegraph::CodeGraph::open_sync(&self.project_root) else {
@@ -91,7 +91,7 @@ impl McpStdioSession {
     }
 
     pub(super) fn catch_up_once(&mut self, project_root: &Path) {
-        if !is_sqlite_initialized(project_root) {
+        if !default_project_active(project_root) {
             return;
         }
         // canonicalize 失败时仍用原路径做 key；网络卷或刚删除的目录不应让工具调用失败。
@@ -206,4 +206,9 @@ pub(crate) fn current_parent_pid() -> Option<u32> {
 #[cfg(all(not(unix), not(windows)))]
 pub(crate) fn current_parent_pid() -> Option<u32> {
     None
+}
+
+/// A default project must pass the same path guard as an explicit tool target.
+pub(super) fn default_project_active(path: &Path) -> bool {
+    rustcodegraph::utils::validate_project_path(path).is_none() && is_sqlite_initialized(path)
 }
