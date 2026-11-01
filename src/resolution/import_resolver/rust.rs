@@ -25,6 +25,19 @@ pub(super) fn resolve_rust_path_reference(
         return None;
     }
     let leaf = *segments.last()?;
+    if let Some(files) = cfg_module_candidates(
+        &segments[..segments.len() - 1],
+        &reference.file_path,
+        context,
+    ) {
+        let targets = files
+            .iter()
+            .flat_map(|file| context.get_nodes_in_file(file))
+            .filter(|node| node.name == leaf && node.kind != NodeKind::File)
+            .collect::<Vec<_>>();
+        return (targets.len() == 1)
+            .then(|| resolved(reference, &targets[0].id, 0.9, ResolvedBy::Import));
+    }
     let file = resolve_rust_module_file(
         &segments[..segments.len() - 1],
         &reference.file_path,
@@ -87,6 +100,17 @@ pub(super) fn resolve_rust_imported_reference(
             .filter(|segment| !segment.is_empty())
             .collect::<Vec<_>>();
         if segments.is_empty() {
+            continue;
+        }
+        if let Some(candidates) = cfg_module_candidates(&segments, &reference.file_path, context) {
+            let targets = candidates
+                .iter()
+                .flat_map(|file| context.get_nodes_in_file(file))
+                .filter(|node| node.name == target_name && node.kind != NodeKind::File)
+                .collect::<Vec<_>>();
+            if targets.len() == 1 {
+                return Some(resolved(reference, &targets[0].id, 0.9, ResolvedBy::Import));
+            }
             continue;
         }
         let Some(file) = resolve_rust_module_file(&segments, &reference.file_path, context) else {
@@ -229,4 +253,72 @@ fn resolve_rust_module_file(
             )
         }),
     }
+}
+
+// Read declarations rather than guessing a platform or evaluating cfg expressions.
+// None means this is not a conditional file module handled by this helper.
+fn cfg_module_candidates(
+    segments: &[&str],
+    from_file: &str,
+    context: &mut dyn ResolutionContext,
+) -> Option<Vec<String>> {
+    let root = context.get_project_root();
+    let (parent, name) = segments.split_last()?;
+    let declaring_file = if name == ["crate"] {
+        let dir = rust_crate_root_dir(&Path::new(&root).join(from_file), context)?;
+        ["lib.rs", "main.rs"]
+            .iter()
+            .filter_map(|f| path_relative_to_project(&root, dir.join(f)))
+            .find(|f| context.file_exists(f))?
+    } else if name == ["self"] || name.is_empty() {
+        from_file.to_string()
+    } else {
+        resolve_rust_module_file(name, from_file, context)?
+    };
+    let source = context.read_file(&declaring_file)?;
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_rust::LANGUAGE.into())
+        .ok()?;
+    let tree = parser.parse(&source, None)?;
+    let mut cursor = tree.root_node().walk();
+    let mut attrs = Vec::new();
+    let mut choices = Vec::new();
+    let mut declarations = 0;
+    for node in tree.root_node().named_children(&mut cursor) {
+        if node.kind() == "attribute_item" {
+            attrs.push(node.utf8_text(source.as_bytes()).ok()?.to_string());
+            continue;
+        }
+        if node.kind() == "mod_item"
+            && node
+                .child_by_field_name("name")?
+                .utf8_text(source.as_bytes())
+                .ok()?
+                == *parent
+        {
+            declarations += 1;
+            if !attrs.iter().any(|a| a.starts_with("#[cfg("))
+                || attrs.iter().any(|a| a.contains("cfg_attr"))
+            {
+                return None;
+            }
+            let attr = attrs.iter().find(|a| a.starts_with("#[path"))?;
+            let path = attr.split('"').nth(1)?;
+            let abs = Path::new(&root).join(&declaring_file).parent()?.join(path);
+            let relative = path_relative_to_project(&root, abs)?;
+            if !context.file_exists(&relative) {
+                // An unavailable alternative could also declare the name.
+                return Some(Vec::new());
+            }
+            choices.push(relative);
+        }
+        attrs.clear();
+    }
+    if declarations < 2 {
+        return None;
+    }
+    choices.sort();
+    choices.dedup();
+    Some(choices)
 }
