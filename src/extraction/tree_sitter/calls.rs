@@ -51,6 +51,13 @@ impl TreeSitterExtractor {
             Language::TypeScript | Language::JavaScript | Language::Tsx | Language::Jsx
         ) {
             self.ts_js_call_callee_name(node)
+        } else if self.language == Language::Java {
+            get_child_by_field(node, "name").map(|name| {
+                let method = get_node_text(name, &self.source);
+                get_child_by_field(node, "object")
+                    .map(|object| format!("{}.{}", get_node_text(object, &self.source), method))
+                    .unwrap_or(method)
+            })
         } else if self.language == Language::ObjC && node.node_type() == "message_expression" {
             self.objc_message_callee_name(node, &caller_id)
         } else {

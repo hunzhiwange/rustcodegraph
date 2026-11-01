@@ -15,6 +15,7 @@ mod exact;
 mod file_path;
 mod function_ref;
 mod fuzzy;
+mod java;
 mod method_call;
 pub(crate) mod typed;
 
@@ -40,7 +41,7 @@ pub fn match_reference(
 
     // 优先选择路径、限定名和 typed chain 这类高信号策略；普通 exact/fuzzy 放在
     // 最后，避免一个常见短名抢走更具体的 import 或 receiver-type 结果。
-    match_by_file_path(reference, context)
+    let result = match_by_file_path(reference, context)
         .or_else(|| match_by_qualified_name(reference, context))
         .or_else(|| {
             matches!(reference.language, Language::Cpp | Language::C)
@@ -70,5 +71,10 @@ pub fn match_reference(
         })
         .or_else(|| match_method_call(reference, context))
         .or_else(|| match_by_exact_name(reference, context))
-        .or_else(|| match_fuzzy(reference, context))
+        .or_else(|| match_fuzzy(reference, context));
+    if reference.language == Language::Java {
+        java::refine(reference, context, result)
+    } else {
+        result
+    }
 }
