@@ -228,6 +228,9 @@ impl<'db> ReferenceResolver<'db> {
     }
 
     pub fn resolve_one(&mut self, reference: &UnresolvedRef) -> Option<ResolvedRef> {
+        if self.js_local_binding_blocks(reference) {
+            return None;
+        }
         if self.is_built_in_or_external(reference) {
             return None;
         }

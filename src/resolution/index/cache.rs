@@ -27,6 +27,8 @@ impl<'db> ReferenceResolver<'db> {
             deferred_chain_refs: Vec::new(),
             deferred_this_member_refs: Vec::new(),
             razor_usings_cache: HashMap::new(),
+            js_bindings: HashMap::new(),
+            js_analysis_count: 0,
             member_types: HashMap::new(),
             node_cache: LruCache::new(limit),
             file_cache: LruCache::new(content_limit),
@@ -86,6 +88,7 @@ impl<'db> ReferenceResolver<'db> {
         // 插入新边、运行 post-extract 或切换项目级配置后，都必须清掉这些
         // 派生结果，否则后续 resolver 可能看不到刚写入的图结构。
         self.member_types.clear();
+        self.js_bindings.clear();
         self.node_cache.clear();
         self.file_cache.clear();
         self.import_mapping_cache.clear();

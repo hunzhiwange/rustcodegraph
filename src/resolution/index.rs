@@ -27,6 +27,7 @@ mod cache;
 mod context;
 mod edges;
 mod helpers;
+mod js_bindings;
 mod razor;
 mod resolve;
 mod this_member;
@@ -40,6 +41,8 @@ pub struct ReferenceResolver<'db> {
     deferred_chain_refs: Vec<UnresolvedRef>,
     deferred_this_member_refs: Vec<UnresolvedRef>,
     razor_usings_cache: HashMap<String, Vec<String>>,
+    js_bindings: HashMap<String, js_bindings::Bindings>,
+    js_analysis_count: usize,
     member_types: HashMap<String, HashMap<String, String>>,
     node_cache: LruCache<String, Vec<Node>>,
     file_cache: LruCache<String, Option<String>>,
