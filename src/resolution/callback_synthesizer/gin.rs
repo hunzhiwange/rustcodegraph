@@ -71,7 +71,7 @@ pub(super) fn gin_middleware_chain_edges(
             let Some(args) = balanced_args(&safe, paren_idx) else {
                 continue;
             };
-            let line = safe[..mat.start()].lines().count() as u64 + 1;
+            let line = super::common::prefix_line_count(&safe, mat.start()) + 1;
             for arg in split_args(&args) {
                 if let Some(name) = handler_ident(&arg) {
                     registered

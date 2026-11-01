@@ -58,14 +58,20 @@ pub(super) fn slice_lines(content: &str, start_line: u64, end_line: u64) -> Opti
     if start_line == 0 || end_line == 0 {
         return None;
     }
-    Some(
-        content
-            .lines()
-            .skip(start_line.saturating_sub(1) as usize)
-            .take(end_line.saturating_sub(start_line).saturating_add(1) as usize)
-            .collect::<Vec<_>>()
-            .join("\n"),
-    )
+    with_lines(content, |index| {
+        let start = (start_line - 1) as usize;
+        let count = end_line.saturating_sub(start_line).saturating_add(1) as usize;
+        Some(
+            index
+                .ranges
+                .iter()
+                .skip(start)
+                .take(count)
+                .map(|&(a, b)| &content[a..b])
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    })
 }
 
 pub(super) fn enclosing_fn(nodes_in_file: &[Node], line: u64) -> Option<Node> {
@@ -123,4 +129,63 @@ pub(super) fn semantic_duplicate_methods(queries: &mut QueryBuilder, method: &No
         duplicates.push(method.clone());
     }
     duplicates
+}
+
+// One source per thread: bounded storage, exact text identity (including same-length edits).
+#[derive(Default)]
+struct SourceLines {
+    source: String,
+    ranges: Vec<(usize, usize)>,
+    newlines: Vec<usize>,
+    initialized: bool,
+    builds: usize,
+}
+thread_local! {
+    static LINES: std::cell::RefCell<SourceLines> = std::cell::RefCell::new(SourceLines::default());
+}
+fn with_lines<T>(source: &str, f: impl FnOnce(&SourceLines) -> T) -> T {
+    LINES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if !cache.initialized || cache.source != source {
+            cache.source = source.to_owned();
+            cache.newlines = source
+                .bytes()
+                .enumerate()
+                .filter_map(|(i, b)| (b == b'\n').then_some(i))
+                .collect();
+            cache.ranges.clear();
+            let mut start = 0;
+            for line in source.lines() {
+                cache.ranges.push((start, start + line.len()));
+                start += line.len();
+                if source.as_bytes().get(start) == Some(&b'\r') {
+                    start += 1;
+                }
+                if source.as_bytes().get(start) == Some(&b'\n') {
+                    start += 1;
+                }
+            }
+            cache.initialized = true;
+            cache.builds += 1;
+        }
+        f(&cache)
+    })
+}
+/// Preserve str::lines().count() on the prefix, including an unfinished final line.
+pub(super) fn prefix_line_count(source: &str, offset: usize) -> u64 {
+    assert!(source.is_char_boundary(offset));
+    with_lines(source, |index| {
+        let complete = index.newlines.partition_point(|&i| i < offset);
+        (complete + usize::from(offset > 0 && source.as_bytes()[offset - 1] != b'\n')) as u64
+    })
+}
+pub(super) struct LineCacheScope;
+impl Drop for LineCacheScope {
+    fn drop(&mut self) {
+        LINES.with(|cache| *cache.borrow_mut() = SourceLines::default());
+    }
+}
+#[cfg(test)]
+pub(super) fn cache_builds() -> usize {
+    LINES.with(|cache| cache.borrow().builds)
 }

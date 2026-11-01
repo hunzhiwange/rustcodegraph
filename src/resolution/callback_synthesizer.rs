@@ -43,6 +43,7 @@ pub fn synthesize_callback_edges(
     queries: &mut QueryBuilder,
     ctx: &mut dyn ResolutionContext,
 ) -> usize {
+    let _line_cache_scope = common::LineCacheScope;
     // 这两类 Go 边是结构修补：抽取器可能因为 receiver/type 分文件而漏 contains，
     // 或缺少显式 implements。它们先写入 DB，供后续启发式 pass 复用。
     let go_method_contains = go_cross_file_method_contains_edges(queries);

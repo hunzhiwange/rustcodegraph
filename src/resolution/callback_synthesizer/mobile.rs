@@ -34,7 +34,7 @@ pub(super) fn rn_event_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
             continue;
         };
         let nodes = ctx.get_nodes_in_file(&file);
-        let line_of = |idx: usize| content[..idx].lines().count() as u64 + 1;
+        let line_of = |idx: usize| super::common::prefix_line_count(&content, idx) + 1;
         if file.ends_with(".m")
             || file.ends_with(".mm")
             || file.ends_with(".swift")

@@ -366,7 +366,7 @@ fn go_interface_vars(source: &str, file_path: &str) -> Vec<GoInterfaceVar> {
         .filter_map(|cap| {
             let name = cap.get(1)?.as_str().to_string();
             let interface_name = cap.get(2)?.as_str().to_string();
-            let line = source[..cap.get(0)?.start()].lines().count() as u64 + 1;
+            let line = super::common::prefix_line_count(&source, cap.get(0)?.start()) + 1;
             Some(GoInterfaceVar {
                 name,
                 interface_name,
@@ -385,7 +385,7 @@ fn go_interface_assignments(source: &str, file_path: &str) -> Vec<GoInterfaceAss
         .filter_map(|cap| {
             let variable_name = cap.get(1)?.as_str().to_string();
             let impl_name = cap.get(2)?.as_str().to_string();
-            let line = source[..cap.get(0)?.start()].lines().count() as u64 + 1;
+            let line = super::common::prefix_line_count(&source, cap.get(0)?.start()) + 1;
             Some(GoInterfaceAssignment {
                 variable_name,
                 impl_name,

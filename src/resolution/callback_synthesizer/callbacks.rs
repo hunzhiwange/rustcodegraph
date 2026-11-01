@@ -216,7 +216,7 @@ pub(super) fn closure_collection_edges(
         {
             continue;
         }
-        let line_at = |idx: usize| node.start_line + src[..idx].lines().count() as u64;
+        let line_at = |idx: usize| node.start_line + super::common::prefix_line_count(&src, idx);
         for cap in DISPATCH_RE.captures_iter(&src) {
             let field = cap[1].to_string();
             dispatchers
@@ -313,7 +313,7 @@ pub(super) fn event_emitter_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> 
             continue;
         }
         let nodes = ctx.get_nodes_in_file(&file);
-        let line_of = |idx: usize| content[..idx].lines().count() as u64 + 1;
+        let line_of = |idx: usize| super::common::prefix_line_count(&content, idx) + 1;
         if has_emit {
             for cap in EMIT_RE.captures_iter(&content) {
                 if let Some(dispatcher) = enclosing_fn(&nodes, line_of(cap.get(0).unwrap().start()))
