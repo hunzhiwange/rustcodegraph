@@ -126,7 +126,48 @@ impl DatabaseConnection {
             run_migrations(db.as_mut(), current_version)?;
         }
 
-        Ok(Self::new(db, db_path, created.backend))
+        let mut connection = Self::new(db, db_path, created.backend);
+        connection.restore_bulk_edge_indexes()?;
+        Ok(connection)
+    }
+
+    /// Run a large full-resolution write window, retaining both traversal indexes.
+    pub fn with_bulk_edge_load<T>(
+        &mut self,
+        enabled: bool,
+        operation: impl FnOnce(&mut Self) -> SqliteResult<T>,
+    ) -> SqliteResult<T> {
+        if !enabled {
+            return operation(self);
+        }
+        // Keep source/target composites: unlike upstream, this schema has no
+        // identity index whose prefix could serve resolution traversal reads.
+        if let Err(error) = self.db.exec("SAVEPOINT bulk_edge_indexes; DROP INDEX IF EXISTS idx_edges_kind; DROP INDEX IF EXISTS idx_edges_provenance; RELEASE bulk_edge_indexes;") {
+            self.db.exec("ROLLBACK TO bulk_edge_indexes; RELEASE bulk_edge_indexes;")?;
+            return Err(error);
+        }
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(self)));
+        let restored = self.restore_bulk_edge_indexes();
+        match result {
+            Ok(value) => {
+                restored?;
+                value
+            }
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    }
+
+    fn restore_bulk_edge_indexes(&mut self) -> SqliteResult<()> {
+        // Use the canonical schema definitions so recovery cannot drift.
+        for statement in include_str!("schema.sql").split(';') {
+            if ["idx_edges_kind", "idx_edges_provenance"]
+                .iter()
+                .any(|name| statement.contains(&format!("CREATE INDEX IF NOT EXISTS {name} ON")))
+            {
+                self.db.exec(&format!("{statement};"))?;
+            }
+        }
+        Ok(())
     }
 
     /// Get the underlying database instance.

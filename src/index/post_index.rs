@@ -21,20 +21,29 @@ pub(super) fn resolve_facade_reference_queue(project_root: &Path, full_rebuild: 
     let Ok(mut db) = DatabaseConnection::open(facade_database_path(project_root)) else {
         return 0;
     };
-    let queries = QueryBuilder::new(db.get_db());
-    let mut resolver = crate::resolution::index::create_resolver(
-        project_root.to_string_lossy().into_owned(),
-        queries,
-    );
-    crate::utils::debug_rss("resolve:before resolve_and_persist_batched");
-    let result = resolver.resolve_and_persist_batched(None, 1000);
-    crate::utils::debug_rss("resolve:after resolve_and_persist_batched");
-    let chained = resolver.resolve_chained_calls_via_conformance();
-    crate::utils::debug_rss("resolve:after chained");
-    let inherited_this = resolver.resolve_deferred_this_member_refs();
-    crate::utils::debug_rss("resolve:after deferred_this");
-    let resolved = result.stats.resolved as usize + chained + inherited_this;
-    drop(resolver);
+    let pending = QueryBuilder::new(db.get_db())
+        .get_unresolved_references_count()
+        .unwrap_or(0);
+    let resolved = match db.with_bulk_edge_load(full_rebuild && pending >= 150_000, |db| {
+        let queries = QueryBuilder::new(db.get_db());
+        let mut resolver = crate::resolution::index::create_resolver(
+            project_root.to_string_lossy().into_owned(),
+            queries,
+        );
+        crate::utils::debug_rss("resolve:before resolve_and_persist_batched");
+        let result = resolver.resolve_and_persist_batched(None, 1000);
+        crate::utils::debug_rss("resolve:after resolve_and_persist_batched");
+        let chained = resolver.resolve_chained_calls_via_conformance();
+        crate::utils::debug_rss("resolve:after chained");
+        let inherited_this = resolver.resolve_deferred_this_member_refs();
+        crate::utils::debug_rss("resolve:after deferred_this");
+        let resolved = result.stats.resolved as usize + chained + inherited_this;
+        drop(resolver);
+        Ok(resolved)
+    }) {
+        Ok(resolved) => resolved,
+        Err(_) => return 0,
+    };
     crate::utils::debug_rss("resolve:after drop(resolver)");
     // 合成边依赖最新持久化结果；先释放 resolver，避免同一连接上继续借用导致后续写入受限。
     let synthesized = synthesize_facade_dynamic_edges(project_root, full_rebuild);
