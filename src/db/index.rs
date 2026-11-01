@@ -131,6 +131,39 @@ impl DatabaseConnection {
         Ok(connection)
     }
 
+    /// Defer automatic WAL checkpoints, restoring the exact interval even on unwind.
+    pub fn with_deferred_wal<T>(
+        &mut self,
+        enabled: bool,
+        operation: impl FnOnce(&mut Self) -> SqliteResult<T>,
+    ) -> SqliteResult<T> {
+        if !enabled
+            || std::env::var("RUSTCODEGRAPH_NO_WAL_DEFER").as_deref() == Ok("1")
+            || self.get_journal_mode()? != "wal"
+        {
+            return operation(self);
+        }
+        let prior = self
+            .db
+            .pragma("wal_autocheckpoint", Some(PragmaOptions { simple: true }))?;
+        self.db.exec("PRAGMA wal_autocheckpoint=0")?;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(self)));
+        let restored = self.db.exec(&format!(
+            "PRAGMA wal_autocheckpoint={}",
+            prior
+                .and_then(|v| v.into_string_lossy())
+                .unwrap_or_else(|| "1000".into())
+        ));
+        let _ = self.db.exec("PRAGMA wal_checkpoint(PASSIVE)");
+        match result {
+            Ok(value) => {
+                restored?;
+                value
+            }
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    }
+
     /// Run a large full-resolution write window, retaining both traversal indexes.
     pub fn with_bulk_edge_load<T>(
         &mut self,
@@ -294,4 +327,55 @@ pub const DATABASE_FILENAME: &str = "rustcodegraph.db";
 /// 也让 init/uninit、watcher 和 MCP server 对同一位置达成一致。
 pub fn get_database_path(project_root: impl AsRef<Path>) -> PathBuf {
     get_code_graph_dir(project_root).join(DATABASE_FILENAME)
+}
+
+/// Owned native write window. Transactions are dropped before this wrapper,
+/// so early returns and unwinding restore the connection after rollback.
+pub struct WalWriteWindow {
+    connection: rusqlite::Connection,
+    prior: Option<i64>,
+}
+impl WalWriteWindow {
+    pub fn new(connection: rusqlite::Connection, enabled: bool) -> rusqlite::Result<Self> {
+        let mode: String = connection.query_row("PRAGMA journal_mode", [], |r| r.get(0))?;
+        let prior = if enabled
+            && mode.eq_ignore_ascii_case("wal")
+            && std::env::var("RUSTCODEGRAPH_NO_WAL_DEFER").as_deref() != Ok("1")
+        {
+            let prior = connection.query_row("PRAGMA wal_autocheckpoint", [], |r| r.get(0))?;
+            connection.pragma_update(None, "wal_autocheckpoint", 0)?;
+            Some(prior)
+        } else {
+            None
+        };
+        Ok(Self { connection, prior })
+    }
+    pub fn fold(&self) {
+        if self.prior.is_some() {
+            let _ = self
+                .connection
+                .execute_batch("PRAGMA wal_checkpoint(PASSIVE)");
+        }
+    }
+}
+impl std::ops::Deref for WalWriteWindow {
+    type Target = rusqlite::Connection;
+    fn deref(&self) -> &Self::Target {
+        &self.connection
+    }
+}
+impl std::ops::DerefMut for WalWriteWindow {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.connection
+    }
+}
+impl Drop for WalWriteWindow {
+    fn drop(&mut self) {
+        if let Some(prior) = self.prior {
+            self.fold();
+            let _ = self
+                .connection
+                .pragma_update(None, "wal_autocheckpoint", prior);
+        }
+    }
 }

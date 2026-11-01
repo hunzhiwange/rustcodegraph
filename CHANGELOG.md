@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- Incremental sync now defers automatic WAL checkpoints during database writes to avoid repeatedly flushing the same data.
+
 ### Security
 
 - MCP sessions now keep sensitive default project folders inactive instead of exposing their indexed contents.

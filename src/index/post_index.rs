@@ -21,39 +21,45 @@ pub(super) fn resolve_facade_reference_queue(project_root: &Path, full_rebuild: 
     let Ok(mut db) = DatabaseConnection::open(facade_database_path(project_root)) else {
         return 0;
     };
-    let pending = QueryBuilder::new(db.get_db())
-        .get_unresolved_references_count()
-        .unwrap_or(0);
-    let resolved = match db.with_bulk_edge_load(full_rebuild && pending >= 150_000, |db| {
-        let queries = QueryBuilder::new(db.get_db());
-        let mut resolver = crate::resolution::index::create_resolver(
-            project_root.to_string_lossy().into_owned(),
-            queries,
-        );
-        crate::utils::debug_rss("resolve:before resolve_and_persist_batched");
-        let result = resolver.resolve_and_persist_batched(None, 1000);
-        crate::utils::debug_rss("resolve:after resolve_and_persist_batched");
-        let chained = resolver.resolve_chained_calls_via_conformance();
-        crate::utils::debug_rss("resolve:after chained");
-        let inherited_this = resolver.resolve_deferred_this_member_refs();
-        crate::utils::debug_rss("resolve:after deferred_this");
-        let resolved = result.stats.resolved as usize + chained + inherited_this;
-        drop(resolver);
+    let resolved = match db.with_deferred_wal(!full_rebuild, |db| {
+        let pending = QueryBuilder::new(db.get_db())
+            .get_unresolved_references_count()
+            .unwrap_or(0);
+        let resolved = db.with_bulk_edge_load(full_rebuild && pending >= 150_000, |db| {
+            let queries = QueryBuilder::new(db.get_db());
+            let mut resolver = crate::resolution::index::create_resolver(
+                project_root.to_string_lossy().into_owned(),
+                queries,
+            );
+            crate::utils::debug_rss("resolve:before resolve_and_persist_batched");
+            let result = resolver.resolve_and_persist_batched(None, 1000);
+            crate::utils::debug_rss("resolve:after resolve_and_persist_batched");
+            let chained = resolver.resolve_chained_calls_via_conformance();
+            crate::utils::debug_rss("resolve:after chained");
+            let inherited_this = resolver.resolve_deferred_this_member_refs();
+            crate::utils::debug_rss("resolve:after deferred_this");
+            let resolved = result.stats.resolved as usize + chained + inherited_this;
+            drop(resolver);
+            Ok(resolved)
+        })?;
         Ok(resolved)
     }) {
-        Ok(resolved) => resolved,
+        Ok(value) => value,
         Err(_) => return 0,
     };
     crate::utils::debug_rss("resolve:after drop(resolver)");
     // 合成边依赖最新持久化结果；先释放 resolver，避免同一连接上继续借用导致后续写入受限。
     let synthesized = synthesize_facade_dynamic_edges(project_root, full_rebuild);
     crate::utils::debug_rss("resolve:after synthesize");
-    let removed = dedupe_facade_persisted_edges(project_root);
+    let removed = dedupe_facade_persisted_edges(project_root, full_rebuild);
     resolved.saturating_add(synthesized).saturating_sub(removed)
 }
 
-pub(super) fn dedupe_facade_persisted_edges(project_root: &Path) -> usize {
+pub(super) fn dedupe_facade_persisted_edges(project_root: &Path, full_rebuild: bool) -> usize {
     let Ok(conn) = open_facade_database(project_root) else {
+        return 0;
+    };
+    let Ok(conn) = crate::db::index::WalWriteWindow::new(conn, !full_rebuild) else {
         return 0;
     };
     conn.execute(
@@ -82,7 +88,21 @@ pub(super) fn synthesize_facade_dynamic_edges(project_root: &Path, full_rebuild:
     let Ok(mut db) = DatabaseConnection::open(facade_database_path(project_root)) else {
         return 0;
     };
+    db.with_deferred_wal(!full_rebuild, |db| {
+        Ok(synthesize_facade_dynamic_edges_inner(
+            project_root,
+            full_rebuild,
+            db,
+        ))
+    })
+    .unwrap_or_default()
+}
 
+fn synthesize_facade_dynamic_edges_inner(
+    project_root: &Path,
+    full_rebuild: bool,
+    db: &mut DatabaseConnection,
+) -> usize {
     if full_rebuild {
         // 全量索引保持原行为：一次性 load 整库节点供合成上下文做 O(1) 内存查询。
         let mut queries = QueryBuilder::new(db.get_db());

@@ -28,11 +28,15 @@ pub(super) fn index_facade_database_inner(
     selected_paths: Option<HashSet<String>>,
     mut progress: IndexProgressCallback<'_>,
 ) -> IndexResult {
-    let mut conn = match ensure_facade_database(project_root) {
+    let conn = match ensure_facade_database(project_root) {
         Ok(conn) => conn,
         Err(err) => return index_failure(err, started),
     };
     let full_rebuild = selected_paths.is_none();
+    let mut conn = match crate::db::index::WalWriteWindow::new(conn, !full_rebuild) {
+        Ok(conn) => conn,
+        Err(err) => return index_failure(format!("failed to defer WAL: {err}"), started),
+    };
     let mut files = existing_source_files(project_root);
     if let Some(selected_paths) = selected_paths.as_ref() {
         files.retain(|path| selected_paths.contains(path));
@@ -495,6 +499,8 @@ pub(super) fn index_facade_database_inner(
             started,
         );
     }
+
+    conn.fold();
 
     if files_indexed > 0 {
         let conn = match open_facade_database(project_root) {
