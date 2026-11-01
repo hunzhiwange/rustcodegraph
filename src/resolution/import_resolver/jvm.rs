@@ -28,7 +28,60 @@ pub fn resolve_jvm_import(
     if sym == "*" {
         return None;
     }
-    let candidates = context.get_nodes_by_qualified_name(&format!("{pkg}::{sym}"));
+    let mut candidates = context.get_nodes_by_qualified_name(&format!("{pkg}::{sym}"));
+    // Native Kotlin extraction prefixes package names with the file scope.
+    if candidates.is_empty() && reference.language == Language::Kotlin {
+        let suffix = format!("::{pkg}::{sym}");
+        candidates = context
+            .get_nodes_by_name(sym)
+            .into_iter()
+            .filter(|n| n.language == Language::Kotlin && n.qualified_name.ends_with(&suffix))
+            .collect();
+    }
+    if reference.language == Language::Kotlin {
+        let source_set = |path: &str| -> Option<String> {
+            let parts: Vec<_> = path.split('/').collect();
+            parts
+                .windows(2)
+                .find(|p| p[0] == "src")
+                .map(|p| p[1].to_string())
+        };
+        let target = |set: &str| -> String {
+            for suffix in [
+                "InstrumentedTest",
+                "UnitTest",
+                "DeviceTest",
+                "HostTest",
+                "Main",
+                "Test",
+            ] {
+                if let Some(t) = set.strip_suffix(suffix) {
+                    return t.to_string();
+                }
+            }
+            set.to_string()
+        };
+        if let Some(set) = source_set(&reference.file_path) {
+            let caller = target(&set);
+            candidates.retain(|n| {
+                source_set(&n.file_path).is_some_and(|s| {
+                    let t = target(&s);
+                    (t == "common" || t == caller)
+                        && (!s.ends_with("Test") || set.ends_with("Test"))
+                })
+            });
+            let own: Vec<_> = candidates
+                .iter()
+                .filter(|n| source_set(&n.file_path).is_some_and(|s| target(&s) == caller))
+                .cloned()
+                .collect();
+            if !own.is_empty() {
+                candidates = own;
+            }
+        } else {
+            candidates.retain(|n| source_set(&n.file_path).is_none_or(|s| target(&s) == "common"));
+        }
+    }
     if candidates.is_empty() {
         return None;
     }

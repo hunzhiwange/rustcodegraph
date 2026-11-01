@@ -234,7 +234,9 @@ impl<'db> ReferenceResolver<'db> {
 
         // 没有任何名字/import/framework 线索时直接跳过，避免每个标准库调用都
         // 扫一遍匹配策略；framework 的 claims_reference 是保留的兜底入口。
-        if !self.has_any_possible_match(&reference.reference_name)
+        if !(reference.reference_kind == ReferenceKind::Imports
+            && matches!(reference.language, Language::Java | Language::Kotlin))
+            && !self.has_any_possible_match(&reference.reference_name)
             && !self.matches_any_import(reference)
             && !self
                 .frameworks
