@@ -84,13 +84,39 @@ pub fn validate_path_within_root(
     }
 }
 
+// Resolve the existing ancestor too, so missing descendants cannot hide a link.
+fn real_path_with_missing_tail(path: &Path) -> PathBuf {
+    let mut ancestor = path;
+    let mut tail = Vec::new();
+    loop {
+        if let Ok(mut real) = fs::canonicalize(ancestor) {
+            for part in tail.iter().rev() {
+                real.push(part);
+            }
+            return real;
+        }
+        let Some(name) = ancestor.file_name() else {
+            return path.to_path_buf();
+        };
+        tail.push(name.to_os_string());
+        let Some(parent) = ancestor.parent() else {
+            return path.to_path_buf();
+        };
+        ancestor = parent;
+    }
+}
+
 pub fn validate_project_path(dir_path: impl AsRef<Path>) -> Option<String> {
     let resolved = absolutize(dir_path.as_ref());
     let resolved_text = resolved.to_string_lossy().to_string();
+    let real = real_path_with_missing_tail(&resolved);
     let resolved_lower = resolved_text.to_lowercase();
 
     if SENSITIVE_PATHS.contains(&resolved_text.as_str())
         || SENSITIVE_PATHS.contains(&resolved_lower.as_str())
+        || SENSITIVE_PATHS
+            .iter()
+            .any(|sensitive| real == real_path_with_missing_tail(Path::new(sensitive)))
     {
         return Some(format!(
             "Refusing to operate on sensitive system directory: {resolved_text}"
@@ -101,7 +127,9 @@ pub fn validate_project_path(dir_path: impl AsRef<Path>) -> Option<String> {
         // 用户主目录下的密钥/云凭据目录即使存在也不应作为项目根参与索引或 MCP 操作。
         for dir in [".ssh", ".gnupg", ".aws", ".config"] {
             let sensitive_path = home_dir.join(dir);
-            if is_within_dir(&resolved, &sensitive_path) {
+            if is_within_dir(&resolved, &sensitive_path)
+                || is_within_dir(&real, &real_path_with_missing_tail(&sensitive_path))
+            {
                 return Some(format!(
                     "Refusing to operate on sensitive directory: {resolved_text}"
                 ));

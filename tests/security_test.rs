@@ -450,6 +450,18 @@ mod validate_project_path_sensitive_directory_blocking {
         assert!(etc.to_lowercase().contains("sensitive system directory"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn rejects_a_symlink_to_a_sensitive_directory() {
+        let dir = TempDir::new("cg-sensitive-link");
+        std::os::unix::fs::symlink("/etc", dir.path().join("project")).unwrap();
+        assert!(
+            validate_project_path(dir.path().join("project"))
+                .unwrap()
+                .contains("sensitive system directory")
+        );
+    }
+
     #[test]
     fn allows_a_normal_existing_directory() {
         let dir = TempDir::new("cg-validate");
