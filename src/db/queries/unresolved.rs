@@ -119,6 +119,24 @@ impl<'db> QueryBuilder<'db> {
         )
     }
 
+    /// Seek by the stable primary key even when preceding rows are deleted.
+    pub fn get_unresolved_references_batch_after(
+        &mut self,
+        after_id: i64,
+        limit: i64,
+    ) -> SqliteResult<Vec<(i64, UnresolvedReference)>> {
+        let mut stmt = self
+            .db
+            .prepare("SELECT * FROM unresolved_refs WHERE id > ? ORDER BY id LIMIT ?")?;
+        stmt.all(positional(vec![after_id, limit]))?
+            .into_iter()
+            .map(|row| {
+                let id = row_optional_i64(&row, "id").unwrap_or(0);
+                row_to_unresolved_reference(&row).map(|reference| (id, reference))
+            })
+            .collect()
+    }
+
     pub fn get_unresolved_references_by_files(
         &mut self,
         file_paths: &[String],

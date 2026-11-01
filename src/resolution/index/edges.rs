@@ -151,17 +151,26 @@ impl<'db> ReferenceResolver<'db> {
             .max(0) as usize;
         let mut processed = 0usize;
         let mut aggregate_stats = ResolutionStats::default();
-        let mut prev_remaining = i64::MAX;
+        let mut after_id = 0;
 
         loop {
             let batch = self
                 .queries
-                .get_unresolved_references_batch(0, batch_size as i64)
+                .get_unresolved_references_batch_after(after_id, batch_size as i64)
                 .unwrap_or_default();
             if batch.is_empty() {
                 break;
             }
 
+            let next_id = batch.last().unwrap().0;
+            if next_id <= after_id {
+                break;
+            }
+            after_id = next_id;
+            let batch = batch
+                .into_iter()
+                .map(|(_, reference)| reference)
+                .collect::<Vec<_>>();
             let result = self.resolve_all(&batch, None);
             let edges = self.create_edges(&result.resolved);
             if !edges.is_empty() {
@@ -204,22 +213,6 @@ impl<'db> ReferenceResolver<'db> {
             if let Some(on_progress) = on_progress.as_deref_mut() {
                 on_progress(processed, total);
             }
-
-            if result.resolved.is_empty() && result.unresolved.len() == batch.len() {
-                // 当前 batch 全部失败时继续循环只会重复处理同一批 unresolved；
-                // 及时退出可避免大仓库进入无收益的解析自旋。
-                break;
-            }
-            let remaining = self
-                .queries
-                .get_unresolved_references_count()
-                .unwrap_or_default();
-            if remaining >= prev_remaining {
-                // 删除已处理引用后 remaining 应单调下降；未下降说明没有继续推进，
-                // 防御性退出，避免数据异常或重复键造成死循环。
-                break;
-            }
-            prev_remaining = remaining;
         }
 
         aggregate_stats
