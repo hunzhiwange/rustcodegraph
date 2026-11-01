@@ -106,17 +106,50 @@ fn real_path_with_missing_tail(path: &Path) -> PathBuf {
     }
 }
 
+// Normalize only comparison keys; preserve the caller's path for filesystem access.
+fn sensitive_path_key(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    #[cfg(windows)]
+    let text = {
+        let plain = text.replace('/', "\\");
+        if let Some(rest) = plain
+            .strip_prefix(r"\\?\")
+            .or_else(|| plain.strip_prefix(r"\\.\"))
+        {
+            if rest
+                .get(..4)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(r"UNC\"))
+            {
+                format!(r"\\{}", &rest[4..])
+            } else if rest.as_bytes().get(1) == Some(&b':') {
+                rest.to_owned()
+            } else {
+                plain
+            }
+        } else {
+            plain
+        }
+    };
+    if cfg!(any(windows, target_os = "macos")) {
+        PathBuf::from(text.to_lowercase())
+    } else {
+        PathBuf::from(&*text)
+    }
+}
+
 pub fn validate_project_path(dir_path: impl AsRef<Path>) -> Option<String> {
     let resolved = absolutize(dir_path.as_ref());
     let resolved_text = resolved.to_string_lossy().to_string();
     let real = real_path_with_missing_tail(&resolved);
-    let resolved_lower = resolved_text.to_lowercase();
+    let resolved_key = sensitive_path_key(&resolved);
 
-    if SENSITIVE_PATHS.contains(&resolved_text.as_str())
-        || SENSITIVE_PATHS.contains(&resolved_lower.as_str())
-        || SENSITIVE_PATHS
-            .iter()
-            .any(|sensitive| real == real_path_with_missing_tail(Path::new(sensitive)))
+    if SENSITIVE_PATHS
+        .iter()
+        .any(|path| resolved_key == sensitive_path_key(Path::new(path)))
+        || SENSITIVE_PATHS.iter().any(|sensitive| {
+            sensitive_path_key(&real)
+                == sensitive_path_key(&real_path_with_missing_tail(Path::new(sensitive)))
+        })
     {
         return Some(format!(
             "Refusing to operate on sensitive system directory: {resolved_text}"
@@ -127,8 +160,11 @@ pub fn validate_project_path(dir_path: impl AsRef<Path>) -> Option<String> {
         // 用户主目录下的密钥/云凭据目录即使存在也不应作为项目根参与索引或 MCP 操作。
         for dir in [".ssh", ".gnupg", ".aws", ".config"] {
             let sensitive_path = home_dir.join(dir);
-            if is_within_dir(&resolved, &sensitive_path)
-                || is_within_dir(&real, &real_path_with_missing_tail(&sensitive_path))
+            if is_within_dir(&resolved_key, &sensitive_path_key(&sensitive_path))
+                || is_within_dir(
+                    &sensitive_path_key(&real),
+                    &sensitive_path_key(&real_path_with_missing_tail(&sensitive_path)),
+                )
             {
                 return Some(format!(
                     "Refusing to operate on sensitive directory: {resolved_text}"

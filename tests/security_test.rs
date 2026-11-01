@@ -472,7 +472,13 @@ mod validate_project_path_sensitive_directory_blocking {
     #[test]
     #[cfg_attr(not(windows), ignore = "process.platform === 'win32'")]
     fn blocks_windows_system_directories_regardless_of_case() {
-        for path in ["C:\\Windows", "c:\\windows", "C:\\WINDOWS\\System32"] {
+        for path in [
+            "C:\\Windows",
+            "c:\\windows",
+            "C:\\WINDOWS\\System32",
+            r"\\?\C:\Windows",
+            r"\\.\C:\Windows",
+        ] {
             let message =
                 validate_project_path(path).expect("Windows system path should be blocked");
             assert!(
