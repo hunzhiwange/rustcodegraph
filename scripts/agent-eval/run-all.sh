@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # With/without A/B (and optional interactive) eval for a rustcodegraph version on a
 # repo. Codegraph is the ONLY variable: both arms launch claude with
-# --strict-mcp-config — with = rustcodegraph-only MCP (pointed at $CG_BIN),
+# --strict-mcp-config — with = rustcodegraph-only MCP (pointed at $RUSTCODEGRAPH_BIN),
 # without = empty MCP. Built-in Read/Grep/Bash stay available in both arms.
 #
 # Usage: run-all.sh <repo-path> "<question>" [headless|tmux|all]
-# Env:   CG_BIN          rustcodegraph binary (default: command -v rustcodegraph)
+# Env:   RUSTCODEGRAPH_BIN          rustcodegraph binary (default: command -v rustcodegraph)
 #        AGENT_EVAL_OUT  output dir (default: /tmp/agent-eval)
 #        MODEL / EFFORT  claude model/effort (default: sonnet / high — the
 #                        standing A/B policy; see CLAUDE.md, don't raise)
@@ -17,9 +17,11 @@ MODE="${3:-headless}"
 CG_BIN="${RUSTCODEGRAPH_BIN:-$(command -v rustcodegraph)}"
 OUT="${AGENT_EVAL_OUT:-/tmp/agent-eval}"
 HARNESS="$(cd "$(dirname "$0")" && pwd)"
+STATUS=0
+record_failure() { local rc="$1"; if [ "$STATUS" -eq 0 ] && [ "$rc" -ne 0 ]; then STATUS="$rc"; fi; }
 mkdir -p "$OUT"
 
-[ -n "$CG_BIN" ] || { echo "no rustcodegraph binary on PATH (set CG_BIN)"; exit 1; }
+[ -n "$CG_BIN" ] || { echo "no rustcodegraph binary on PATH (set RUSTCODEGRAPH_BIN)"; exit 1; }
 [ -d "$REPO/.rustcodegraph" ] || { echo "no .rustcodegraph index at $REPO — index it first"; exit 1; }
 case "$MODE" in headless|tmux|all) ;; *) echo "mode must be headless|tmux|all (got '$MODE')"; exit 1;; esac
 
@@ -45,9 +47,12 @@ headless() {
       --max-budget-usd 4 \
       --strict-mcp-config --mcp-config "$cfg" \
       > "$OUT/run-$label.jsonl" 2>"$OUT/run-$label.err" )
-  echo "exit $? -> $OUT/run-$label.jsonl ($(wc -l < "$OUT/run-$label.jsonl" | tr -d ' ') lines)"
+  local agent_status=$?
+  record_failure "$agent_status"
+  echo "exit $agent_status -> $OUT/run-$label.jsonl ($(wc -l < "$OUT/run-$label.jsonl" | tr -d ' ') lines)"
   tail -2 "$OUT/run-$label.err" 2>/dev/null
-  "$CG_BIN" agent-eval parse-run "$OUT/run-$label.jsonl" 2>&1 || true
+  "$CG_BIN" agent-eval parse-run "$OUT/run-$label.jsonl" 2>&1
+  record_failure "$?"
   echo
 }
 
@@ -59,11 +64,13 @@ fi
 if [ "$MODE" = tmux ] || [ "$MODE" = all ]; then
   echo "############################## INTERACTIVE [with] ##############################"
   CLAUDE_EXTRA_ARGS="--model ${MODEL:-sonnet} --effort ${EFFORT:-high} --strict-mcp-config --mcp-config $OUT/mcp-rustcodegraph.json" \
-    bash "$HARNESS/itrun.sh" "$REPO" "int-with" "$Q" 2>&1 || echo "[itrun WITH failed]"
+    bash "$HARNESS/itrun.sh" "$REPO" "int-with" "$Q" 2>&1 || { record_failure "$?"; echo "[itrun WITH failed]"; }
   echo
   echo "############################## INTERACTIVE [without] ##############################"
   CLAUDE_EXTRA_ARGS="--model ${MODEL:-sonnet} --effort ${EFFORT:-high} --strict-mcp-config --mcp-config $OUT/mcp-empty.json" \
-    bash "$HARNESS/itrun.sh" "$REPO" "int-without" "$Q" 2>&1 || echo "[itrun WITHOUT failed]"
+    bash "$HARNESS/itrun.sh" "$REPO" "int-without" "$Q" 2>&1 || { record_failure "$?"; echo "[itrun WITHOUT failed]"; }
   echo
 fi
 echo "############################## RUN-ALL COMPLETE ##############################"
+
+exit "$STATUS"

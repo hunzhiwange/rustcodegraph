@@ -155,6 +155,7 @@ fn parse_bench_readme_sums_per_turn_assistant_tokens() {
         &run_dir.join("run-headless-with.jsonl"),
         &[
             r#"{"type":"assistant","message":{"usage":{"input_tokens":300,"output_tokens":100,"cache_read_input_tokens":400,"cache_creation_input_tokens":200},"content":[{"type":"tool_use","id":"t1","name":"mcp__rustcodegraph__rustcodegraph_explore","input":{"query":"alpha"}}]}}"#,
+            r#"{"type":"assistant","message":{"usage":{"input_tokens":1000},"content":[]}}"#,
             r#"{"type":"result","subtype":"success","duration_ms":10000,"num_turns":2,"total_cost_usd":0.1}"#,
         ],
     );
@@ -171,9 +172,9 @@ fn parse_bench_readme_sums_per_turn_assistant_tokens() {
     assert!(report.contains("vscode"), "{report}");
     assert!(report.contains("1/1"), "{report}");
     assert!(report.contains("10s->20s"), "{report}");
-    assert!(report.contains("1k->2k (50%)"), "{report}");
+    assert!(report.contains("2k->2k (0%)"), "{report}");
     assert!(
-        report.contains("AVERAGE saved:  cost 50%  ·  tokens 50%  ·  time 50%  ·  tool calls 0%"),
+        report.contains("AVERAGE saved:  cost 50%  ·  tokens 0%  ·  time 50%  ·  tool calls 0%"),
         "{report}"
     );
 }
