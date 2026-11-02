@@ -18,6 +18,8 @@ verbatim source PLUS who calls it and what it affects, so you edit with the
 blast radius in view. More accurate context, in far fewer tokens and
 round-trips than reading files yourself.
 
+Explore and node return indexed source and graph context in both CLI and MCP sessions.
+
 Unchanged source previously sent in this session may be replaced by explicit file and line pointers; treat it as already Read. Short ranges and changed files are resent. Freed source budget is used for subsequent files; an all-repeat response still includes a useful source block.
 Named flow paths prioritize endpoint and bridge source within the output budget.
 Polymorphic sibling files retain compact signatures when adaptive source rendering applies.

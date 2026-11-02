@@ -90,9 +90,27 @@ pub(crate) fn handle_mcp_message<R: BufRead, W: Write>(
             {
                 mcp_tool_result(not_indexed_mcp_message(&session.project_root), false)
             } else {
-                match execute_mcp_tool(&session.project_root, &name, &arguments) {
-                    Ok(text) => mcp_tool_result(text, false),
-                    Err(err) => mcp_tool_result(err, true),
+                if matches!(
+                    name.as_str(),
+                    "rustcodegraph_explore" | "rustcodegraph_node"
+                ) {
+                    let mut args = arguments.as_object().cloned().unwrap_or_default();
+                    args.insert(
+                        "projectPath".to_owned(),
+                        json!(tool_project_root.to_string_lossy()),
+                    );
+                    if name == "rustcodegraph_node" && !args.contains_key("symbol") {
+                        if let Some(value) = args.get("name").cloned() {
+                            args.insert("symbol".to_owned(), value);
+                        }
+                    }
+                    serde_json::to_value(session.tool_handler.execute(&name, &args))
+                        .map_err(|error| error.to_string())?
+                } else {
+                    match execute_mcp_tool(&session.project_root, &name, &arguments) {
+                        Ok(text) => mcp_tool_result(text, false),
+                        Err(err) => mcp_tool_result(err, true),
+                    }
                 }
             };
             if name == "rustcodegraph_explore"

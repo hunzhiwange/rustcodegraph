@@ -8,6 +8,8 @@
 
 ### Fixes
 
+- MCP exploration and symbol lookup now return the full indexed source and retain retrieval state throughout each connection.
+
 - CLI indexing now uses the full language parser and reference resolution pipeline so code exploration retains symbols missed by the lightweight index.
 
 - JavaScript and TypeScript calls now respect local shadowing while reusing binding analysis during indexing.

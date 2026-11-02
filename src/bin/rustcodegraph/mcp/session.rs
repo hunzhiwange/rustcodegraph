@@ -22,6 +22,7 @@ use crate::rustcodegraph_cli::storage::is_sqlite_initialized;
 
 pub(crate) struct McpStdioSession {
     pub(super) project_root: PathBuf,
+    pub(super) tool_handler: rustcodegraph::mcp::tools::ToolHandler,
     pub(super) explore_state: rustcodegraph::mcp::explore_session_state::ExploreSessionState,
     pub(super) watch_enabled: bool,
     pub(super) client_supports_roots: bool,
@@ -37,6 +38,7 @@ impl McpStdioSession {
     pub(crate) fn new(project_root: PathBuf, watch_enabled: bool) -> Self {
         Self {
             project_root,
+            tool_handler: rustcodegraph::mcp::tools::ToolHandler::new(true),
             explore_state: Default::default(),
             watch_enabled,
             client_supports_roots: false,
@@ -213,4 +215,10 @@ pub(crate) fn current_parent_pid() -> Option<u32> {
 /// A default project must pass the same path guard as an explicit tool target.
 pub(super) fn default_project_active(path: &Path) -> bool {
     rustcodegraph::utils::validate_project_path(path).is_none() && is_sqlite_initialized(path)
+}
+
+impl Drop for McpStdioSession {
+    fn drop(&mut self) {
+        self.tool_handler.close_all();
+    }
 }

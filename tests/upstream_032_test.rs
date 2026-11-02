@@ -62,3 +62,37 @@ fn case_032_cli_indexes_exported_arrow_functions() {
         "CLI must retain the same arrow-function endpoints as library indexing"
     );
 }
+
+#[test]
+fn case_032_stdio_explore_returns_library_source() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let root = std::env::temp_dir().join(format!("rcg32-stdio-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("flow.ts"), "export function mutateElement() { renderStaticScene(); }\nfunction renderStaticScene() { return 32032; }\n").unwrap();
+    let mut graph = CodeGraph::init_sync(&root).unwrap();
+    assert!(graph.index_all(IndexOptions::default()).success);
+    graph.close();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rustcodegraph"))
+        .args(["serve", "--mcp", "--path", root.to_str().unwrap()])
+        .env("RUSTCODEGRAPH_NO_DAEMON", "1")
+        .env("RUSTCODEGRAPH_WATCH", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    for message in [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"rustcodegraph_explore","arguments":{"query":"mutateElement renderStaticScene"}}}),
+    ] {
+        writeln!(input, "{message}").unwrap();
+    }
+    drop(input);
+    let output = child.wait_with_output().unwrap();
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{output:?}");
+    assert!(text.contains("return 32032"), "{text}");
+    std::fs::remove_dir_all(root).unwrap();
+}
