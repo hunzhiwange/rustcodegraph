@@ -17,7 +17,7 @@ verbatim source PLUS who calls it and what it affects, so you edit with the
 blast radius in view. More accurate context, in far fewer tokens and
 round-trips than reading files yourself.
 
-Unchanged source previously sent in this session may be replaced by explicit file and line pointers; treat it as already Read. Short ranges and changed files are resent.
+Unchanged source previously sent in this session may be replaced by explicit file and line pointers; treat it as already Read. Short ranges and changed files are resent. Freed source budget is used for subsequent files; an all-repeat response still includes a useful source block.
 Named flow paths prioritize endpoint and bridge source within the output budget.
 Large files may show selected symbol ranges with original source coordinates; omitted ranges are not complete file contents.
 

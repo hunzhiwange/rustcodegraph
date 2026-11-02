@@ -23,6 +23,7 @@ pub(super) fn run(
     args: &serde_json::Map<String, Value>,
     project_path: Option<&str>,
     project_root: Option<&str>,
+    session: Option<&crate::mcp::explore_session_state::ExploreSessionState>,
 ) -> ToolResult {
     let Some(project_root) = project_root else {
         return text_result(&not_indexed_message(
@@ -73,6 +74,7 @@ pub(super) fn run(
             max_files,
             &budget,
             file_count,
+            session,
         );
         if budget.include_budget_note {
             output.push_str(&format!(
@@ -97,6 +99,7 @@ pub(super) fn format_explore_file_result(
     max_files: usize,
     budget: &ExploreOutputBudget,
     _file_count: usize,
+    session: Option<&crate::mcp::explore_session_state::ExploreSessionState>,
 ) -> String {
     nodes.sort_by(|a, b| {
         a.file_path
@@ -219,6 +222,9 @@ pub(super) fn format_explore_file_result(
         &file_paths.iter().map(|p| weights[p]).collect::<Vec<_>>(),
         budget.max_output_chars / 2,
     );
+    let mut reclaimed = 0usize;
+    let mut fallback = None;
+    let mut has_source = false;
     for (file_path, reservation) in file_paths.into_iter().zip(reservations) {
         let mode = render::explore_file_mode(
             &file_path,
@@ -228,16 +234,37 @@ pub(super) fn format_explore_file_result(
             &family,
         );
         lines.push(String::new());
-        lines.extend(render::render_explore_file_section(
+        let original = render::render_explore_file_section(
             project_root,
             &file_path,
             &cg.get_nodes_in_file(&file_path),
             mode,
             &source_tokens,
             &family,
-            reservation.max(1),
-        ));
+            reservation.saturating_add(reclaimed).max(1),
+        )
+        .join("\n")
+            + "\n";
+        let emitted = session
+            .map(|s| s.deduplicate(project_root, &original))
+            .unwrap_or_else(|| original.clone());
+        reclaimed = reservation
+            .saturating_add(reclaimed)
+            .saturating_sub(emitted.len());
+        if emitted != original && fallback.is_none() {
+            fallback = Some((lines.len(), original));
+        }
+        has_source |= emitted.lines().any(|line| {
+            line.split_once('\t')
+                .is_some_and(|(n, _)| n.parse::<usize>().is_ok())
+        });
+        lines.push(emitted);
     }
 
+    if !has_source {
+        if let Some((index, source)) = fallback {
+            lines[index] = source;
+        }
+    }
     lines.join("\n")
 }

@@ -143,7 +143,7 @@ impl ToolHandler {
         tool_name: &str,
         args: &serde_json::Map<String, Value>,
     ) -> ToolResult {
-        self.execute_inner(tool_name, args, true)
+        self.execute_inner(tool_name, args, true, None)
     }
 
     /// Explicit connection state keeps shared handlers free of session history.
@@ -153,7 +153,7 @@ impl ToolHandler {
         args: &serde_json::Map<String, Value>,
         state: &mut crate::mcp::explore_session_state::ExploreSessionState,
     ) -> ToolResult {
-        let mut result = self.execute(tool_name, args);
+        let result = self.execute_inner(tool_name, args, true, Some(state));
         if tool_name == "rustcodegraph_explore" && result.is_error != Some(true) {
             if let Some(root) =
                 self.project_root_for(args.get("projectPath").and_then(Value::as_str))
@@ -164,9 +164,6 @@ impl ToolHandler {
                     .map(|c| c.text.as_str())
                     .collect::<Vec<_>>()
                     .join("\n");
-                for content in &mut result.content {
-                    content.text = state.deduplicate(std::path::Path::new(&root), &content.text);
-                }
                 state.record_response(std::path::Path::new(&root), &text);
             }
         }
@@ -178,7 +175,7 @@ impl ToolHandler {
         tool_name: &str,
         args: &serde_json::Map<String, Value>,
     ) -> ToolResult {
-        self.execute_inner(tool_name, args, false)
+        self.execute_inner(tool_name, args, false, None)
     }
 
     fn execute_inner(
@@ -186,6 +183,7 @@ impl ToolHandler {
         tool_name: &str,
         args: &serde_json::Map<String, Value>,
         enforce_tool_allowlist: bool,
+        session: Option<&crate::mcp::explore_session_state::ExploreSessionState>,
     ) -> ToolResult {
         // catch-up gate 在首个上下文工具调用前执行一次，用于测试/运行时等待 watcher
         // 把刚写入的索引状态追上。status 是诊断工具，必须保持只读、低成本。
@@ -260,7 +258,7 @@ impl ToolHandler {
             }
             "rustcodegraph_files" => files::run(self, args, project_path, project_root.as_deref()),
             "rustcodegraph_explore" => {
-                super::explore::run(self, args, project_path, project_root.as_deref())
+                super::explore::run(self, args, project_path, project_root.as_deref(), session)
             }
             "rustcodegraph_node" => node::run(self, args, project_path, project_root.as_deref()),
             "rustcodegraph_callers" | "rustcodegraph_callees" | "rustcodegraph_impact" => {
