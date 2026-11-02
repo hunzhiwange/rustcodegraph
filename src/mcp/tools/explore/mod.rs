@@ -106,6 +106,18 @@ pub(super) fn format_explore_file_result(
     });
 
     let query_tokens = render::explore_query_tokens(query);
+    let named_nodes = flow::exact_named_query_nodes(&nodes, &query_tokens);
+    let protected = flow::protected_flow_nodes(cg, &named_nodes);
+    let protected_files: HashSet<_> = protected.iter().map(|n| n.file_path.clone()).collect();
+    nodes.extend(
+        protected
+            .iter()
+            .filter(|n| !nodes.iter().any(|old| old.id == n.id))
+            .cloned()
+            .collect::<Vec<_>>(),
+    );
+    let mut source_tokens = query_tokens.clone();
+    source_tokens.extend(protected.iter().map(|n| n.qualified_name.clone()));
     let unique_callable_files = render::unique_named_callable_files(cg, &query_tokens);
     let family = render::explore_family_context(cg);
     let adaptive = adaptive_explore_enabled();
@@ -141,13 +153,19 @@ pub(super) fn format_explore_file_result(
             (path.clone(), weight * flow_weight)
         })
         .collect();
-    file_paths.sort_by(|a, b| weights[b].cmp(&weights[a]).then_with(|| a.cmp(b)));
+    file_paths.sort_by(|a, b| {
+        protected_files
+            .contains(b)
+            .cmp(&protected_files.contains(a))
+            .then_with(|| weights[b].cmp(&weights[a]))
+            .then_with(|| a.cmp(b))
+    });
     // Weak relative evidence becomes a location pointer, not a source slot.
     // Cap the cliff so a concentrated query cannot silence a strong peer.
     let cliff = (weights.values().copied().max().unwrap_or(0) as f64 * 0.15).min(4.0);
     let mut pointer_files = Vec::new();
     file_paths.retain(|path| {
-        if (weights[path] as f64) < cliff {
+        if !protected_files.contains(path) && (weights[path] as f64) < cliff {
             pointer_files.push(path.clone());
             false
         } else {
@@ -215,7 +233,7 @@ pub(super) fn format_explore_file_result(
             &file_path,
             &cg.get_nodes_in_file(&file_path),
             mode,
-            &query_tokens,
+            &source_tokens,
             &family,
             reservation.max(1),
         ));

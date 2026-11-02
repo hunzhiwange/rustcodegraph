@@ -16,6 +16,7 @@ verbatim source PLUS who calls it and what it affects, so you edit with the
 blast radius in view. More accurate context, in far fewer tokens and
 round-trips than reading files yourself.
 
+Named flow paths prioritize endpoint and bridge source within the output budget.
 Large files may show selected symbol ranges with original source coordinates; omitted ranges are not complete file contents.
 
 ## Use rustcodegraph instead of reading files — for questions AND edits

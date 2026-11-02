@@ -160,6 +160,20 @@ pub(super) fn format_flow_section(
         return lines;
     }
 
+    let paths = named_flow_paths(cg, named_nodes);
+
+    if paths.is_empty() {
+        lines.push("- No static call path found among the queried symbols; source context is included below.".to_string());
+        return lines;
+    }
+
+    for path in paths {
+        lines.push(format!("- {}", format_flow_path(&path)));
+    }
+    lines
+}
+
+fn named_flow_paths(cg: &mut crate::CodeGraph, named_nodes: &[Node]) -> Vec<Vec<FlowStep>> {
     let mut paths = Vec::new();
     let mut seen_paths = HashSet::new();
     for from in named_nodes {
@@ -187,15 +201,25 @@ pub(super) fn format_flow_section(
         }
     }
 
-    if paths.is_empty() {
-        lines.push("- No static call path found among the queried symbols; source context is included below.".to_string());
-        return lines;
-    }
+    paths
+}
 
-    for path in paths {
-        lines.push(format!("- {}", format_flow_path(&path)));
-    }
-    lines
+pub(super) fn protected_flow_nodes(cg: &mut crate::CodeGraph, named_nodes: &[Node]) -> Vec<Node> {
+    // Protect only the same bounded paths shown in Flow, with at most one
+    // unnamed bridge. This is source allocation, not a broader graph search.
+    let mut nodes = named_flow_paths(cg, named_nodes)
+        .into_iter()
+        .filter(|path| {
+            path.iter()
+                .filter(|step| !named_nodes.iter().any(|n| n.id == step.node.id))
+                .count()
+                <= 1
+        })
+        .flatten()
+        .map(|step| step.node)
+        .collect::<Vec<_>>();
+    dedupe_nodes(&mut nodes);
+    nodes
 }
 
 fn find_named_flow_path(
