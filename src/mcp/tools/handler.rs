@@ -153,7 +153,7 @@ impl ToolHandler {
         args: &serde_json::Map<String, Value>,
         state: &mut crate::mcp::explore_session_state::ExploreSessionState,
     ) -> ToolResult {
-        let result = self.execute(tool_name, args);
+        let mut result = self.execute(tool_name, args);
         if tool_name == "rustcodegraph_explore" && result.is_error != Some(true) {
             if let Some(root) =
                 self.project_root_for(args.get("projectPath").and_then(Value::as_str))
@@ -164,6 +164,9 @@ impl ToolHandler {
                     .map(|c| c.text.as_str())
                     .collect::<Vec<_>>()
                     .join("\n");
+                for content in &mut result.content {
+                    content.text = state.deduplicate(std::path::Path::new(&root), &content.text);
+                }
                 state.record_response(std::path::Path::new(&root), &text);
             }
         }

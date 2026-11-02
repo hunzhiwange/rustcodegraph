@@ -25,6 +25,56 @@ pub struct ExploreSessionState {
     pub projects: VecDeque<ProjectState>,
 }
 impl ExploreSessionState {
+    /// Replace only verified, substantial contiguous runs from this connection.
+    pub fn deduplicate(&self, root: &Path, response: &str) -> String {
+        let mut current = Self::default();
+        current.record_response(root, response);
+        let Some(now) = current.projects.front() else {
+            return response.to_owned();
+        };
+        let Some(previous) = self.projects.iter().find(|p| p.root == now.root) else {
+            return response.to_owned();
+        };
+        let mut output = response.to_owned();
+        for file in &now.calls[0].files {
+            for &(start, end) in &file.ranges {
+                if end - start + 1 < 8 {
+                    continue;
+                }
+                let covered = previous.calls.iter().any(|call| {
+                    call.files.iter().any(|old| {
+                        old.path == file.path
+                            && old.fingerprint == file.fingerprint
+                            && old.ranges.iter().any(|&(a, b)| a <= start && b >= end)
+                    })
+                });
+                if !covered {
+                    continue;
+                }
+                let Ok(source) = std::fs::read_to_string(now.root.join(&file.path)) else {
+                    continue;
+                };
+                let block = source
+                    .lines()
+                    .enumerate()
+                    .filter(|(i, _)| i + 1 >= start && i + 1 <= end)
+                    .map(|(i, line)| format!("{}\t{}\n", i + 1, line))
+                    .collect::<String>();
+                // Scope replacement to this file section, never another file's equal lines.
+                let header = format!("#### {} · ", file.path);
+                if let Some(begin) = output.find(&header) {
+                    let stop = output[begin + header.len()..]
+                        .find("\n#### ")
+                        .map(|i| begin + header.len() + i)
+                        .unwrap_or(output.len());
+                    if let Some(offset) = output[begin..stop].find(&block) {
+                        output.replace_range(begin+offset..begin+offset+block.len(), &format!("Source already sent in this session: {}:{}-{}; file unchanged; treat as already Read.\n", file.path,start,end));
+                    }
+                }
+            }
+        }
+        output
+    }
     pub fn record_response(&mut self, root: &Path, response: &str) {
         use sha2::{Digest, Sha256};
         let Ok(root) = root.canonicalize() else {
