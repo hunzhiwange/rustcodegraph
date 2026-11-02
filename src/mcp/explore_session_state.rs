@@ -23,6 +23,7 @@ pub struct ProjectState {
 #[derive(Debug, Clone, Default)]
 pub struct ExploreSessionState {
     pub projects: VecDeque<ProjectState>,
+    pub warned_indexes: std::collections::HashSet<PathBuf>,
 }
 impl ExploreSessionState {
     /// Replace only verified, substantial contiguous runs from this connection.

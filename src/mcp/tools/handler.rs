@@ -153,7 +153,31 @@ impl ToolHandler {
         args: &serde_json::Map<String, Value>,
         state: &mut crate::mcp::explore_session_state::ExploreSessionState,
     ) -> ToolResult {
-        let result = self.execute_inner(tool_name, args, true, Some(state));
+        let mut result = self.execute_inner(tool_name, args, true, Some(state));
+        if result.is_error != Some(true) {
+            if let Some(root) =
+                self.project_root_for(args.get("projectPath").and_then(Value::as_str))
+            {
+                if let Ok(root) = std::path::Path::new(&root).canonicalize() {
+                    if !state.warned_indexes.contains(&root) {
+                        if let Ok(cg) = crate::CodeGraph::open_sync(&root) {
+                            let info = cg.get_index_build_info();
+                            if crate::extraction::extraction_version::is_outdated(
+                                info.extraction_version,
+                            ) {
+                                let notice = format!(
+                                    "Refresh notice: this index was built with extraction engine {}; the running engine is {}. The user may choose to run `rustcodegraph index` to refresh it; do not rebuild automatically.",
+                                    info.extraction_version.unwrap(),
+                                    crate::extraction::extraction_version::EXTRACTION_VERSION
+                                );
+                                result = prepend_text_notice(result, &notice);
+                                state.warned_indexes.insert(root);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if tool_name == "rustcodegraph_explore" && result.is_error != Some(true) {
             if let Some(root) =
                 self.project_root_for(args.get("projectPath").and_then(Value::as_str))

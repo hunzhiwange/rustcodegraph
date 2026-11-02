@@ -5,6 +5,7 @@
 //! 这是 agent 看到的最高优先级 RustCodeGraph 使用说明。工具行为或推荐链路
 //! 改变时先改这里，再同步 installer 写入的短说明块。
 
+// Old extraction indexes receive a session-local refresh notice; rebuilding is the user’s decision.
 pub const SERVER_INSTRUCTIONS: &str = r####"# RustCodeGraph — code intelligence over an indexed knowledge graph
 
 RustCodeGraph is a local SQLite knowledge graph

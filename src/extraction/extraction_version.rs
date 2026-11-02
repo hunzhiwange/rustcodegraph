@@ -7,3 +7,8 @@
 //! 视为需要重建，而普通重构或注释变更不应该改动。
 
 pub const EXTRACTION_VERSION: u32 = 24;
+
+/// Unknown versions do not establish that an index is outdated.
+pub fn is_outdated(version: Option<u64>) -> bool {
+    version.is_some_and(|version| version < u64::from(EXTRACTION_VERSION))
+}
