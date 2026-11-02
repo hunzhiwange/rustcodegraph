@@ -670,3 +670,10 @@ setState 风格的门）； Akka actor 消息调度（无类型）；纯匿名�
 至少在一些存在胶水、无节点的运行中使用 Read 0 回答流程问题
 爆炸，没有回归——记录在矩阵（§6）中，并带有验证回购+数字。
 然后发货准备：按机制进行测试、变更日志、增量传输、提交。
+
+
+## 2026-11-02：已有 TS/React 大文件覆盖恢复
+
+本次是既有机制的大文件回归修复，不新增语言或框架。控制仓库为 Excalidraw 8bcdca4526867433f99fdfcb55a063668db0c9dc（738 文件，中型），不能与历史 643 文件样本混算。旧索引因体积阈值退回文本扫描，App.tsx 出现 if/return 伪成员，triggerRender 被误标 property。恢复原生 AST 与多行字段分类后，Scene.mutateElement → triggerUpdate → [callback] App.triggerRender → [react-render] App.render → [jsx-render] StaticCanvas → renderStaticScene 在同一次 explore 第一条 Flow 中完整展示，三个边界均带接线位置；返回源码包含 triggerRender 函数体。两次完整新索引节点均为 11553，无节点增长。
+
+维护者明确允许此任务改用当前 Codex 模型，实测两分支均为 gpt-6.1-sol/high、各 n=2，MCP 预热且实际使用。基线耗时 141–179s、总工具 32–37；新版本 115–123s、总工具 25–30；非 MCP 仓库源码 Read/Grep 均为 0。仍未达到 3–5 次工具目标，不能将此条标成所有规模矩阵完成。详细原始摘要、测试与两项已在基线复现的 Java 失败见 [大文件 Flow 报告](../benchmarks/large-file-flow-2026-11-02.md)。

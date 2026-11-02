@@ -1,0 +1,134 @@
+[
+  {
+    "seconds": 179.282100542,
+    "exit_code": 0,
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "engine": "base",
+    "iteration": 1,
+    "mcp_calls": 31,
+    "commands": [
+      "/bin/zsh -lc 'cat /Users/xiangmin/.codex/skills/rustcodegraph/SKILL.md'"
+    ],
+    "total_tool_calls": 32,
+    "tool_counts": {
+      "rustcodegraph_explore": 3,
+      "rustcodegraph_node": 28
+    },
+    "tool_errors": 0,
+    "turn_usage": [
+      {
+        "input_tokens": 598240,
+        "cached_input_tokens": 522112,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 3870,
+        "reasoning_output_tokens": 566
+      }
+    ],
+    "source_read": 0,
+    "source_grep": 0,
+    "first_explore_complete_flow": false,
+    "first_explore_trigger_body": false,
+    "first_explore_chars": 23830
+  },
+  {
+    "seconds": 140.79836291699996,
+    "exit_code": 0,
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "engine": "base",
+    "iteration": 2,
+    "mcp_calls": 35,
+    "commands": [
+      "/bin/zsh -lc 'cat /Users/xiangmin/.codex/skills/rustcodegraph/SKILL.md'",
+      "/bin/zsh -lc 'if [ -d .rustcodegraph ]; then if [ -x \"$HOME/.rustcodegraph/bin/rustcodegraph\" ]; then \"$HOME/.rustcodegraph/bin/rustcodegraph\" status; elif command -v rustcodegraph >/dev/null; then rustcodegraph status; fi; fi'"
+    ],
+    "total_tool_calls": 37,
+    "tool_counts": {
+      "rustcodegraph_explore": 2,
+      "rustcodegraph_node": 32,
+      "rustcodegraph_callers": 1
+    },
+    "tool_errors": 0,
+    "turn_usage": [
+      {
+        "input_tokens": 407122,
+        "cached_input_tokens": 336128,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 4122,
+        "reasoning_output_tokens": 658
+      }
+    ],
+    "source_read": 0,
+    "source_grep": 0,
+    "first_explore_complete_flow": false,
+    "first_explore_trigger_body": false,
+    "first_explore_chars": 23830
+  },
+  {
+    "seconds": 114.86892520800001,
+    "exit_code": 0,
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "engine": "new",
+    "iteration": 1,
+    "mcp_calls": 29,
+    "commands": [
+      "/bin/zsh -lc 'cat /Users/xiangmin/.codex/skills/rustcodegraph/SKILL.md'"
+    ],
+    "total_tool_calls": 30,
+    "tool_counts": {
+      "rustcodegraph_explore": 3,
+      "rustcodegraph_status": 1,
+      "rustcodegraph_node": 25
+    },
+    "tool_errors": 0,
+    "turn_usage": [
+      {
+        "input_tokens": 338632,
+        "cached_input_tokens": 288256,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 3584,
+        "reasoning_output_tokens": 521
+      }
+    ],
+    "source_read": 0,
+    "source_grep": 0,
+    "first_explore_complete_flow": true,
+    "first_explore_trigger_body": true,
+    "first_explore_chars": 21177
+  },
+  {
+    "seconds": 123.240010041,
+    "exit_code": 0,
+    "model": "gpt-6.1-sol",
+    "effort": "high",
+    "engine": "new",
+    "iteration": 2,
+    "mcp_calls": 24,
+    "commands": [
+      "/bin/zsh -lc 'cat /Users/xiangmin/.codex/skills/rustcodegraph/SKILL.md'"
+    ],
+    "total_tool_calls": 25,
+    "tool_counts": {
+      "rustcodegraph_explore": 4,
+      "rustcodegraph_status": 1,
+      "rustcodegraph_node": 19
+    },
+    "tool_errors": 0,
+    "turn_usage": [
+      {
+        "input_tokens": 366851,
+        "cached_input_tokens": 318464,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 3473,
+        "reasoning_output_tokens": 311
+      }
+    ],
+    "source_read": 0,
+    "source_grep": 0,
+    "first_explore_complete_flow": true,
+    "first_explore_trigger_body": true,
+    "first_explore_chars": 21177
+  }
+]
