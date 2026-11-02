@@ -41,6 +41,19 @@ typically one to a few calls; a grep/read exploration is dozens.
 - **Reading a source FILE (any time you'd use the `Read` tool)** → `rustcodegraph_node` with a `file` path and no `symbol`. It returns the file's **current source with line numbers — the same `<n>\t<line>` shape `Read` gives you, safe to `Edit` from** — narrowable with `offset`/`limit` exactly like `Read`, PLUS a one-line note of which files depend on it. Same bytes as `Read`, faster (served from the index), with the blast radius attached. Use it **instead of `Read`** for indexed source files; fall back to `Read` only for what rustcodegraph doesn't index (configs, docs). Pass `symbolsOnly: true` for just the file's structure.
 - **About to read or edit a symbol you can name** → `rustcodegraph_node` with that `symbol` (SECONDARY — the after-explore depth tool): the verbatim source (`includeCode: true`) PLUS its caller/callee trail, so before changing it you see what calls it and what your edit would break. For an OVERLOADED name it returns EVERY matching definition's body in one call, so you never Read a file to find the right overload
 
+## Explore output and follow-up
+
+Explore works within an output budget; returned source is already Read. If
+space is allocated unevenly across files, use the source actually returned
+rather than assuming every matching file has been shown in full. If a response
+points to previously returned source instead of repeating it, use that earlier
+source at the indicated location; a pointer is not a new source body. If the
+referenced source is unavailable in your context, request it again.
+
+For missing detail, call `rustcodegraph_explore` again with more specific symbol or file names.
+Suggested call counts are advisory, not a quota. Keep the existing query input
+style; no special budget or pointer syntax is needed.
+
 ## Common chains
 
 - **Flow / "how does X reach Y"**: ONE `rustcodegraph_explore` with the symbol names spanning the flow — it surfaces the call path among them (riding dynamic-dispatch hops) AND returns their source. No need to reconstruct the path with `rustcodegraph_search` + `rustcodegraph_callers`.

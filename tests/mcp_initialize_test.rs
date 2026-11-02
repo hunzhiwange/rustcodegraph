@@ -301,6 +301,12 @@ mod mcp_initialize_handshake_issue_172 {
         let json = parse_event_json(&response);
         assert_eq!(json["id"], 0);
         assert_eq!(json["result"]["serverInfo"]["name"], "rustcodegraph");
+        let instructions = json["result"]["instructions"]
+            .as_str()
+            .expect("instructions");
+        assert!(instructions.contains("output budget"));
+        assert!(instructions.contains("previously returned source"));
+        assert!(instructions.contains("already Read"));
     }
 
     #[test]
