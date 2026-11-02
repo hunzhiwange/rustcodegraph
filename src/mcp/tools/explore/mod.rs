@@ -116,6 +116,32 @@ pub(super) fn format_explore_file_result(
             file_paths.push(node.file_path.clone());
         }
     }
+    // Rank by matched symbol mass; exact named flow endpoints receive extra weight.
+    let weights: std::collections::HashMap<String, usize> = file_paths
+        .iter()
+        .map(|path| {
+            let file_named = flow::exact_named_query_nodes(
+                &nodes
+                    .iter()
+                    .filter(|n| &n.file_path == path)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                &query_tokens,
+            );
+            let flow_weight = if flow::has_static_flow_between_named(cg, &file_named) {
+                2
+            } else {
+                1
+            };
+            let weight = nodes
+                .iter()
+                .filter(|n| &n.file_path == path)
+                .map(|n| if query_tokens.contains(&n.name) { 2 } else { 1 })
+                .sum::<usize>();
+            (path.clone(), weight * flow_weight)
+        })
+        .collect();
+    file_paths.sort_by(|a, b| weights[b].cmp(&weights[a]).then_with(|| a.cmp(b)));
     if max_files > 0 && file_paths.len() > max_files {
         file_paths.truncate(max_files);
     }
@@ -150,7 +176,11 @@ pub(super) fn format_explore_file_result(
     lines.push(String::new());
     lines.push("### Source Code".to_string());
 
-    for file_path in file_paths {
+    let reservations = super::budget::allocate_explore_source_budget(
+        &file_paths.iter().map(|p| weights[p]).collect::<Vec<_>>(),
+        budget.max_output_chars / 2,
+    );
+    for (file_path, reservation) in file_paths.into_iter().zip(reservations) {
         let mode = render::explore_file_mode(
             &file_path,
             adaptive,
@@ -165,7 +195,7 @@ pub(super) fn format_explore_file_result(
             mode,
             &query_tokens,
             &family,
-            budget.max_chars_per_file,
+            reservation.max(1),
         ));
     }
 

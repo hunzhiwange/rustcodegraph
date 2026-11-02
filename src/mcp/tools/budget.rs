@@ -121,3 +121,18 @@ pub fn number_source_lines(slice: &str, first_line_number: usize) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+/// Reserve source shares before rendering, independently of source file length.
+/// The shared floor preserves breadth; remaining bytes follow relevance mass.
+pub fn allocate_explore_source_budget(weights: &[usize], total: usize) -> Vec<usize> {
+    if weights.is_empty() {
+        return Vec::new();
+    }
+    let floor = 700.min(total / weights.len());
+    let remaining = total - floor * weights.len();
+    let sum: usize = weights.iter().map(|w| (*w).max(1)).sum();
+    weights
+        .iter()
+        .map(|w| floor + remaining * (*w).max(1) / sum)
+        .collect()
+}
