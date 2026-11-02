@@ -21,7 +21,7 @@
 
 初次 init 未加 `-i`，探针返回无结果；随后显式建索引重跑，以上只记重跑结果。不把成功退出当作流程覆盖通过。
 
-## 未完成的验收
+## 早期阶段未完成的验收（由下方最终执行结果更新）
 
 Excalidraw 的新版本/基线两分支各至少两次 Sonnet/high A/B 尚未执行；Read/Grep、时长、真实 MCP 使用、逐轮 usage 均没有本轮数据。不能据此声称源码去重或预算分配无回归。还需完成真实 Excalidraw 探针、节点规模与合成边精度检查及其余控制查询的符号核对。
 
@@ -66,3 +66,40 @@ SQLite 精确查询六个端点名称，只返回 `StaticCanvas`（function，`p
 临时诊断测试直接调用库对固定 Excalidraw 执行完整 index_all（槽位 1，退出 0，1 passed、0 ignored），耗时 239325ms；738 文件，17697 节点，66596 边，无提取错误。诊断测试已移除，避免把本机副本路径写成永久测试依赖。新索引恢复 mutateElement、triggerUpdate 和 renderStaticScene。用新构建再次 probe-explore 退出 0，但没有形成目标完整路径：App.tsx 超出库的原生解析大小阈值，triggerRender 被 fallback 识别为 property，而非带函数体的 method。此处还需要独立修复大文件方法抽取，不能将节点恢复等同于整条流程通过。原始日志 native.log、native.probe.log 在此前临时日志目录。
 
 通过 npm exec 临时取得 Claude CLI，`claude auth status` 退出 0，明确 loggedIn=false、authMethod=none。已解除 CLI 安装缺失，实际 Sonnet 请求仍需账号认证；已提供登录命令供维护者完成。没有更换规定模型，没有伪造 A/B 结果。
+
+## 最终执行结果（2026-11-02）
+
+维护者明确将本任务的强制 Sonnet/Claude 条件改为“当前可用 Codex 模型，两分支相同”。本次固定 `gpt-6.1-sol`、high，不再依赖 Claude CLI 或 Claude 认证。终端显式使用 macOS 已配置的本机 HTTP 代理后，Codex smoke 请求成功。模型变更后的数据不能与历史 Sonnet 结果混算。
+
+真实 MCP 运行又定位到一处接线缺口：stdio 的 explore 原来只使用独立的轻量查询，实际结果只有标题，未经过库的充分性输出与会话去重。现已将 stdio explore/node 接到连接内持久的 ToolHandler，并在连接释放时关闭缓存图。新增端到端 stdio 测试断言返回真实函数体；此前实际 A/B 日志中的空 explore 标题构成缺失行为证据。
+
+修复提交：`4bac4801`（CLI 索引）、`690789dd`（stdio 工具接线）。基线固定 `f8456aa0`。本次比较两种引擎，但两边使用同一份完整库索引的独立副本，以隔离检索差异；它不是索引构建耗时 A/B。所有运行先预热独立 daemon，设置 MCP required=true，并使用完全相同的明确 explore-first 提示。早期未调用 MCP、受审批策略拦截及中途模型容量失败的试跑不计入有效样本；运行副本允许 MCP 工具执行，提示明确禁止编辑文件。
+
+| 引擎/有效轮次 | 秒 | MCP 调用 | 全部工具调用 | 仓库源码 Read / Grep | input / output tokens |
+|---|---:|---:|---:|---|---|
+| baseline 1 | 172.5 | 26 | 27 | 0 / 0 | 334950 / 4821 |
+| baseline 3（补跑） | 150.1 | 32 | 33 | 0 / 0 | 501301 / 4214 |
+| new 1 | 140.6 | 29 | 31 | 0 / 0 | 506431 / 3699 |
+| new 2 | 173.1 | 31 | 33 | 0 / 0 | 627522 / 4435 |
+
+四次有效运行均退出 0，MCP 调用均无 transport/tool error。baseline 2 在运行中返回模型 at capacity，退出 1，保留日志并补跑为 baseline 3，未换模型。全部工具调用按 item.completed 计数，包含 MCP 和 shell；每轮都有一次读取技能说明的 shell，新版本另有一次索引 status 检查，均不是仓库源码 Read/Grep。完整命令列表与原始 turn.completed usage 保存于相邻 `upstream-explore-2026-11-01-results.json`；cached tokens 是 input 的子集，未重复相加。该 JSON 保留 Codex 原始整用户轮 usage，并不伪称拥有逐次内部 assistant response 的 usage 或美元成本明细。
+
+结论：本任务要求的四仓库冻结与 Excalidraw 两分支各两次有效对照已完成；源码 Read/Grep 未增加。耗时范围重叠（基线 150–172s，新版本 141–173s），只能观察到这四轮的均值略低，不能声称稳定加速。新版本总调用次数与 token 未改善，不能据此宣布全面性能无回归。目标完整 Flow 仍未连通，正常流程仅用少量 explore 的产品目标尚未达到；此处明确记录为后续检索充分性优化依据，而非宣称真实框架全流程覆盖通过。
+
+重复完整索引也已完成：在独立 stability 副本执行新引擎 `init -i`，退出 0，738 文件、17697 节点、66566 边、255928ms。节点数与首次完整索引的 17697 相同，没有节点增长；边数与首次 66596 相差 30，未声称边集合完全稳定。原始索引中合成元数据统计为 jsx-render 329、react-render 42、interface-impl 14；抽查 setUsername/setActiveRoomLink → Collab.render 的 react-render 元数据带 registeredAt，缺少 triggerRender callback 桥接的局限仍如前述。
+
+新增验证（均先 cargo fmt --all，默认 features）：
+
+- `cargo test --test upstream_032_test --test cli_mcp_parity_test --test mcp_initialize_test -- --nocapture`：退出 0，5+4+3=12 passed、0 ignored。
+- `cargo test --test mcp_unindexed_test --test mcp_staleness_banner_test --test mcp_tool_allowlist_test --test mcp_roots_test -- --nocapture`：退出 0，7+8+7+5=27 passed、0 ignored。
+- 两阶段动态领取槽位 1；`CARGO_TARGET_DIR=/Users/xiangmin/worker/code/rustcodegraph/target/rust-slot-1`，`CARGO_BUILD_BUILD_DIR=$CARGO_TARGET_DIR/build`，完成后释放锁。日志为 `/tmp/rcg-control032/{stdio-green.log,mcp-boundary.log}`。前述 15 项测试阶段的 upstream_032 当时为 4 项，加入 stdio 后为 5 项，不将重复测试累加为新增用例。
+
+复现脚本：`scripts/agent-eval/run-codex-control.py`，需要 root 目录中放置固定源码+索引的 excalidraw、engine-base、engine-new。显式使用本机代理的实际启动命令：
+
+```sh
+HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 ALL_PROXY=http://127.0.0.1:7897 python3 scripts/agent-eval/run-codex-control.py /tmp/rcg-control032
+# baseline 2 容量失败后，仅补跑该分支：
+HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 ALL_PROXY=http://127.0.0.1:7897 python3 scripts/agent-eval/run-codex-control.py /tmp/rcg-control032 --iterations 3 --arms base
+```
+
+原始 stream-json、stderr、daemon 日志与运行元数据在 `/tmp/rcg-control032/ab-wired-{base,new}-{1,2,3}` 的实际存在目录中。首次四轮脚本为同逻辑的临时版本；仓库版增加选择补跑轮次与拒绝覆盖已有证据。所有实验 daemon 都在运行结束后回收。Express 的既有探针仍不代表完整 Flow 通过，Django/VSCode 本任务仅冻结，未冒充已运行。没有修改 plan.md、版本或发布状态。
