@@ -5,7 +5,7 @@
 | 控制仓库 | 固定 commit | 固定 explore 查询 | 状态 |
 |---|---|---|---|
 | expressjs/express | 1c6f1b0fe4000977b9a7b4f34097e4d527dd9824 | `handle render` | 已索引并执行；尚未证明端点连通 |
-| excalidraw/excalidraw | 8bcdca4526867433f99fdfcb55a063668db0c9dc | `mutateElement triggerUpdate triggerRender render StaticCanvas renderStaticScene` | 副本下载未完成，未探测 |
+| excalidraw/excalidraw | 8bcdca4526867433f99fdfcb55a063668db0c9dc | `mutateElement triggerUpdate triggerRender render StaticCanvas renderStaticScene` | 已下载、索引并探测；Flow 仅 StaticCanvas，未通过 |
 | django/django | a05e16a7230fe33d3f43f4a3aaed103cebb42efc | `get_response _get_response render` | 仅冻结，未探测 |
 | microsoft/vscode | 67710841ad061a9e253214f87bf5415a185ab2ff | `executeCommand _tryExecuteCommand executeCommandHandler` | 仅冻结，未探测 |
 
@@ -28,3 +28,31 @@ Excalidraw 的新版本/基线两分支各至少两次 Sonnet/high A/B 尚未执
 `command -v claude` 未找到；检查常见本机安装目录未发现 Claude 可执行文件。存在配置目录并不证明存在可用认证，未读取或输出凭证。已安装 Codex 的 Sonnet/high 最小请求先遇到 TLS EOF，回退 HTTPS 后明确返回：该 ChatGPT 账号不支持 sonnet 模型。需要外部提供已安装且可认证使用 Sonnet/high 的 Agent 运行环境；不切换其他模型、不自行安装或修改认证。
 
 任务保持已阻塞，报告与测试只保留已经取得的部分证据。
+
+## 第二次恢复验证（2026-11-02，当前引擎 da14247c）
+
+Excalidraw 的 Git shallow/partial clone 本次成功，checkout 与 `git rev-parse HEAD` 确认为表中固定 SHA。无需继续把下载当作阻塞。备用 codeload 下载也成功，实际索引使用 Git checkout。
+
+动态原子领取槽位 1，`CARGO_TARGET_DIR=/Users/xiangmin/worker/code/rustcodegraph/target/rust-slot-1`，构建和测试设置 `CARGO_BUILD_BUILD_DIR=$CARGO_TARGET_DIR/build`。以下命令实际执行，阶段后锁均已释放：
+
+```sh
+cargo test -p rustcodegraph --test upstream_032_test -- --nocapture
+cargo build --bin rustcodegraph
+$CARGO_TARGET_DIR/debug/rustcodegraph init -i /tmp/rcg-control032/excalidraw
+$CARGO_TARGET_DIR/debug/rustcodegraph agent-eval probe-explore /tmp/rcg-control032/excalidraw 'mutateElement triggerUpdate triggerRender render StaticCanvas renderStaticScene'
+```
+
+上述命令退出码均为 0；测试为 3 passed、0 failed、0 ignored，未改 Rust 代码。索引为 738 文件、3159 节点、10798 边。探针的实际 Flow 为：
+
+```text
+## Flow (call path among the symbols you queried)
+- StaticCanvas
+```
+
+SQLite 精确查询六个端点名称，只返回 `StaticCanvas`（function，`packages/excalidraw/components/canvases/StaticCanvas.tsx`）。源码核实 `packages/element/src/mutateElement.ts:40` 和 `packages/excalidraw/renderer/staticScene.ts:658` 确实定义相应导出函数，故这是当前索引覆盖不足的证据，不能把单节点 Flow 解释成完整路径。未在本证据任务扩展提取/合成实现。
+
+重复执行同一 `init -i` 命令退出 0，节点数仍为 3159，未发生节点增长。10798 条边均为 heuristic；抽查前三条 metadata 为 NULL，未取得目标流程合成 wiring 的精度证据。稳定的节点数不能代替覆盖和精度验收。
+
+一次尝试 `index --path /tmp/rcg-control032/excalidraw` 退出 1（该调用未指向目标项目）；随后用上述已验证的 `init -i` 正确重跑，不计首次调用为有效验证。原始日志保存在本机 `/tmp/rcg-control032/{build.log,excalidraw.index.log,excalidraw.probe.log,excalidraw.reindex.log}`。
+
+剩余阻塞有两项：真实控制路径在当前索引中不连通；规定 Sonnet/high 的认证执行环境仍缺失。已向维护者询问可用环境，不改模型或伪造 A/B。其余两个仓库仍仅冻结，未声称通过。
