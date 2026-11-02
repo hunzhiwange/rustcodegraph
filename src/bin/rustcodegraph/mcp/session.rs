@@ -22,6 +22,7 @@ use crate::rustcodegraph_cli::storage::is_sqlite_initialized;
 
 pub(crate) struct McpStdioSession {
     pub(super) project_root: PathBuf,
+    pub(super) explore_state: rustcodegraph::mcp::explore_session_state::ExploreSessionState,
     pub(super) watch_enabled: bool,
     pub(super) client_supports_roots: bool,
     pub(super) roots_attempted: bool,
@@ -36,6 +37,7 @@ impl McpStdioSession {
     pub(crate) fn new(project_root: PathBuf, watch_enabled: bool) -> Self {
         Self {
             project_root,
+            explore_state: Default::default(),
             watch_enabled,
             client_supports_roots: false,
             roots_attempted: false,

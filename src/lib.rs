@@ -88,6 +88,7 @@ pub mod mcp {
     pub mod daemon_registry;
     pub mod dynamic_boundaries;
     pub mod engine;
+    pub mod explore_session_state;
     pub mod index;
     pub mod liveness_watchdog;
     pub mod ppid_watchdog;

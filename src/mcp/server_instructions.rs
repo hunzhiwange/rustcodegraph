@@ -1,3 +1,4 @@
+// Explore emission accounting is connection-local and never changes tool responses.
 // Sensitive default project paths remain inactive, just like unindexed workspaces.
 //! Server-level MCP instructions sent in the initialize response.
 //!

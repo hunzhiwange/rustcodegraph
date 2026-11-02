@@ -39,6 +39,7 @@ pub struct MCPSessionOptions {
 
 pub struct MCPSession<T: JsonRpcTransport> {
     transport: T,
+    pub explore_state: super::explore_session_state::ExploreSessionState,
     engine: MCPEngine,
     client_supports_roots: bool,
     roots_attempted: bool,
@@ -49,11 +50,22 @@ impl<T: JsonRpcTransport> MCPSession<T> {
     pub fn new(transport: T, engine: MCPEngine, opts: Option<MCPSessionOptions>) -> Self {
         Self {
             transport,
+            explore_state: Default::default(),
             engine,
             client_supports_roots: false,
             roots_attempted: false,
             explicit_project_path: opts.and_then(|opts| opts.explicit_project_path),
         }
+    }
+
+    pub fn execute_tool(
+        &mut self,
+        name: &str,
+        args: &serde_json::Map<String, Value>,
+    ) -> super::tools::ToolResult {
+        self.engine
+            .get_tool_handler()
+            .execute_in_session(name, args, &mut self.explore_state)
     }
 
     pub fn start(&mut self) {

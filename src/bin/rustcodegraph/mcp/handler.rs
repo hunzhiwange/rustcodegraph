@@ -95,6 +95,15 @@ pub(crate) fn handle_mcp_message<R: BufRead, W: Write>(
                     Err(err) => mcp_tool_result(err, true),
                 }
             };
+            if name == "rustcodegraph_explore"
+                && result.get("isError").and_then(Value::as_bool) != Some(true)
+            {
+                if let Some(text) = result.pointer("/content/0/text").and_then(Value::as_str) {
+                    session
+                        .explore_state
+                        .record_response(&tool_project_root, text);
+                }
+            }
             mcp_success(id, result)
         }
         "ping" | "shutdown" => mcp_success(id, json!({})),

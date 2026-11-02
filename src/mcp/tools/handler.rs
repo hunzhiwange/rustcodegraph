@@ -146,6 +146,30 @@ impl ToolHandler {
         self.execute_inner(tool_name, args, true)
     }
 
+    /// Explicit connection state keeps shared handlers free of session history.
+    pub fn execute_in_session(
+        &mut self,
+        tool_name: &str,
+        args: &serde_json::Map<String, Value>,
+        state: &mut crate::mcp::explore_session_state::ExploreSessionState,
+    ) -> ToolResult {
+        let result = self.execute(tool_name, args);
+        if tool_name == "rustcodegraph_explore" && result.is_error != Some(true) {
+            if let Some(root) =
+                self.project_root_for(args.get("projectPath").and_then(Value::as_str))
+            {
+                let text = result
+                    .content
+                    .iter()
+                    .map(|c| c.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                state.record_response(std::path::Path::new(&root), &text);
+            }
+        }
+        result
+    }
+
     pub fn execute_for_cli(
         &mut self,
         tool_name: &str,
