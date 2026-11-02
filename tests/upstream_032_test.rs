@@ -42,3 +42,23 @@ fn case_032_unrelated_query_does_not_claim_control_flow() {
     let text = probe("unrelated_symbol_032 another_absent_032");
     assert!(!text.contains("triggerUpdate();"), "{text}");
 }
+
+#[test]
+fn case_032_cli_indexes_exported_arrow_functions() {
+    let root = std::env::temp_dir().join(format!("rcg32-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("flow.ts"), "export const mutateElement = <T>(value: T) => { renderStaticScene(value); };\nexport const renderStaticScene = (value: unknown) => { return value; };\n").unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_rustcodegraph"))
+        .args(["init", "-i", root.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let conn = rusqlite::Connection::open(root.join(".rustcodegraph/rustcodegraph.db")).unwrap();
+    let count: i64 = conn.query_row("SELECT count(*) FROM nodes WHERE kind='function' AND name IN ('mutateElement', 'renderStaticScene')", [], |r| r.get(0)).unwrap();
+    drop(conn);
+    std::fs::remove_dir_all(root).unwrap();
+    assert_eq!(
+        count, 2,
+        "CLI must retain the same arrow-function endpoints as library indexing"
+    );
+}

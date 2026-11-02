@@ -8,6 +8,8 @@
 
 ### Fixes
 
+- CLI indexing now uses the full language parser and reference resolution pipeline so code exploration retains symbols missed by the lightweight index.
+
 - JavaScript and TypeScript calls now respect local shadowing while reusing binding analysis during indexing.
 
 - Incremental sync now defers automatic WAL checkpoints during database writes to avoid repeatedly flushing the same data.

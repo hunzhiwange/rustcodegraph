@@ -56,3 +56,13 @@ SQLite 精确查询六个端点名称，只返回 `StaticCanvas`（function，`p
 一次尝试 `index --path /tmp/rcg-control032/excalidraw` 退出 1（该调用未指向目标项目）；随后用上述已验证的 `init -i` 正确重跑，不计首次调用为有效验证。原始日志保存在本机 `/tmp/rcg-control032/{build.log,excalidraw.index.log,excalidraw.probe.log,excalidraw.reindex.log}`。
 
 剩余阻塞有两项：真实控制路径在当前索引中不连通；规定 Sonnet/high 的认证执行环境仍缺失。已向维护者询问可用环境，不改模型或伪造 A/B。其余两个仓库仍仅冻结，未声称通过。
+
+## CLI 接线修复（2026-11-02）
+
+进一步排查发现，早前 `init -i` 调用的是独立的轻量正则索引器，并非库的 AST/解析/合成链。因此早前的 3159 节点结果不能用来评价完整库索引覆盖。CLI 全量索引现改为调用 `CodeGraph::index_all`，保留命令参数与摘要输出。
+
+新增 CLI 箭头函数端点测试先失败（只返回 1 个端点，预期 2 个），修复后通过。`cargo fmt --all` 后执行 `cargo test --test upstream_032_test --test index_command_test --test cli_mcp_parity_test -- --nocapture`：退出 0，分别 4、7、4 passed，合计 15，0 ignored。红灯与绿灯动态领取槽位 2，绝对 CARGO_TARGET_DIR=/Users/xiangmin/worker/code/rustcodegraph/target/rust-slot-2；CARGO_BUILD_BUILD_DIR 为其中 build。日志 cli-red.log、cli-green.log 位于此前临时日志目录，锁已释放。
+
+临时诊断测试直接调用库对固定 Excalidraw 执行完整 index_all（槽位 1，退出 0，1 passed、0 ignored），耗时 239325ms；738 文件，17697 节点，66596 边，无提取错误。诊断测试已移除，避免把本机副本路径写成永久测试依赖。新索引恢复 mutateElement、triggerUpdate 和 renderStaticScene。用新构建再次 probe-explore 退出 0，但没有形成目标完整路径：App.tsx 超出库的原生解析大小阈值，triggerRender 被 fallback 识别为 property，而非带函数体的 method。此处还需要独立修复大文件方法抽取，不能将节点恢复等同于整条流程通过。原始日志 native.log、native.probe.log 在此前临时日志目录。
+
+通过 npm exec 临时取得 Claude CLI，`claude auth status` 退出 0，明确 loggedIn=false、authMethod=none。已解除 CLI 安装缺失，实际 Sonnet 请求仍需账号认证；已提供登录命令供维护者完成。没有更换规定模型，没有伪造 A/B 结果。

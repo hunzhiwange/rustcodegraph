@@ -1,26 +1,11 @@
-//! standalone Rust CLI 路径使用的快速 SQLite 索引构建器。
-//!
-//! 完整库索引走 tree-sitter orchestration；这里的实现偏轻量，目标是为 CLI/MCP
-//! shim 快速生成 files/nodes/calls 表，保证基础查询可用。
+//! CLI indexing shares the library extraction and resolution pipeline.
 
-mod calls;
-mod symbols;
-
-use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use rustcodegraph::extraction::grammars::detect_language;
-use rustcodegraph::extraction::index::{hash_content, scan_directory};
-use rustcodegraph::types::{ByteSize, FileRecord};
 use rustcodegraph::ui::glyphs::{Glyphs, get_glyphs};
 use rustcodegraph::ui::shimmer_worker::{format_number, render_bar};
-
-use super::args::{now_ms, system_time_ms};
-use super::storage::{open_sqlite_database, write_sqlite_index};
-use calls::extract_lightweight_call_edges;
-use symbols::{extract_lightweight_symbols, file_node};
 
 #[derive(Debug, Clone)]
 pub(crate) struct IndexSummary {
@@ -161,66 +146,21 @@ pub(crate) fn build_sqlite_index(
     project_root: &Path,
     show_progress: bool,
 ) -> Result<IndexSummary, String> {
-    // 索引时间戳在一次 run 内固定，方便 status 读取“最后索引时间”且避免每行不同。
-    let started = std::time::Instant::now();
-    let mut conn = open_sqlite_database(project_root)?;
     let mut progress = IndexProgressRenderer::new(show_progress);
-    let mut scan_progress = |count: usize, _file: String| {
-        progress.count("Scanning files", count);
-    };
-    let files = scan_directory(project_root, Some(&mut scan_progress));
-    progress.message(
-        "Scanning files",
-        format!("{} found", format_number(files.len())),
-    );
-    let mut file_records = Vec::new();
-    let mut nodes = Vec::new();
-    let mut sources = Vec::new();
-    let mut files_skipped = 0usize;
-    let indexed_at = now_ms();
-    let total_files = files.len();
-
-    for (idx, file_path) in files.into_iter().enumerate() {
-        progress.percent("Parsing code", idx + 1, total_files);
-        let abs = project_root.join(&file_path);
-        let Ok(source) = fs::read_to_string(&abs) else {
-            // 二进制或权限受限文件只计入 skipped；索引继续前进，避免一个坏文件阻断项目初始化。
-            files_skipped += 1;
-            continue;
-        };
-        sources.push((file_path.clone(), source.clone()));
-        let metadata = fs::metadata(&abs).ok();
-        let language = detect_language(&file_path, Some(&source));
-        let mut file_nodes = extract_lightweight_symbols(&file_path, &source, language, indexed_at);
-        let file_node = file_node(&file_path, &source, language, indexed_at);
-        let node_count = file_nodes.len() + 1;
-        nodes.push(file_node);
-        nodes.append(&mut file_nodes);
-        file_records.push(FileRecord {
-            path: file_path,
-            content_hash: hash_content(&source),
-            language,
-            size: metadata.as_ref().map(|m| m.len()).unwrap_or(0) as ByteSize,
-            modified_at: metadata
-                .and_then(|m| m.modified().ok())
-                .map(system_time_ms)
-                .unwrap_or(0),
-            indexed_at,
-            node_count: node_count as u64,
-            errors: None,
-        });
-    }
-
-    // 调用边依赖所有文件的符号表，因此必须等 nodes 收齐后统一解析。
-    let edges = extract_lightweight_call_edges(&sources, &nodes, &mut progress);
-    progress.message("Writing database", "storing rows");
-    write_sqlite_index(&mut conn, &file_records, &nodes, &edges)?;
+    progress.message("Indexing code", "parsing and resolving symbols");
+    let mut graph =
+        rustcodegraph::CodeGraph::open_sync(project_root).map_err(|error| error.to_string())?;
+    let result = graph.index_all(rustcodegraph::IndexOptions::default());
+    graph.close();
     progress.finish();
+    if !result.success {
+        return Err(format!("Indexing failed: {:?}", result.errors));
+    }
     Ok(IndexSummary {
-        files_indexed: file_records.len(),
-        files_skipped,
-        nodes_created: nodes.len(),
-        edges_created: edges.len(),
-        duration_ms: started.elapsed().as_millis(),
+        files_indexed: result.files_indexed,
+        files_skipped: result.files_skipped,
+        nodes_created: result.nodes_created,
+        edges_created: result.edges_created,
+        duration_ms: result.duration_ms as u128,
     })
 }
