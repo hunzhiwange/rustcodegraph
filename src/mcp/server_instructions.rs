@@ -43,6 +43,9 @@ typically one to a few calls; a grep/read exploration is dozens.
 
 ## Explore output and follow-up
 
+Low-relevance matches may appear as path:line and symbol pointers; these do not
+consume source-file slots. Use another rustcodegraph_explore with those symbols
+when their source is needed.
 Explore works within an output budget; returned source is already Read. If
 space is allocated unevenly across files, use the source actually returned
 rather than assuming every matching file has been shown in full. If a response

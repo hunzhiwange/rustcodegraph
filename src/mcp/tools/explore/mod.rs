@@ -142,6 +142,18 @@ pub(super) fn format_explore_file_result(
         })
         .collect();
     file_paths.sort_by(|a, b| weights[b].cmp(&weights[a]).then_with(|| a.cmp(b)));
+    // Weak relative evidence becomes a location pointer, not a source slot.
+    // Cap the cliff so a concentrated query cannot silence a strong peer.
+    let cliff = (weights.values().copied().max().unwrap_or(0) as f64 * 0.15).min(4.0);
+    let mut pointer_files = Vec::new();
+    file_paths.retain(|path| {
+        if (weights[path] as f64) < cliff {
+            pointer_files.push(path.clone());
+            false
+        } else {
+            true
+        }
+    });
     if max_files > 0 && file_paths.len() > max_files {
         file_paths.truncate(max_files);
     }
@@ -174,6 +186,15 @@ pub(super) fn format_explore_file_result(
         lines.extend(blast_radius);
     }
     lines.push(String::new());
+    if !pointer_files.is_empty() {
+        lines.push("### Additional symbol locations (source not included)".to_string());
+        for path in pointer_files {
+            for node in nodes.iter().filter(|node| node.file_path == path) {
+                lines.push(format!("- {}:{} — {}", path, node.start_line, node.name));
+            }
+        }
+        lines.push(String::new());
+    }
     lines.push("### Source Code".to_string());
 
     let reservations = super::budget::allocate_explore_source_budget(
