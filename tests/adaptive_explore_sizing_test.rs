@@ -503,7 +503,7 @@ mod adaptive_codegraph_explore_sizing_sibling_skeletonization {
         let bridge = section_for(&text, "bridge-interceptor.ts");
         assert!(
             bridge.contains(SKELETON_MARK),
-            "a sibling named only by type still skeletonizes"
+            "a sibling named only by type still skeletonizes: {text}"
         );
         assert!(!bridge.contains("BRIDGE_BODY_MARKER"));
     }

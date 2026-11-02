@@ -168,7 +168,19 @@ pub(super) fn format_explore_file_result(
     let cliff = (weights.values().copied().max().unwrap_or(0) as f64 * 0.15).min(4.0);
     let mut pointer_files = Vec::new();
     file_paths.retain(|path| {
-        if !protected_files.contains(path) && (weights[path] as f64) < cliff {
+        // Skeletons are already the compact representation of polymorphic
+        // siblings; dropping them here would erase the family signatures.
+        let skeleton = matches!(
+            render::explore_file_mode(
+                path,
+                adaptive,
+                &query_tokens,
+                &unique_callable_files,
+                &family,
+            ),
+            render::ExploreFileMode::Skeleton
+        );
+        if !protected_files.contains(path) && !skeleton && (weights[path] as f64) < cliff {
             pointer_files.push(path.clone());
             false
         } else {

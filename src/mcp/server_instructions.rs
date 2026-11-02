@@ -20,6 +20,7 @@ round-trips than reading files yourself.
 
 Unchanged source previously sent in this session may be replaced by explicit file and line pointers; treat it as already Read. Short ranges and changed files are resent. Freed source budget is used for subsequent files; an all-repeat response still includes a useful source block.
 Named flow paths prioritize endpoint and bridge source within the output budget.
+Polymorphic sibling files retain compact signatures when adaptive source rendering applies.
 Large files may show selected symbol ranges with original source coordinates; omitted ranges are not complete file contents.
 
 ## Use rustcodegraph instead of reading files — for questions AND edits
