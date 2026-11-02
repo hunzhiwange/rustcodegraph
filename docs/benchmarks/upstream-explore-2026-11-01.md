@@ -103,3 +103,15 @@ HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 ALL_PROXY=htt
 ```
 
 原始 stream-json、stderr、daemon 日志与运行元数据在 `/tmp/rcg-control032/ab-wired-{base,new}-{1,2,3}` 的实际存在目录中。首次四轮脚本为同逻辑的临时版本；仓库版增加选择补跑轮次与拒绝覆盖已有证据。所有实验 daemon 都在运行结束后回收。Express 的既有探针仍不代表完整 Flow 通过，Django/VSCode 本任务仅冻结，未冒充已运行。没有修改 plan.md、版本或发布状态。
+
+## 后续优化：紧凑符号地图（2026-11-02）
+
+逐条审计 new-1 的真实日志，定位到 `node(file=App.tsx, symbolsOnly=true)` 返回 421940 字符。它不是源码，而是 5187 条符号位置，存在重复文件路径及重复同名成员。真实索引中 App::if 出现 481 次、App::return 出现 177 次，说明大文件 fallback 的抽取范围还有噪音；本次不改图和调用边。
+
+本次只优化符号地图序列化：移除标题已有的完整文件名（兼容原生抽取使用 basename 的限定名），按 kind+剩余限定名聚合行号，保留所属类型和全部不同位置。没有新增截断或条目上限。真实冻结副本回放得到 87058 字符，减少 79.4%，输出行从 5190 降到 1421。将新旧输出还原为 `(kind, relative-qualified-name, line)` 集合，均为 5187 项，missing=0、added=0。原始新输出 `/tmp/rcg-control032/outline-new.txt`；旧输出来自 ab-wired-new-1/run.jsonl 的 symbolsOnly 调用。
+
+失败测试 `symbols_only_groups_repeated_names_without_losing_locations_or_owners` 在修改前退出 101；新测试验证两个同名定义位置都保留，One::run 与 Two::run 不合并，文件标题保留且无函数体。首次实现暴露原生抽取使用 basename 而非相对路径的差异，修正后验证通过。
+
+`cargo fmt --all` 后执行 `cargo test --test node_file_view_test --test upstream_032_test --test cli_mcp_parity_test -- --nocapture`，退出 0，12+5+4=21 passed、0 ignored。阶段动态领取槽位 1，绝对 CARGO_TARGET_DIR=/Users/xiangmin/worker/code/rustcodegraph/target/rust-slot-1，CARGO_BUILD_BUILD_DIR 为其中 build；锁均释放。日志 `/tmp/rcg-control032/{outline-red.log,outline-green.log}`。真实回放命令为该槽位 debug/rustcodegraph 的 `node --file packages/excalidraw/components/App.tsx --symbols-only -p /tmp/rcg-control032/excalidraw`，退出 0。
+
+这是单次工具输出的确定性缩减证据，没有重跑 Agent A/B，不能据此声称整轮时延、工具次数或总 token 已改善。后续高价值方向仍是大文件 fallback 的作用域和多行方法抽取，需要确保 callback→react-render→jsx 的整条路径一起验证，不能仅修一个桥接后宣布充分性达标。

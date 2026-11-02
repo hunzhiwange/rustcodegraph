@@ -354,3 +354,22 @@ mod codegraph_node_file_view_read_replacement {
         );
     }
 }
+
+#[test]
+fn symbols_only_groups_repeated_names_without_losing_locations_or_owners() {
+    let temp = TempProject::new();
+    temp.write_src("outline.js", "function duplicate() { return 111; }\nfunction duplicate() { return 222; }\nclass One { run() { return 1; } }\nclass Two { run() { return 2; } }\n");
+    let mut cg = CodeGraph::init_sync(temp.path()).unwrap();
+    assert!(cg.index_all(IndexOptions::default()).success);
+    let mut handler = ToolHandler::new(true);
+    handler.set_default_code_graph(&cg);
+    let out = text(&handler.execute("rustcodegraph_node", &symbols_only_args("outline.js")));
+    handler.close_all();
+    cg.close();
+    assert!(out.contains("## src/outline.js"), "{out}");
+    assert!(out.contains("function `duplicate` at lines 1, 2"), "{out}");
+    assert!(out.contains("`One::run` at line 3"), "{out}");
+    assert!(out.contains("`Two::run` at line 4"), "{out}");
+    assert!(!out.contains("src/outline.js::"), "{out}");
+    assert!(!out.contains("return 111"), "{out}");
+}

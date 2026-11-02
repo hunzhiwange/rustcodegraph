@@ -130,7 +130,7 @@ pub fn tools() -> Vec<ToolDefinition> {
                 ),
                 bool_prop(
                     "symbolsOnly",
-                    "File mode: return just the file's symbol map + dependents.",
+                    "File mode: return a compact symbol map with every indexed line location; repeated names share an entry.",
                     Some(false),
                 ),
                 number_prop(

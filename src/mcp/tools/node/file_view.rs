@@ -3,7 +3,7 @@
 //! 当用户传 `file` 而不是 `symbol` 时，这里返回类似 Read 的带行号源码，
 //! 同时附上 dependents；配置文件只展示键名以避免泄露值。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -173,18 +173,55 @@ fn format_file_symbols(cg: &mut crate::CodeGraph, file: &FileRecord) -> String {
     if nodes.is_empty() {
         lines.push("No symbols indexed for this file.".to_string());
     } else {
+        // A file header already supplies the path. Group repeated indexed names,
+        // retaining every distinct line so overloaded definitions remain navigable.
+        let prefix = format!("{}::", file.path);
+        let basename_prefix = Path::new(&file.path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| format!("{name}::"));
+        let mut positions = HashMap::new();
+        let mut groups: Vec<(String, String, Vec<u64>)> = Vec::new();
         for node in nodes {
-            let display_name = if node.qualified_name.is_empty() {
+            let qualified = if node.qualified_name.is_empty() {
                 node.name.as_str()
             } else {
                 node.qualified_name.as_str()
             };
-            lines.push(format!(
-                "- {} `{}` at line {}",
-                node_kind_label(node.kind),
-                display_name,
-                node.start_line
-            ));
+            let name = qualified
+                .strip_prefix(&prefix)
+                .or_else(|| {
+                    basename_prefix
+                        .as_ref()
+                        .and_then(|prefix| qualified.strip_prefix(prefix))
+                })
+                .unwrap_or(qualified)
+                .to_owned();
+            let kind = node_kind_label(node.kind).to_owned();
+            let next = groups.len();
+            let index = *positions
+                .entry((kind.clone(), name.clone()))
+                .or_insert(next);
+            if index == next {
+                groups.push((kind, name, Vec::new()));
+            }
+            let locations = &mut groups[index].2;
+            if locations.last() != Some(&node.start_line) {
+                locations.push(node.start_line);
+            }
+        }
+        for (kind, name, locations) in groups {
+            let noun = if locations.len() == 1 {
+                "line"
+            } else {
+                "lines"
+            };
+            let locations = locations
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            lines.push(format!("- {kind} `{name}` at {noun} {locations}"));
         }
     }
     lines.join("\n")

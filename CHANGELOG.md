@@ -8,6 +8,8 @@
 
 ### Fixes
 
+- File symbol maps now group repeated names and avoid repeating the file path while retaining every indexed line location.
+
 - MCP exploration and symbol lookup now return the full indexed source and retain retrieval state throughout each connection.
 
 - CLI indexing now uses the full language parser and reference resolution pipeline so code exploration retains symbols missed by the lightweight index.
