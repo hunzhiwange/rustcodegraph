@@ -25,3 +25,6 @@ mod installer_targets_remaining_partial_state_idempotency;
 mod installer_targets_toml_serializer_codex_backbone;
 #[path = "installer_targets_test/uninstall_targets_sweep.rs"]
 mod installer_uninstall_targets_sweep;
+
+#[path = "installer_targets_test/jsonc_preserving.rs"]
+mod upstream_033;

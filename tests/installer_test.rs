@@ -122,25 +122,13 @@ mod installer_config_writer {
         }
 
         #[test]
-        fn should_handle_corrupted_json_by_creating_backup() {
+        fn should_reject_corrupted_json_without_overwriting() {
             let env = TestEnv::new();
-            let mcp_json = env.path().join(".mcp.json");
-            fs::write(&mcp_json, "{ this is not valid json !!!")
-                .expect("corrupted .mcp.json fixture should be written");
-
-            let result = write_mcp_config(Location::Local);
-
-            assert_eq!(result.action, WriteAction::Updated);
-
-            let mut backup_path = mcp_json.clone();
-            backup_path.as_mut_os_string().push(".backup");
-            assert!(backup_path.exists());
-            let backup = fs::read_to_string(&backup_path)
-                .unwrap_or_else(|err| panic!("failed to read backup: {err}"));
-            assert!(backup.contains("this is not valid json"));
-
-            let content = read_json(&mcp_json);
-            assert!(content["mcpServers"].get(MCP_SERVER_KEY).is_some());
+            let file = env.path().join(".mcp.json");
+            let before = "{ this is not valid json !!!";
+            fs::write(&file, before).unwrap();
+            assert!(std::panic::catch_unwind(|| write_mcp_config(Location::Local)).is_err());
+            assert_eq!(fs::read_to_string(file).unwrap(), before);
         }
 
         #[test]

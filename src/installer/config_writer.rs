@@ -5,12 +5,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use super::targets::claude::write_permissions_entry;
-use super::targets::shared::{
-    home_dir, json_deep_equal, mcp_server_value, path_to_string, read_json_file, write_json_file,
-};
+use super::targets::shared::{home_dir, mcp_server_value, path_to_string, read_json_file};
 use super::targets::types::{FileWrite, Location, WriteAction, file_write};
 
 pub type InstallLocation = Location;
@@ -19,42 +17,69 @@ const MCP_SERVER_KEY: &str = "rustcodegraph";
 
 pub fn write_mcp_config(location: InstallLocation) -> FileWrite {
     let file = mcp_json_path(location);
-    let mut config = read_json_file_for_write(&file);
-    let after = mcp_server_value();
-    let pointer = format!("/mcpServers/{MCP_SERVER_KEY}");
-    let before = config.pointer(&pointer);
+    upsert_mcp_server(&file, &mcp_server_value())
+        .unwrap_or_else(|err| panic!("failed to write {}: {err}", file.display()))
+}
 
-    if before.is_some_and(|value| json_deep_equal(value, &after)) {
-        return file_write(path_to_string(file), WriteAction::Unchanged);
+/// Fill missing managed server keys while preserving the user's JSONC text and values.
+/// Invalid input is returned as an error without writing anything.
+pub fn upsert_mcp_server(path: &Path, entry: &Value) -> Result<FileWrite, String> {
+    use jsonc_parser::cst::{CstInputValue, CstRootNode};
+    fn input(value: &Value) -> CstInputValue {
+        match value {
+            Value::Null => CstInputValue::Null,
+            Value::Bool(v) => CstInputValue::Bool(*v),
+            Value::Number(v) => CstInputValue::Number(v.to_string()),
+            Value::String(v) => CstInputValue::String(v.clone()),
+            Value::Array(v) => CstInputValue::Array(v.iter().map(input).collect()),
+            Value::Object(v) => {
+                CstInputValue::Object(v.iter().map(|(k, v)| (k.clone(), input(v))).collect())
+            }
+        }
     }
-
-    let action = if before.is_some() || file.exists() {
-        WriteAction::Updated
-    } else {
-        WriteAction::Created
+    let entry = entry
+        .as_object()
+        .ok_or("server defaults must be an object")?;
+    let existed = path.exists();
+    let before = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(err.to_string()),
     };
-
-    if !config.is_object() {
-        config = Value::Object(Map::new());
+    let text = if before.trim().is_empty() {
+        "{\n}\n"
+    } else {
+        &before
+    };
+    let root = CstRootNode::parse(text, &Default::default())
+        .map_err(|e| format!("invalid JSONC; nothing changed: {e}"))?;
+    let object = root
+        .object_value()
+        .ok_or("configuration must be an object; nothing changed")?;
+    let servers = object
+        .object_value_or_create("mcpServers")
+        .ok_or("mcpServers must be an object; nothing changed")?;
+    let server = servers
+        .object_value_or_create(MCP_SERVER_KEY)
+        .ok_or("managed server must be an object; nothing changed")?;
+    for (key, value) in entry {
+        if server.get(key).is_none() {
+            server.append(key, input(value));
+        }
     }
-    // 即使用户文件里 mcpServers 不是对象，也只重建这一节，尽量保留其他顶层配置。
-    let root = config
-        .as_object_mut()
-        .expect("config should be normalized to a JSON object");
-    let servers = root
-        .entry("mcpServers".to_owned())
-        .or_insert_with(|| Value::Object(Map::new()));
-    if !servers.is_object() {
-        *servers = Value::Object(Map::new());
+    let after = root.to_string();
+    if after == before {
+        return Ok(file_write(path_to_string(path), WriteAction::Unchanged));
     }
-    servers
-        .as_object_mut()
-        .expect("mcpServers should be normalized to a JSON object")
-        .insert(MCP_SERVER_KEY.to_owned(), after);
-
-    write_json_file(&file, &config)
-        .unwrap_or_else(|err| panic!("failed to write {}: {err}", file.display()));
-    file_write(path_to_string(file), action)
+    super::targets::shared::atomic_write_file_sync(path, &after).map_err(|e| e.to_string())?;
+    Ok(file_write(
+        path_to_string(path),
+        if existed {
+            WriteAction::Updated
+        } else {
+            WriteAction::Created
+        },
+    ))
 }
 
 pub fn write_permissions(location: InstallLocation) -> FileWrite {
@@ -94,34 +119,5 @@ fn mcp_json_path(location: InstallLocation) -> PathBuf {
     match location {
         Location::Global => home_dir().join(".claude.json"),
         Location::Local => super::targets::shared::current_dir().join(".mcp.json"),
-    }
-}
-
-fn read_json_file_for_write(path: &Path) -> Value {
-    if !path.exists() {
-        return Value::Object(Map::new());
-    }
-
-    let Ok(raw) = fs::read_to_string(path) else {
-        return Value::Object(Map::new());
-    };
-
-    match serde_json::from_str::<Value>(&raw) {
-        Ok(Value::Object(map)) => Value::Object(map),
-        Ok(_) => Value::Object(Map::new()),
-        Err(err) => {
-            // 解析失败时先备份原文件再覆盖，避免安装器把用户手写配置直接吞掉。
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(str::to_owned)
-                .unwrap_or_else(|| path.to_string_lossy().into_owned());
-            eprintln!("  Warning: Could not parse {name}: {err}");
-            eprintln!("  A backup will be created before overwriting.");
-            let mut backup = path.to_path_buf();
-            backup.as_mut_os_string().push(".backup");
-            let _ = fs::write(backup, raw);
-            Value::Object(Map::new())
-        }
     }
 }
