@@ -213,6 +213,7 @@ pub(super) fn format_explore_file_result(
         lines.extend(render::render_explore_file_section(
             project_root,
             &file_path,
+            &cg.get_nodes_in_file(&file_path),
             mode,
             &query_tokens,
             &family,

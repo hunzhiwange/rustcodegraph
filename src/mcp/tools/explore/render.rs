@@ -12,6 +12,7 @@ use super::super::response::char_boundary_before;
 use super::super::shared::{config_keys, node_matches_symbol, project_file_path};
 use crate::types::{EdgeKind, NodeKind};
 
+#[derive(Clone, Copy)]
 pub(super) enum ExploreFileMode {
     Full,
     Skeleton,
@@ -126,6 +127,7 @@ pub(super) fn explore_file_mode(
 pub(super) fn render_explore_file_section(
     project_root: &Path,
     file_path: &str,
+    nodes: &[crate::types::Node],
     mode: ExploreFileMode,
     query_tokens: &HashSet<String>,
     family: &ExploreFamilyContext,
@@ -147,7 +149,9 @@ pub(super) fn render_explore_file_section(
         render_config_explore_summary(&source)
     } else {
         match mode {
-            ExploreFileMode::Full => source,
+            ExploreFileMode::Full => {
+                render_symbol_ranges(&source, nodes, query_tokens, max_chars_per_file)
+            }
             ExploreFileMode::Skeleton => render_signature_skeleton(&source),
             ExploreFileMode::Focused => {
                 let focused_names = family
@@ -165,8 +169,13 @@ pub(super) fn render_explore_file_section(
             }
         }
     };
-    let rendered = truncate_explore_file_body(&rendered, max_chars_per_file);
-    let rendered = if explore_line_numbers_enabled() && !rendered.trim().is_empty() {
+    let rendered = if matches!(mode, ExploreFileMode::Full) && !is_config_file_path(file_path) {
+        rendered
+    } else {
+        truncate_explore_file_body(&rendered, max_chars_per_file)
+    };
+    let ranged = matches!(mode, ExploreFileMode::Full) && rendered.starts_with("... (source lines");
+    let rendered = if !ranged && explore_line_numbers_enabled() && !rendered.trim().is_empty() {
         number_source_lines(&rendered, 1)
     } else {
         rendered
@@ -177,6 +186,97 @@ pub(super) fn render_explore_file_section(
         lines.extend(rendered.lines().map(str::to_string));
     }
     lines
+}
+
+// Select AST members before spending the file reservation, rather than cutting
+// the file prefix and losing definitions near its end.
+fn render_symbol_ranges(
+    source: &str,
+    nodes: &[crate::types::Node],
+    tokens: &HashSet<String>,
+    cap: usize,
+) -> String {
+    if cap == 0 || source.len() <= cap {
+        return source.to_string();
+    }
+    let source_lines: Vec<_> = source.lines().collect();
+    let mut candidates: Vec<_> = nodes
+        .iter()
+        .filter(|n| !matches!(n.kind, NodeKind::File | NodeKind::Module) && n.start_line > 0)
+        .collect();
+    candidates.sort_by_key(|n| {
+        (
+            !tokens.iter().any(|t| node_matches_symbol(n, t)),
+            n.end_line.saturating_sub(n.start_line),
+            n.start_line,
+        )
+    });
+    let mut selected = Vec::new();
+    let mut spent = 0;
+    for node in candidates {
+        let start = (node.start_line as usize).saturating_sub(1);
+        let end = (node.end_line as usize).min(source_lines.len());
+        if start >= end || selected.iter().any(|&(a, b)| start < b && end > a) {
+            continue;
+        }
+        let cost: usize = source_lines[start..end].iter().map(|l| l.len() + 1).sum();
+        let cost = cost
+            + 70
+            + if explore_line_numbers_enabled() {
+                (end - start) * 8
+            } else {
+                0
+            };
+        if spent + cost <= cap {
+            selected.push((start, end));
+            spent += cost;
+        } else if selected.is_empty() {
+            // Oversize members retain their complete first line/signature and
+            // only whole subsequent lines. Never slice UTF-8 or a source line.
+            let mut stop = start;
+            let signature_end = source_lines[start..end]
+                .iter()
+                .position(|line| line.contains('{'))
+                .map(|i| start + i + 1)
+                .unwrap_or(start + 1);
+            for line in &source_lines[start..end] {
+                if stop >= signature_end && spent + line.len() + 1 > cap {
+                    break;
+                }
+                spent += line.len() + 1;
+                stop += 1;
+            }
+            selected.push((start, stop));
+        }
+    }
+    // Keep relevance order: later source members must survive envelope trimming.
+    // Each emitted span carries its original source coordinates.
+    if selected.is_empty() {
+        return source
+            .lines()
+            .scan(0usize, |used, line| {
+                *used += line.len() + 1;
+                (*used <= cap).then_some(line)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    selected
+        .into_iter()
+        .map(|(a, b)| {
+            format!(
+                "... (source lines {}–{})\n{}",
+                a + 1,
+                b,
+                if explore_line_numbers_enabled() {
+                    number_source_lines(&source_lines[a..b].join("\n"), a + 1)
+                } else {
+                    source_lines[a..b].join("\n")
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn truncate_explore_file_body(source: &str, max_chars: usize) -> String {
