@@ -3,7 +3,8 @@
 //! 这里的目标是把 agent 已经给出的符号袋连接起来：优先展示短 call path，
 //! 而不是做开放式全图寻路。
 
-use std::collections::{HashSet, VecDeque};
+use std::cmp::Reverse;
+use std::collections::{HashMap, HashSet};
 
 use super::super::shared::{
     dedupe_nodes, edge_kind_label, node_matches_symbol, sort_nodes_for_output,
@@ -173,35 +174,125 @@ pub(super) fn format_flow_section(
     lines
 }
 
+fn path_rank(
+    path: &[FlowStep],
+    named: &HashSet<String>,
+) -> (usize, Reverse<usize>, Reverse<usize>) {
+    let coverage = path
+        .iter()
+        .filter(|s| named.contains(&s.node.id))
+        .map(|s| s.node.name.as_str())
+        .collect::<HashSet<_>>()
+        .len();
+    let bridges = path.iter().filter(|s| !named.contains(&s.node.id)).count();
+    (coverage, Reverse(bridges), Reverse(path.len()))
+}
+
+fn sort_flow_paths(paths: &mut [Vec<FlowStep>], named: &HashSet<String>) {
+    paths.sort_by(|a, b| {
+        path_rank(b, named).cmp(&path_rank(a, named)).then_with(|| {
+            a.iter()
+                .map(|s| &s.node.id)
+                .cmp(b.iter().map(|s| &s.node.id))
+        })
+    });
+}
+
 fn named_flow_paths(cg: &mut crate::CodeGraph, named_nodes: &[Node]) -> Vec<Vec<FlowStep>> {
+    // One bounded search for the symbol bag, rather than stopping at the first
+    // three arbitrary source/target pairs. At most one unnamed bridge is allowed.
+    let named = named_nodes
+        .iter()
+        .map(|n| n.id.clone())
+        .collect::<HashSet<_>>();
+    let mut frontier = named_nodes
+        .iter()
+        .map(|node| {
+            vec![FlowStep {
+                node: node.clone(),
+                edge: None,
+            }]
+        })
+        .collect::<Vec<_>>();
+    sort_flow_paths(&mut frontier, &named);
+    frontier.truncate(64);
+    let mut adjacency: HashMap<String, Vec<(Node, Edge)>> = HashMap::new();
     let mut paths = Vec::new();
-    let mut seen_paths = HashSet::new();
-    for from in named_nodes {
-        for to in named_nodes {
-            if from.id == to.id {
-                continue;
-            }
-            let Some(path) = find_named_flow_path(cg, from, &to.id, 8) else {
-                continue;
-            };
-            let key = path
-                .iter()
-                .map(|step| step.node.id.as_str())
-                .collect::<Vec<_>>()
-                .join(">");
-            if seen_paths.insert(key) {
-                paths.push(path);
-            }
-            if paths.len() >= 3 {
+    let mut expansions = 0;
+    for _ in 0..8 {
+        let mut next = Vec::new();
+        for path in frontier {
+            if expansions >= 600 {
                 break;
             }
+            expansions += 1;
+            let current = &path.last().unwrap().node.id;
+            let outgoing = adjacency.entry(current.clone()).or_insert_with(|| {
+                let mut edges = cg
+                    .get_outgoing_edges(current)
+                    .into_iter()
+                    .filter(|e| is_flow_edge(e.kind))
+                    .collect::<Vec<_>>();
+                edges.sort_by(|a, b| a.target.cmp(&b.target));
+                edges
+                    .into_iter()
+                    .filter_map(|e| cg.get_node(&e.target).map(|n| (n, e)))
+                    .collect()
+            });
+            let bridges = path.iter().filter(|s| !named.contains(&s.node.id)).count();
+            for (node, edge) in outgoing.iter() {
+                if path.iter().any(|s| s.node.id == node.id)
+                    || is_low_value_flow_node(node)
+                    || (!named.contains(&node.id) && bridges >= 1)
+                {
+                    continue;
+                }
+                let mut extended = path.clone();
+                extended.push(FlowStep {
+                    node: node.clone(),
+                    edge: Some(edge.clone()),
+                });
+                next.push(extended);
+            }
         }
-        if paths.len() >= 3 {
+        sort_flow_paths(&mut next, &named);
+        next.dedup_by(|a, b| {
+            a.iter()
+                .map(|s| &s.node.id)
+                .eq(b.iter().map(|s| &s.node.id))
+        });
+        next.truncate(64);
+        paths.extend(
+            next.iter()
+                .filter(|p| {
+                    named.contains(&p.last().unwrap().node.id) && path_rank(p, &named).0 >= 2
+                })
+                .cloned(),
+        );
+        if next.is_empty() {
+            break;
+        }
+        frontier = next;
+    }
+    sort_flow_paths(&mut paths, &named);
+    let mut selected: Vec<Vec<FlowStep>> = Vec::new();
+    for path in paths {
+        // A full chain already explains each of its contiguous shorter segments.
+        if selected.iter().any(|full| {
+            full.windows(path.len()).any(|part| {
+                part.iter()
+                    .map(|s| &s.node.id)
+                    .eq(path.iter().map(|s| &s.node.id))
+            })
+        }) {
+            continue;
+        }
+        selected.push(path);
+        if selected.len() == 3 {
             break;
         }
     }
-
-    paths
+    selected
 }
 
 pub(super) fn protected_flow_nodes(cg: &mut crate::CodeGraph, named_nodes: &[Node]) -> Vec<Node> {
@@ -220,62 +311,6 @@ pub(super) fn protected_flow_nodes(cg: &mut crate::CodeGraph, named_nodes: &[Nod
         .collect::<Vec<_>>();
     dedupe_nodes(&mut nodes);
     nodes
-}
-
-fn find_named_flow_path(
-    cg: &mut crate::CodeGraph,
-    from: &Node,
-    target_id: &str,
-    max_depth: usize,
-) -> Option<Vec<FlowStep>> {
-    // BFS 有深度和扩展上限，且过滤低价值节点；explore 输出宁可少给路径，
-    // 也不能在 god-function 或 import/file 节点上发散。
-    let mut visited = HashSet::from([from.id.clone()]);
-    let mut queue = VecDeque::from([vec![FlowStep {
-        node: from.clone(),
-        edge: None,
-    }]]);
-    let mut expansions = 0usize;
-
-    while let Some(path) = queue.pop_front() {
-        let current = path.last()?.node.clone();
-        if current.id == target_id {
-            return Some(path);
-        }
-        if path.len().saturating_sub(1) >= max_depth {
-            continue;
-        }
-        expansions += 1;
-        if expansions > 600 {
-            break;
-        }
-
-        let mut edges = cg
-            .get_outgoing_edges(&current.id)
-            .into_iter()
-            .filter(|edge| is_flow_edge(edge.kind))
-            .collect::<Vec<_>>();
-        edges.sort_by(|a, b| a.target.cmp(&b.target));
-
-        for edge in edges {
-            if !visited.insert(edge.target.clone()) {
-                continue;
-            }
-            let Some(next_node) = cg.get_node(&edge.target) else {
-                continue;
-            };
-            if is_low_value_flow_node(&next_node) && next_node.id != target_id {
-                continue;
-            }
-            let mut next_path = path.clone();
-            next_path.push(FlowStep {
-                node: next_node,
-                edge: Some(edge),
-            });
-            queue.push_back(next_path);
-        }
-    }
-    None
 }
 
 fn is_flow_edge(kind: EdgeKind) -> bool {
@@ -310,7 +345,24 @@ fn format_flow_path(path: &[FlowStep]) -> String {
             .as_ref()
             .map(|edge| edge_kind_label(edge.kind))
             .unwrap_or("edge");
-        rendered.push(format!("--{via}--> {}", format_flow_node(&step.node)));
+        let annotation = step
+            .edge
+            .as_ref()
+            .and_then(|edge| edge.metadata.as_ref())
+            .and_then(|metadata| {
+                let mechanism = metadata.get("synthesizedBy")?.as_str()?;
+                let wiring = metadata
+                    .get("registeredAt")
+                    .and_then(|v| v.as_str())
+                    .map(|at| format!("; registeredAt: {at}"))
+                    .unwrap_or_default();
+                Some(format!(" [{mechanism}{wiring}]"))
+            })
+            .unwrap_or_default();
+        rendered.push(format!(
+            "--{via}{annotation}--> {}",
+            format_flow_node(&step.node)
+        ));
     }
     rendered.join(" ")
 }

@@ -25,7 +25,12 @@ impl TreeSitterExtractor {
                     || extractor.methods_are_top_level()
                     || receiver.is_some()
                 {
-                    self.extract_method(node);
+                    match extractor.classify_method_node(node) {
+                        MethodNodeKind::Property => {
+                            self.extract_property(node);
+                        }
+                        MethodNodeKind::Method => self.extract_method(node),
+                    }
                     return;
                 }
             }

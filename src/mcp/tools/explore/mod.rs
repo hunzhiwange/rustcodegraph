@@ -213,20 +213,23 @@ pub(super) fn format_explore_file_result(
             lines.extend(dynamic_boundaries);
         }
     }
+    // Caller lists and location pointers must not consume the final envelope
+    // before the evidence needed to explain the flow has been emitted.
+    let mut footer = Vec::new();
     let blast_radius = flow::format_explore_blast_radius(cg, &nodes);
     if !blast_radius.is_empty() {
-        lines.push(String::new());
-        lines.extend(blast_radius);
+        footer.push(String::new());
+        footer.extend(blast_radius);
     }
-    lines.push(String::new());
+    footer.push(String::new());
     if !pointer_files.is_empty() {
-        lines.push("### Additional symbol locations (source not included)".to_string());
+        footer.push("### Additional symbol locations (source not included)".to_string());
         for path in pointer_files {
             for node in nodes.iter().filter(|node| node.file_path == path) {
-                lines.push(format!("- {}:{} — {}", path, node.start_line, node.name));
+                footer.push(format!("- {}:{} — {}", path, node.start_line, node.name));
             }
         }
-        lines.push(String::new());
+        footer.push(String::new());
     }
     lines.push("### Source Code".to_string());
 
@@ -278,5 +281,6 @@ pub(super) fn format_explore_file_result(
             lines[index] = source;
         }
     }
+    lines.extend(footer);
     lines.join("\n")
 }

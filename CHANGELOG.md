@@ -8,6 +8,9 @@
 
 ### Fixes
 
+- Large JavaScript and TypeScript files now retain complete class methods and render flows without spurious members from function bodies.
+- Exploration now prioritizes complete connected flows and preserves their source ahead of long caller lists.
+
 - File symbol maps now group repeated names and avoid repeating the file path while retaining every indexed line location.
 
 - MCP exploration and symbol lookup now return the full indexed source and retain retrieval state throughout each connection.

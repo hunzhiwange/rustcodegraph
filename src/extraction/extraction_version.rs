@@ -6,7 +6,7 @@
 //! 这个版本号进入项目 metadata；当节点/边语义改变时提升它，旧索引会被
 //! 视为需要重建，而普通重构或注释变更不应该改动。
 
-pub const EXTRACTION_VERSION: u32 = 24;
+pub const EXTRACTION_VERSION: u32 = 25;
 
 /// Unknown versions do not establish that an index is outdated.
 pub fn is_outdated(version: Option<u64>) -> bool {

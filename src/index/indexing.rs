@@ -92,7 +92,7 @@ pub(super) fn index_facade_database_inner(
             let mut file_errors = Vec::new();
             let (mut file_nodes, mut file_pending_edges, mut file_edges, mut file_unresolved_refs) =
                 if should_index_with_native_parser(language, &source) {
-                    // 小文件优先走原生 tree-sitter，之后再用 facade fallback 针对语言缺口补齐节点和边。
+                    // 原生 tree-sitter 保留声明作用域；随后只针对语言缺口补齐节点和边。
                     crate::utils::debug_rss("    native:before extract_source_now");
                     let mut result = native_result.expect("native parse prepared");
                     crate::utils::debug_rss("    native:after extract_source_now");
@@ -110,7 +110,6 @@ pub(super) fn index_facade_database_inner(
                     }
                     let mut nodes = result.nodes;
                     apply_native_source_namespace(&file_path, &source, language, &mut nodes);
-                    apply_native_ts_js_class_field_kinds(&file_path, &source, language, &mut nodes);
                     let mut edges = result.edges;
                     let file_node_id = format!("file:{file_path}");
                     if !nodes.iter().any(|node| node.id == file_node_id) {

@@ -18,6 +18,8 @@ verbatim source PLUS who calls it and what it affects, so you edit with the
 blast radius in view. More accurate context, in far fewer tokens and
 round-trips than reading files yourself.
 
+Flow prioritizes paths connecting the most queried symbols; heuristic links include their mechanism and wiring location.
+
 File symbol maps use names relative to the file header and group repeated names while retaining their indexed line locations.
 
 Explore and node return indexed source and graph context in both CLI and MCP sessions.

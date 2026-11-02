@@ -49,3 +49,37 @@ async fn handle_{index}() -> Result<(), ApiError> {{
         "expected router plus handlers, got {functions} functions"
     );
 }
+
+#[test]
+fn cloned_nodes_preserve_the_full_ancestor_chain_and_text() {
+    use rustcodegraph::web_tree_sitter::{Language as Grammar, Parser};
+    let mut parser = Parser::default();
+    parser.set_language(Some(Grammar::load("typescript").unwrap()));
+    let source = "export class Example { run() { if (true) { const value = 1; return value; } } }";
+    let tree = parser.parse(source, None).unwrap();
+    let mut pending = vec![tree.root_node.clone()];
+    let mut leaf = None;
+    while let Some(node) = pending.pop() {
+        if node.node_type() == "identifier" && node.text() == "value" {
+            leaf = Some(node.clone());
+            break;
+        }
+        pending.extend(node.named_children());
+    }
+    let mut cursor = leaf.unwrap().parent();
+    let mut ancestors = Vec::new();
+    while let Some(node) = cursor {
+        assert_eq!(node.text(), &source[node.start_index..node.end_index]);
+        ancestors.push(node.node_type.clone());
+        cursor = node.parent();
+    }
+    assert!(
+        ancestors.iter().any(|kind| kind == "method_definition"),
+        "{ancestors:?}"
+    );
+    assert!(
+        ancestors.iter().any(|kind| kind == "export_statement"),
+        "{ancestors:?}"
+    );
+    assert_eq!(ancestors.last().unwrap(), "program");
+}

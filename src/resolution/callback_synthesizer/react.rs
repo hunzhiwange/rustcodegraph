@@ -3,7 +3,7 @@
 //! React flow 需要同时跨过 `setState -> render` 和 `render -> child component`；
 //! 只补其中一段会让 agent 继续钻源码，所以这里把两段都作为保守 heuristic 边。
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use regex::Regex;
 use serde_json::json;
@@ -99,12 +99,17 @@ pub(super) fn react_jsx_child_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge
             let Some(src) = slice_lines(&content, parent.start_line, parent.end_line) else {
                 continue;
             };
-            let mut names = HashSet::new();
+            let mut names = BTreeMap::new();
             for cap in JSX_TAG_RE.captures_iter(&src) {
-                names.insert(cap[1].to_string());
+                let line = parent.start_line
+                    + src[..cap.get(0).unwrap().start()]
+                        .bytes()
+                        .filter(|b| *b == b'\n')
+                        .count() as u64;
+                names.entry(cap[1].to_string()).or_insert(line);
             }
             let mut added = 0;
-            for name in names {
+            for (name, line) in names {
                 if added >= MAX_JSX_CHILDREN {
                     break;
                 }
@@ -128,7 +133,10 @@ pub(super) fn react_jsx_child_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge
                         EdgeKind::Calls,
                         Some(parent.start_line),
                         "jsx-render",
-                        [("via", json!(name))],
+                        [
+                            ("via", json!(name)),
+                            ("registeredAt", json!(format!("{file}:{line}"))),
+                        ],
                     ));
                     added += 1;
                 }

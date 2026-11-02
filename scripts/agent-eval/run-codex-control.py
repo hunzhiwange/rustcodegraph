@@ -6,6 +6,8 @@ parser = argparse.ArgumentParser(description='Run two matched Codex/MCP retrieva
 parser.add_argument('root', type=pathlib.Path, help='Contains excalidraw (indexed checkout), engine-base and engine-new; receives ab-wired-* logs')
 parser.add_argument('--iterations', type=int, nargs='+', default=[1, 2])
 parser.add_argument('--arms', choices=['base', 'new'], nargs='+', default=['base', 'new'])
+parser.add_argument('--baseline-repo', type=pathlib.Path, help='Indexed baseline checkout; defaults to root/excalidraw')
+parser.add_argument('--new-repo', type=pathlib.Path, help='Indexed new checkout; defaults to root/excalidraw')
 args = parser.parse_args()
 root = args.root.resolve()
 env = os.environ.copy()
@@ -18,10 +20,12 @@ for iteration in args.iterations:
         if (run / 'run.jsonl').exists():
             raise FileExistsError(f'Refusing to overwrite run evidence: {run}')
         run.mkdir(exist_ok=True)
+        indexed_repo = (args.baseline_repo if label == 'base' else args.new_repo) or root / 'excalidraw'
+        indexed_repo = indexed_repo.resolve()
         target = run / 'repo'
         target.mkdir(exist_ok=True)
-        subprocess.run(['rsync', '-a', '--exclude=.git', '--exclude=.rustcodegraph', str(root / 'excalidraw') + '/', str(target) + '/'], check=True)
-        shutil.copytree(root / 'excalidraw/.rustcodegraph', target / '.rustcodegraph', dirs_exist_ok=True)
+        subprocess.run(['rsync', '-a', '--exclude=.git', '--exclude=.rustcodegraph', str(indexed_repo) + '/', str(target) + '/'], check=True)
+        shutil.copytree(indexed_repo / '.rustcodegraph', target / '.rustcodegraph', dirs_exist_ok=True)
         binary = str(root / f'engine-{label}')
         denv = env | {'RUSTCODEGRAPH_DAEMON_INTERNAL': '1', 'RUSTCODEGRAPH_DAEMON_IDLE_TIMEOUT_MS': '1800000'}
         with open(run / 'daemon.log', 'w') as df:

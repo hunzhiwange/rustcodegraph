@@ -191,8 +191,16 @@ pub(super) const FACADE_NATIVE_MAX_BYTES: usize = 128 * 1024;
 pub(super) const FACADE_NATIVE_MAX_LINES: usize = 5_000;
 
 pub(super) fn should_index_with_native_parser(language: Language, source: &str) -> bool {
-    // 大文件走文本 fallback，避免 tree-sitter 解析超大生成文件拖慢索引或占用过多内存。
-    if source.len() > FACADE_NATIVE_MAX_BYTES || source.lines().count() > FACADE_NATIVE_MAX_LINES {
+    // JS/TS files admitted by discovery must retain AST scopes even above the legacy fallback thresholds.
+    // Other languages retain their existing fallback policy.
+    let js_ts = matches!(
+        language,
+        Language::TypeScript | Language::Tsx | Language::JavaScript | Language::Jsx
+    );
+    if !js_ts
+        && (source.len() > FACADE_NATIVE_MAX_BYTES
+            || source.lines().count() > FACADE_NATIVE_MAX_LINES)
+    {
         return false;
     }
     matches!(
@@ -317,82 +325,6 @@ pub(super) fn apply_native_source_namespace(
             };
         } else if node.qualified_name == node.name {
             node.qualified_name = format!("{prefix}::{}", node.name);
-        }
-    }
-}
-
-pub(super) fn apply_native_ts_js_class_field_kinds(
-    file_path: &str,
-    source: &str,
-    language: Language,
-    nodes: &mut [Node],
-) {
-    // TS/JS class field 可能被通用抽取识别成 method；用 facade 成员解析结果回填 kind/signature。
-    if !matches!(
-        language,
-        Language::TypeScript | Language::Tsx | Language::JavaScript | Language::Jsx
-    ) {
-        return;
-    }
-
-    let source_lines = source.lines().collect::<Vec<_>>();
-    let package_prefix = package_prefix_from_source(language, source);
-    let mut in_class = false;
-    let mut class_depth = 0isize;
-    let mut current_class_name: Option<String> = None;
-    let mut current_container_kind: Option<FacadeContainerKind> = None;
-
-    for (idx, line) in source_lines.iter().copied().enumerate() {
-        let line_number = (idx + 1) as u64;
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with("//") {
-            continue;
-        }
-
-        if let Some((class_name, container_kind)) = container_from_line(trimmed) {
-            let delta = brace_delta(trimmed);
-            if trimmed.contains('{') && delta > 0 {
-                in_class = true;
-                class_depth = delta;
-                current_class_name = Some(class_name.to_owned());
-                current_container_kind = Some(container_kind);
-            }
-            continue;
-        }
-
-        if !in_class {
-            continue;
-        }
-
-        if let Some((member_node, _)) = class_member_from_line(
-            file_path,
-            language,
-            current_class_name.as_deref(),
-            current_container_kind,
-            line,
-            line_number,
-            0,
-            package_prefix.as_deref(),
-        ) && member_node.kind == NodeKind::Property
-            && let Some(node) = nodes.iter_mut().find(|node| {
-                node.file_path == file_path
-                    && node.name == member_node.name
-                    && node.start_line == member_node.start_line
-                    && node.kind == NodeKind::Method
-            })
-        {
-            node.kind = NodeKind::Property;
-            node.signature = member_node.signature;
-            node.visibility = member_node.visibility;
-            node.is_static = member_node.is_static;
-        }
-
-        class_depth += brace_delta(trimmed);
-        if class_depth <= 0 {
-            in_class = false;
-            class_depth = 0;
-            current_class_name = None;
-            current_container_kind = None;
         }
     }
 }

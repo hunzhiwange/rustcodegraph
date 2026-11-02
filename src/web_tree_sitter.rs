@@ -348,9 +348,10 @@ fn range_from_native(range: tree_sitter::Range) -> Range {
 fn syntax_node_stub_from_native(
     node: &tree_sitter::Node,
     source: &str,
-    parent: Option<Box<SyntaxNode>>,
+    parent: Option<Arc<SyntaxNode>>,
 ) -> SyntaxNode {
-    // stub 只复制当前节点的轻量信息，用作 parent/sibling 链接，避免递归展开整棵树。
+    // Links share immutable ancestor stubs with no child links, forming an acyclic DAG.
+    // Cloning a node must not duplicate its ancestors' text or discard their ancestry.
     let text = node.utf8_text(source.as_bytes()).unwrap_or("").to_owned();
     SyntaxNode {
         id: node.id() as u64,
@@ -381,10 +382,10 @@ fn syntax_node_stub_from_native(
 fn syntax_node_from_native(
     node: &tree_sitter::Node,
     source: &str,
-    parent: Option<Box<SyntaxNode>>,
+    parent: Option<Arc<SyntaxNode>>,
 ) -> SyntaxNode {
     let mut converted = syntax_node_stub_from_native(node, source, parent);
-    let parent_stub = Box::new(syntax_node_stub_from_native(
+    let parent_stub = Arc::new(syntax_node_stub_from_native(
         node,
         source,
         converted.parent.clone(),
@@ -406,14 +407,14 @@ fn syntax_node_from_native(
         };
         let mut child = syntax_node_from_native(&native_child, source, Some(parent_stub.clone()));
         if let Some(prev) = native_child.prev_named_sibling() {
-            child.previous_named_sibling = Some(Box::new(syntax_node_stub_from_native(
+            child.previous_named_sibling = Some(Arc::new(syntax_node_stub_from_native(
                 &prev,
                 source,
                 Some(parent_stub.clone()),
             )));
         }
         if let Some(next) = native_child.next_named_sibling() {
-            child.next_named_sibling = Some(Box::new(syntax_node_stub_from_native(
+            child.next_named_sibling = Some(Arc::new(syntax_node_stub_from_native(
                 &next,
                 source,
                 Some(parent_stub.clone()),
@@ -497,7 +498,7 @@ impl<'a> IntoIterator for &'a NodeList {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SyntaxNode {
     pub id: u64,
     pub start_index: usize,
@@ -518,77 +519,9 @@ pub struct SyntaxNode {
     pub children: NodeList,
     pub named_children: NodeList,
     pub field_names: HashMap<String, FieldTarget>,
-    pub parent: Option<Box<SyntaxNode>>,
-    pub previous_named_sibling: Option<Box<SyntaxNode>>,
-    pub next_named_sibling: Option<Box<SyntaxNode>>,
-}
-
-impl Clone for SyntaxNode {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            start_index: self.start_index,
-            end_index: self.end_index,
-            start_position: self.start_position,
-            end_position: self.end_position,
-            node_type: self.node_type.clone(),
-            grammar_type: self.grammar_type.clone(),
-            text: self.text.clone(),
-            is_named: self.is_named,
-            is_extra: self.is_extra,
-            is_error: self.is_error,
-            is_missing: self.is_missing,
-            has_changes: self.has_changes,
-            has_error: self.has_error,
-            parse_state: self.parse_state,
-            next_parse_state: self.next_parse_state,
-            children: self.children.clone(),
-            named_children: self.named_children.clone(),
-            field_names: self.field_names.clone(),
-            parent: self
-                .parent
-                .as_ref()
-                // parent/sibling 只浅拷贝链接信息，否则任意 clone 都会复制整棵祖先树。
-                .map(|parent| Box::new(parent.shallow_link_clone())),
-            previous_named_sibling: self
-                .previous_named_sibling
-                .as_ref()
-                .map(|sibling| Box::new(sibling.shallow_link_clone())),
-            next_named_sibling: self
-                .next_named_sibling
-                .as_ref()
-                .map(|sibling| Box::new(sibling.shallow_link_clone())),
-        }
-    }
-}
-
-impl SyntaxNode {
-    fn shallow_link_clone(&self) -> Self {
-        Self {
-            id: self.id,
-            start_index: self.start_index,
-            end_index: self.end_index,
-            start_position: self.start_position,
-            end_position: self.end_position,
-            node_type: self.node_type.clone(),
-            grammar_type: self.grammar_type.clone(),
-            text: self.text.clone(),
-            is_named: self.is_named,
-            is_extra: self.is_extra,
-            is_error: self.is_error,
-            is_missing: self.is_missing,
-            has_changes: self.has_changes,
-            has_error: self.has_error,
-            parse_state: self.parse_state,
-            next_parse_state: self.next_parse_state,
-            children: NodeList::default(),
-            named_children: NodeList::default(),
-            field_names: self.field_names.clone(),
-            parent: None,
-            previous_named_sibling: None,
-            next_named_sibling: None,
-        }
-    }
+    pub parent: Option<Arc<SyntaxNode>>,
+    pub previous_named_sibling: Option<Arc<SyntaxNode>>,
+    pub next_named_sibling: Option<Arc<SyntaxNode>>,
 }
 
 impl SyntaxNode {
@@ -762,7 +695,7 @@ impl TreeCursor {
 
     pub fn goto_parent(&mut self) -> bool {
         if let Some(parent) = self.current_node.parent.clone() {
-            self.current_node = *parent;
+            self.current_node = parent.as_ref().clone();
             self.current_depth = self.current_depth.saturating_sub(1);
             true
         } else {
