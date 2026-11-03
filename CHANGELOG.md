@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Grok Build uninstall now removes RustCodeGraph settings and environment overrides while preserving other servers, comments, and line endings.
+
 - Grok Build users can install RustCodeGraph locally or globally while preserving existing MCP settings.
 
 - DeepSeek Harness uninstall now removes RustCodeGraph from profile patches while preserving comments, custom settings on reinstall, and other servers.

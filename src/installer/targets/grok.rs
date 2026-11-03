@@ -4,8 +4,7 @@ use std::path::PathBuf;
 
 use super::shared::{get_mcp_server_config, path_to_string, read_text};
 use super::toml::{
-    RemoveTomlAction, TomlValue, UpsertTomlAction, build_toml_table, remove_toml_table,
-    upsert_toml_table,
+    RemoveTomlAction, TomlValue, UpsertTomlAction, build_toml_table, upsert_toml_table,
 };
 use super::types::{
     AgentTarget, DetectionResult, FileWrite, InstallOptions, Location, TargetId, WriteAction,
@@ -85,7 +84,7 @@ impl AgentTarget for GrokTarget {
         let mut result = WriteResult::empty();
         let path = toml_config_path(loc);
         if path.exists() {
-            let removed = remove_toml_table(&read_text(&path), TOML_HEADER);
+            let removed = remove_grok_table(&read_text(&path));
             let action = match removed.action {
                 RemoveTomlAction::Removed => {
                     let _ = super::shared::atomic_write_file_sync(&path, &removed.content);
@@ -132,7 +131,23 @@ fn write_mcp_entry(loc: Location) -> FileWrite {
     let created = existing.is_empty() && fs::metadata(&file).is_err();
     // `upsert_toml_table` 不做完整 TOML round-trip，目的是最大限度保留
     // 用户注释和非 RustCodeGraph 表。
-    let upsert = upsert_toml_table(&existing, TOML_HEADER, &build_rustcodegraph_block());
+    let mut upsert = upsert_toml_table(&existing, TOML_HEADER, &build_rustcodegraph_block());
+    if upsert.action == UpsertTomlAction::Inserted && !existing.is_empty() {
+        let newline = if existing.contains("\r\n") {
+            "\r\n"
+        } else {
+            "\n"
+        };
+        let separator = if existing.ends_with('\n') {
+            ""
+        } else {
+            newline
+        };
+        upsert.content = format!(
+            "{existing}{separator}{}{newline}",
+            build_rustcodegraph_block().replace('\n', newline)
+        );
+    }
     if upsert.content.parse::<toml::Value>().is_err() {
         return file_write(path_to_string(file), WriteAction::Unchanged);
     }
@@ -150,4 +165,32 @@ fn write_mcp_entry(loc: Location) -> FileWrite {
         let _ = super::shared::atomic_write_file_sync(&file, &upsert.content);
     }
     file_write(path_to_string(file), action)
+}
+
+// Preserve untouched lines byte for byte, including CRLF and sibling tables.
+fn remove_grok_table(content: &str) -> super::toml::RemoveTomlResult {
+    let mut output = String::new();
+    let mut removing = false;
+    let mut found = false;
+    for line in content.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            let header = trimmed.split('#').next().unwrap_or(trimmed).trim();
+            removing = header == "[mcp_servers.rustcodegraph]"
+                || header.starts_with("[mcp_servers.rustcodegraph.")
+                || header.starts_with("[[mcp_servers.rustcodegraph.");
+            found |= removing;
+        }
+        if !removing {
+            output.push_str(line);
+        }
+    }
+    super::toml::RemoveTomlResult {
+        content: output,
+        action: if found {
+            RemoveTomlAction::Removed
+        } else {
+            RemoveTomlAction::NotFound
+        },
+    }
 }

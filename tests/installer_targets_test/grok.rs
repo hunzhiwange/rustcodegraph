@@ -76,3 +76,69 @@ fn case_051_conflicting_toml_preserved() {
         }
     });
 }
+
+#[test]
+fn case_052_roundtrip() {
+    with_fixture("052-roundtrip", |_| {
+        let t = get_target("grok").unwrap();
+        for loc in [Location::Local, Location::Global] {
+            let p = PathBuf::from(&t.describe_paths(loc)[0]);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            let original = "# keep\r\n[mcp_servers.other]\r\ncommand = \"other\"\r\n";
+            fs::write(&p, original).unwrap();
+            t.install(loc, install_options(false));
+            let installed = fs::read(&p).unwrap();
+            assert_eq!(
+                t.install(loc, install_options(true)).files[0].action,
+                WriteAction::Unchanged
+            );
+            assert_eq!(fs::read(&p).unwrap(), installed);
+            assert_eq!(t.uninstall(loc).files[0].action, WriteAction::Removed);
+            let removed = fs::read_to_string(&p).unwrap();
+            assert!(removed.contains(original));
+            assert!(!removed.contains("mcp_servers.rustcodegraph"));
+            assert_eq!(t.uninstall(loc).files[0].action, WriteAction::NotFound);
+            assert_eq!(fs::read_to_string(&p).unwrap(), removed);
+        }
+    });
+}
+
+#[test]
+fn case_052_custom_reinstall() {
+    with_fixture("052-custom", |_| {
+        let t = get_target("grok").unwrap();
+        let loc = Location::Global;
+        let p = PathBuf::from(&t.describe_paths(loc)[0]);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let original = "# user\n[mcp_servers.rustcodegraph]\ncommand = \"custom\"\nargs = [\"custom\"]\nenabled = false\n[mcp_servers.rustcodegraph.env]\nCUSTOM = \"yes\"\n[mcp_servers.codegraph]\ncommand = \"legacy\"\n";
+        fs::write(&p, original).unwrap();
+        for _ in 0..2 {
+            assert_eq!(
+                t.install(loc, install_options(true)).files[0].action,
+                WriteAction::Unchanged
+            );
+            assert_eq!(fs::read_to_string(&p).unwrap(), original);
+        }
+        t.uninstall(loc);
+        let remaining = fs::read_to_string(p).unwrap();
+        assert!(remaining.contains("[mcp_servers.codegraph]\ncommand = \"legacy\""));
+        assert!(!remaining.contains("CUSTOM"));
+    });
+}
+
+#[test]
+fn case_052_empty_missing() {
+    with_fixture("052-empty", |_| {
+        let t = get_target("grok").unwrap();
+        let loc = Location::Global;
+        assert_eq!(t.uninstall(loc).files[0].action, WriteAction::NotFound);
+        let p = PathBuf::from(&t.describe_paths(loc)[0]);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(&p, "").unwrap();
+        assert_eq!(t.uninstall(loc).files[0].action, WriteAction::NotFound);
+        t.install(loc, install_options(false));
+        t.uninstall(loc);
+        assert!(fs::read_to_string(&p).unwrap().trim().is_empty());
+        assert_eq!(t.uninstall(loc).files[0].action, WriteAction::NotFound);
+    });
+}
