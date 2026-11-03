@@ -231,6 +231,7 @@ pub(super) fn should_index_with_native_parser(language: Language, source: &str) 
             | Language::Razor
             | Language::Liquid
             | Language::Xml
+            | Language::Nix
     )
 }
 
