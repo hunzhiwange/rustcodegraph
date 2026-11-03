@@ -4,6 +4,7 @@
 //! 再补 contract tests，避免 CLI auto/all 和文档列出的顺序不一致。
 
 use super::antigravity::AntigravityTarget;
+use super::bob::BobTarget;
 use super::claude::ClaudeTarget;
 use super::codex::CodexTarget;
 use super::copilot_cli::CopilotCliTarget;
@@ -18,6 +19,7 @@ use super::types::{AgentTarget, DetectionResult, Location, TARGET_IDS, TargetId}
 
 pub fn all_targets() -> Vec<Box<dyn AgentTarget>> {
     vec![
+        Box::new(BobTarget),
         Box::new(ClaudeTarget),
         Box::new(CursorTarget),
         Box::new(CodexTarget),

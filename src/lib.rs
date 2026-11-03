@@ -67,6 +67,7 @@ pub mod installer {
     pub mod instructions_template;
     pub mod targets {
         pub mod antigravity;
+        pub mod bob;
         pub mod claude;
         pub mod codex;
         pub mod copilot_cli;

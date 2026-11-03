@@ -4,6 +4,8 @@
 
 ### New Features
 
+- IBM Bob now supports local and global MCP installation while preserving existing settings.
+
 - Install RustCodeGraph globally for the GitHub Copilot plugin in JetBrains IDEs while preserving existing MCP configuration.
 
 ### Fixes

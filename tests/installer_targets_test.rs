@@ -37,3 +37,6 @@ mod copilot_cli;
 
 #[path = "installer_targets_test/copilot_jetbrains.rs"]
 mod copilot_jetbrains;
+
+#[path = "installer_targets_test/bob.rs"]
+mod bob;
