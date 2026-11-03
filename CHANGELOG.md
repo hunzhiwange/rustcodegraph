@@ -12,6 +12,8 @@
 
 ### Fixes
 
+- Factory Droid reinstall and uninstall preserve custom launch settings, comments, and other MCP servers.
+
 - JetBrains Copilot reinstall preserves custom launch settings, and uninstall keeps comments and other MCP servers.
 
 - Copilot CLI reinstall and uninstall preserve user settings, comments, and other MCP servers.
