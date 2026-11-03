@@ -67,7 +67,7 @@ impl AgentTarget for CopilotJetbrainsTarget {
             &path,
             "servers",
             &entry(loc),
-            true,
+            false,
         )
         .unwrap_or_else(|e| panic!("failed to write {}: {e}", path.display()));
         WriteResult::with_file(file)
@@ -86,7 +86,7 @@ impl AgentTarget for CopilotJetbrainsTarget {
             return unchanged();
         }
         let root = jsonc_parser::cst::CstRootNode::parse(&read_text(&path), &Default::default())
-            .expect("invalid VS Code JSONC");
+            .expect("invalid JetBrains Copilot JSONC");
         let Some(object) = root.object_value() else {
             return unchanged();
         };
@@ -101,7 +101,7 @@ impl AgentTarget for CopilotJetbrainsTarget {
             object.get("servers").unwrap().remove();
         }
         super::shared::atomic_write_file_sync(&path, &root.to_string())
-            .expect("write VS Code config");
+            .expect("write JetBrains Copilot config");
         WriteResult::with_file(file_write(path_to_string(path), WriteAction::Removed))
     }
     fn print_config(&self, loc: Location) -> String {

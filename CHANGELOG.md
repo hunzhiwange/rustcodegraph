@@ -8,6 +8,8 @@
 
 ### Fixes
 
+- JetBrains Copilot reinstall preserves custom launch settings, and uninstall keeps comments and other MCP servers.
+
 - Copilot CLI reinstall and uninstall preserve user settings, comments, and other MCP servers.
 
 ### New Features
