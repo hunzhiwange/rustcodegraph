@@ -24,6 +24,16 @@ pub fn write_mcp_config(location: InstallLocation) -> FileWrite {
 /// Fill missing managed server keys while preserving the user's JSONC text and values.
 /// Invalid input is returned as an error without writing anything.
 pub fn upsert_mcp_server(path: &Path, entry: &Value) -> Result<FileWrite, String> {
+    upsert_mcp_server_under(path, "mcpServers", entry, false)
+}
+
+/// Edit a managed server under the host-specific wrapper without rewriting siblings.
+pub fn upsert_mcp_server_under(
+    path: &Path,
+    wrapper: &str,
+    entry: &Value,
+    replace: bool,
+) -> Result<FileWrite, String> {
     use jsonc_parser::cst::{CstInputValue, CstRootNode};
     fn input(value: &Value) -> CstInputValue {
         match value {
@@ -57,12 +67,36 @@ pub fn upsert_mcp_server(path: &Path, entry: &Value) -> Result<FileWrite, String
         .object_value()
         .ok_or("configuration must be an object; nothing changed")?;
     let servers = object
-        .object_value_or_create("mcpServers")
-        .ok_or("mcpServers must be an object; nothing changed")?;
+        .object_value_or_create(wrapper)
+        .ok_or_else(|| format!("{wrapper} must be an object; nothing changed"))?;
+    if replace {
+        if let Some(existing) = servers.get(MCP_SERVER_KEY) {
+            let parsed =
+                jsonc_parser::parse_to_serde_value(&existing.to_string(), &Default::default())
+                    .ok()
+                    .flatten();
+            if parsed
+                .as_ref()
+                .and_then(Value::as_object)
+                .is_some_and(|before| {
+                    entry
+                        .iter()
+                        .all(|(key, value)| before.get(key) == Some(value))
+                })
+            {
+                return Ok(file_write(path_to_string(path), WriteAction::Unchanged));
+            }
+        }
+    }
     let server = servers
         .object_value_or_create(MCP_SERVER_KEY)
         .ok_or("managed server must be an object; nothing changed")?;
     for (key, value) in entry {
+        if replace {
+            if let Some(existing) = server.get(key) {
+                existing.remove();
+            }
+        }
         if server.get(key).is_none() {
             server.append(key, input(value));
         }

@@ -73,7 +73,9 @@ fn install_preserves_a_pre_existing_sibling_mcp_server_where_applicable() {
                     continue;
                 };
                 let path = PathBuf::from(json_path);
-                if target.id() == TargetId::Opencode {
+                if target.id() == TargetId::CopilotVscode {
+                    write_json(&path, json!({"servers": {"other": {"command": "x"}}}));
+                } else if target.id() == TargetId::Opencode {
                     write_json(
                         &path,
                         json!({ "mcp": { "other": { "type": "local", "command": ["x"], "enabled": true } } }),
@@ -87,7 +89,10 @@ fn install_preserves_a_pre_existing_sibling_mcp_server_where_applicable() {
 
                 target.install(location, install_options(true));
                 let after = read_json(&path);
-                if target.id() == TargetId::Opencode {
+                if target.id() == TargetId::CopilotVscode {
+                    assert!(after.pointer("/servers/other").is_some());
+                    assert!(after.pointer("/servers/rustcodegraph").is_some());
+                } else if target.id() == TargetId::Opencode {
                     assert!(
                         after.pointer("/mcp/other").is_some(),
                         "opencode sibling missing"

@@ -28,3 +28,6 @@ mod installer_uninstall_targets_sweep;
 
 #[path = "installer_targets_test/jsonc_preserving.rs"]
 mod upstream_033;
+
+#[path = "installer_targets_test/copilot_vscode.rs"]
+mod copilot_vscode;
