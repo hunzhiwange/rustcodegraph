@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Qwen Code users can install RustCodeGraph in project or global settings while preserving existing configuration.
+
 - Windsurf users can now install RustCodeGraph globally while preserving existing MCP settings.
 
 - Factory Droid now supports local and global MCP installation while preserving existing settings.

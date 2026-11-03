@@ -79,6 +79,7 @@ pub mod installer {
         pub mod hermes;
         pub mod kiro;
         pub mod opencode;
+        pub mod qwen;
         pub mod registry;
         pub mod shared;
         pub mod toml;
