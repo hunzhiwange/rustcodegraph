@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Index large repositories faster by avoiding repeated full-project searches when resolving symbol and member calls.
+
 - Pi reinstall preserves custom launch settings and user switches, while uninstall preserves other servers and configuration comments.
 
 - Install RustCodeGraph for Pi locally or globally with tools exposed directly to the model.

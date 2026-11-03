@@ -8,7 +8,7 @@ use super::*;
 pub(super) fn resolve_facade_member_call_target<'a>(
     reference_name: &str,
     source: &Node,
-    nodes: &'a [Node],
+    by_name: &HashMap<&str, Vec<&'a Node>>,
 ) -> Option<&'a Node> {
     let (receiver, method) = reference_name.rsplit_once('.')?;
     if receiver.is_empty() || method.is_empty() {
@@ -18,8 +18,10 @@ pub(super) fn resolve_facade_member_call_target<'a>(
     let source_prefix = facade_source_type_prefix(source)?;
     let source_type = facade_last_qualified_segment(&source_prefix);
     // 成员调用先根据当前类型上的字段签名找 receiver 类型，再从该类型中挑方法。
-    let field = nodes
+    let fields = by_name.get(field_name)?;
+    let field = fields
         .iter()
+        .copied()
         .filter(|node| {
             let same_cpp_type = matches!(source.language, Language::C | Language::Cpp)
                 && facade_enclosing_type_name(&node.qualified_name).as_deref()
@@ -35,7 +37,7 @@ pub(super) fn resolve_facade_member_call_target<'a>(
                     == Some(facade_last_qualified_segment(&source_prefix))
         })
         .or_else(|| {
-            nodes.iter().find(|node| {
+            fields.iter().copied().find(|node| {
                 let same_cpp_type = matches!(source.language, Language::C | Language::Cpp)
                     && facade_enclosing_type_name(&node.qualified_name).as_deref()
                         == Some(source_type.as_str());
@@ -51,8 +53,10 @@ pub(super) fn resolve_facade_member_call_target<'a>(
         .or(field.return_type.as_deref())?;
     let type_names = type_identifiers(signature);
     let type_name = type_names.first()?;
-    let candidates = nodes
-        .iter()
+    let candidates = by_name
+        .get(method)
+        .into_iter()
+        .flat_map(|candidates| candidates.iter().copied())
         .filter(|node| {
             matches!(node.kind, NodeKind::Method | NodeKind::Function)
                 && node.name == method

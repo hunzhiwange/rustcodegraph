@@ -9,9 +9,20 @@ pub(super) fn resolve_facade_edges_rich(
 ) -> Vec<Edge> {
     let mut by_name: HashMap<&str, Vec<&Node>> = HashMap::new();
     let mut by_id: HashMap<&str, &Node> = HashMap::new();
+    // Keep each bucket in source order so equal-score tie breaking is unchanged.
+    let mut by_qualified: HashMap<&str, Vec<&Node>> = HashMap::new();
+    let mut by_relaxed: HashMap<String, Vec<&Node>> = HashMap::new();
     for node in nodes {
         by_name.entry(&node.name).or_default().push(node);
         by_id.insert(&node.id, node);
+        by_relaxed
+            .entry(facade_relaxed_config_key(&node.qualified_name))
+            .or_default()
+            .push(node);
+        by_qualified
+            .entry(&node.qualified_name)
+            .or_default()
+            .push(node);
     }
     // 函数引用解析会用到类型层级，先合并已有边和本轮 pending 里的继承信息。
     let supertypes = facade_supertype_edges(nodes, &pending_edges, existing_edges, &by_name);
@@ -33,7 +44,14 @@ pub(super) fn resolve_facade_edges_rich(
         let Some(source) = by_id.get(pending.source.as_str()).copied() else {
             continue;
         };
-        let Some(target) = resolve_facade_pending_target(&pending, source, nodes, &by_name) else {
+        let Some(target) = resolve_facade_pending_target(
+            &pending,
+            source,
+            nodes,
+            &by_name,
+            &by_qualified,
+            &by_relaxed,
+        ) else {
             continue;
         };
         let key = format!("{}:{}:{:?}", pending.source, target.id, pending.kind);
@@ -58,10 +76,12 @@ pub(super) fn resolve_facade_pending_target<'a>(
     source: &Node,
     nodes: &'a [Node],
     by_name: &HashMap<&str, Vec<&'a Node>>,
+    by_qualified: &HashMap<&str, Vec<&'a Node>>,
+    by_relaxed: &HashMap<String, Vec<&'a Node>>,
 ) -> Option<&'a Node> {
     // 解析优先级：完整 qualified name -> 同名候选评分 -> 调用/配置特殊形态 ->
     // `Class.member` 拆分。越靠前越确定，越靠后越保守。
-    if let Some(target) = facade_qualified_pending_target(pending, source, nodes) {
+    if let Some(target) = facade_qualified_pending_target(pending, source, by_qualified) {
         return Some(target);
     }
 
@@ -83,7 +103,7 @@ pub(super) fn resolve_facade_pending_target<'a>(
     }
 
     if pending.kind == EdgeKind::Calls {
-        if let Some(target) = resolve_facade_member_call_target(&normalized, source, nodes)
+        if let Some(target) = resolve_facade_member_call_target(&normalized, source, by_name)
             && facade_pending_target_allowed(pending, source, target)
         {
             return Some(target);
@@ -131,11 +151,12 @@ pub(super) fn resolve_facade_pending_target<'a>(
             }
         }
         let relaxed = facade_relaxed_config_key(&normalized);
-        if let Some(target) = nodes.iter().find(|node| {
-            (node.qualified_name == normalized
-                || facade_relaxed_config_key(&node.qualified_name) == relaxed)
-                && facade_pending_target_allowed(pending, source, node)
-        }) {
+        if let Some(target) = by_relaxed
+            .get(&relaxed)
+            .into_iter()
+            .flat_map(|candidates| candidates.iter().copied())
+            .find(|node| facade_pending_target_allowed(pending, source, node))
+        {
             return Some(target);
         }
     }
@@ -145,9 +166,10 @@ pub(super) fn resolve_facade_pending_target<'a>(
     facade_pick_pending_target(
         pending,
         source,
-        nodes
-            .iter()
-            .filter(|node| node.name == member_name)
+        by_name
+            .get(member_name)
+            .into_iter()
+            .flat_map(|candidates| candidates.iter().copied())
             .filter(|node| {
                 facade_edge_target_matches_kind(node, pending)
                     && class_name.as_ref().is_none_or(|class_name| {
@@ -162,13 +184,13 @@ pub(super) fn resolve_facade_pending_target<'a>(
 pub(super) fn facade_qualified_pending_target<'a>(
     pending: &RichFacadePendingEdge,
     source: &Node,
-    nodes: &'a [Node],
+    by_qualified: &HashMap<&str, Vec<&'a Node>>,
 ) -> Option<&'a Node> {
     for variant in facade_qualified_target_variants(&pending.target_name, source.language) {
-        let candidates = nodes
-            .iter()
-            .filter(|node| node.qualified_name == variant)
-            .collect::<Vec<_>>();
+        let candidates = by_qualified
+            .get(variant.as_str())
+            .cloned()
+            .unwrap_or_default();
         if let Some(target) = facade_pick_pending_target(pending, source, candidates) {
             return Some(target);
         }
