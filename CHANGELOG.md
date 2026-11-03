@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### New Features
+
+- Install RustCodeGraph globally for the GitHub Copilot plugin in JetBrains IDEs while preserving existing MCP configuration.
+
 ### Fixes
 
 - Copilot CLI reinstall and uninstall preserve user settings, comments, and other MCP servers.

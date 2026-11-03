@@ -70,6 +70,7 @@ pub mod installer {
         pub mod claude;
         pub mod codex;
         pub mod copilot_cli;
+        pub mod copilot_jetbrains;
         pub mod copilot_vscode;
         pub mod cursor;
         pub mod gemini;

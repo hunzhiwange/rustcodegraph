@@ -73,7 +73,10 @@ fn install_preserves_a_pre_existing_sibling_mcp_server_where_applicable() {
                     continue;
                 };
                 let path = PathBuf::from(json_path);
-                if target.id() == TargetId::CopilotVscode {
+                if matches!(
+                    target.id(),
+                    TargetId::CopilotVscode | TargetId::CopilotJetbrains
+                ) {
                     write_json(&path, json!({"servers": {"other": {"command": "x"}}}));
                 } else if target.id() == TargetId::Opencode {
                     write_json(
@@ -89,7 +92,10 @@ fn install_preserves_a_pre_existing_sibling_mcp_server_where_applicable() {
 
                 target.install(location, install_options(true));
                 let after = read_json(&path);
-                if target.id() == TargetId::CopilotVscode {
+                if matches!(
+                    target.id(),
+                    TargetId::CopilotVscode | TargetId::CopilotJetbrains
+                ) {
                     assert!(after.pointer("/servers/other").is_some());
                     assert!(after.pointer("/servers/rustcodegraph").is_some());
                 } else if target.id() == TargetId::Opencode {

@@ -34,3 +34,6 @@ mod copilot_vscode;
 
 #[path = "installer_targets_test/copilot_cli.rs"]
 mod copilot_cli;
+
+#[path = "installer_targets_test/copilot_jetbrains.rs"]
+mod copilot_jetbrains;
