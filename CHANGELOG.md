@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Kimi Code reinstall preserves custom launch settings and user switches, while uninstall preserves other servers, comments, and line endings.
+
 - Connect Kimi Code to RustCodeGraph with local or global installation and support for `KIMI_CODE_HOME`.
 
 - Grok Build uninstall now removes RustCodeGraph settings and environment overrides while preserving other servers, comments, and line endings.
