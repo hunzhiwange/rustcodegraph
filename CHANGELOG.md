@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Install RustCodeGraph for Qoder CLI globally or in trusted projects while preserving existing settings.
+
 - Kimi Code reinstall preserves custom launch settings and user switches, while uninstall preserves other servers, comments, and line endings.
 
 - Connect Kimi Code to RustCodeGraph with local or global installation and support for `KIMI_CODE_HOME`.

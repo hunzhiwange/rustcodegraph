@@ -82,6 +82,7 @@ pub mod installer {
         pub mod kimi;
         pub mod kiro;
         pub mod opencode;
+        pub mod qoder;
         pub mod qwen;
         pub mod registry;
         pub mod shared;

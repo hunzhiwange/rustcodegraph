@@ -57,3 +57,6 @@ mod grok;
 
 #[path = "installer_targets_test/kimi.rs"]
 mod kimi;
+
+#[path = "installer_targets_test/qoder.rs"]
+mod qoder;
