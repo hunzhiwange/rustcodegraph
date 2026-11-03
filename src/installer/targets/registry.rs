@@ -17,11 +17,13 @@ use super::hermes::HermesTarget;
 use super::kiro::KiroTarget;
 use super::opencode::OpencodeTarget;
 use super::types::{AgentTarget, DetectionResult, Location, TARGET_IDS, TargetId};
+use super::windsurf::WindsurfTarget;
 
 pub fn all_targets() -> Vec<Box<dyn AgentTarget>> {
     vec![
         Box::new(BobTarget),
         Box::new(DroidTarget),
+        Box::new(WindsurfTarget),
         Box::new(ClaudeTarget),
         Box::new(CursorTarget),
         Box::new(CodexTarget),

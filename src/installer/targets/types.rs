@@ -39,6 +39,7 @@ impl Location {
 pub enum TargetId {
     Bob,
     Droid,
+    Windsurf,
     Claude,
     Cursor,
     Codex,
@@ -60,6 +61,7 @@ impl TargetId {
         match self {
             Self::Bob => "bob",
             Self::Droid => "droid",
+            Self::Windsurf => "windsurf",
             Self::Claude => "claude",
             Self::Cursor => "cursor",
             Self::Codex => "codex",
@@ -78,6 +80,7 @@ impl TargetId {
         match value {
             "bob" => Some(Self::Bob),
             "droid" => Some(Self::Droid),
+            "windsurf" => Some(Self::Windsurf),
             "claude" => Some(Self::Claude),
             "cursor" => Some(Self::Cursor),
             "codex" => Some(Self::Codex),
@@ -97,6 +100,7 @@ impl TargetId {
 pub const TARGET_IDS: &[TargetId] = &[
     TargetId::Bob,
     TargetId::Droid,
+    TargetId::Windsurf,
     TargetId::Claude,
     TargetId::Cursor,
     TargetId::Codex,

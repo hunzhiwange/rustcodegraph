@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Windsurf users can now install RustCodeGraph globally while preserving existing MCP settings.
+
 - Factory Droid now supports local and global MCP installation while preserving existing settings.
 
 - IBM Bob now supports local and global MCP installation while preserving existing settings.

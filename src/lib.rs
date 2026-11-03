@@ -83,6 +83,7 @@ pub mod installer {
         pub mod shared;
         pub mod toml;
         pub mod types;
+        pub mod windsurf;
     }
 }
 

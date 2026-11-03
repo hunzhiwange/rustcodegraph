@@ -43,3 +43,6 @@ mod bob;
 
 #[path = "installer_targets_test/droid.rs"]
 mod droid;
+
+#[path = "installer_targets_test/windsurf.rs"]
+mod windsurf;
