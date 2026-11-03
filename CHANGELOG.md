@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Qoder CLI reinstall preserves custom launch settings and user switches, while uninstall preserves other servers, comments, and line endings.
+
 - Install RustCodeGraph for Qoder CLI globally or in trusted projects while preserving existing settings.
 
 - Kimi Code reinstall preserves custom launch settings and user switches, while uninstall preserves other servers, comments, and line endings.
