@@ -38,6 +38,130 @@ fn entry() -> String {
             .join("\n")
     )
 }
+// Edit only block-list insert rows whose own plugin name identifies the MCP client.
+// Keep unsupported YAML untouched rather than removing a containing user group.
+fn remove_patch(p: &std::path::Path) -> FileWrite {
+    let before = read_text(p);
+    let eol = if before.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let mut lines: Vec<String> = before.lines().map(str::to_owned).collect();
+    fn trivia(s: &str) -> bool {
+        s.trim().is_empty() || s.trim() == "---" || s.trim_start().starts_with('#')
+    }
+    fn end(lines: &[String], start: usize, mut stop: usize) -> usize {
+        while stop > start + 1 && trivia(&lines[stop - 1]) {
+            stop -= 1;
+        }
+        stop
+    }
+    fn indent(s: &str) -> usize {
+        s.bytes().take_while(|b| *b == b' ').count()
+    }
+    let top = regex::Regex::new(r"^-(\s|$)").unwrap();
+    let insert = regex::Regex::new(r"^-\s+insert\s*:\s*(#.*)?$").unwrap();
+    let row_start = regex::Regex::new(r"^ +-(\s|$)").unwrap();
+    let client = regex::Regex::new(
+        r#"^\s*(?:-\s+)?["']?name["']?\s*:\s*["']?@deepseek-ai/dsh-mcp-client["']?\s*(?:#.*)?$"#,
+    )
+    .unwrap();
+    let starts: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, l)| top.is_match(l).then_some(i))
+        .collect();
+    let mut changed = false;
+    let items: Vec<_> = starts
+        .iter()
+        .enumerate()
+        .map(|(n, &start)| {
+            (
+                start,
+                end(
+                    &lines,
+                    start,
+                    starts.get(n + 1).copied().unwrap_or(lines.len()),
+                ),
+            )
+        })
+        .collect();
+    for (start, stop) in items.into_iter().rev() {
+        if !insert.is_match(&lines[start]) {
+            continue;
+        }
+        let Some(first) = (start + 1..stop).find(|&i| !trivia(&lines[i])) else {
+            continue;
+        };
+        if !row_start.is_match(&lines[first]) {
+            continue;
+        }
+        let level = indent(&lines[first]);
+        let mut rows = Vec::new();
+        let mut limit = stop;
+        for (i, line) in lines.iter().enumerate().take(stop).skip(first) {
+            if trivia(line) {
+                continue;
+            }
+            if indent(line) < level {
+                limit = i;
+                break;
+            }
+            if indent(line) == level {
+                rows.push(i);
+            }
+        }
+        let ranges: Vec<_> = rows
+            .iter()
+            .enumerate()
+            .map(|(i, &a)| (a, end(&lines, a, rows.get(i + 1).copied().unwrap_or(limit))))
+            .collect();
+        let ours: Vec<_> = ranges
+            .iter()
+            .copied()
+            .filter(|&(a, b)| {
+                let key_level = indent(&lines[a].replacen('-', " ", 1));
+                lines[a..b].iter().any(|l| has_server(l))
+                    && lines[a..b]
+                        .iter()
+                        .enumerate()
+                        .any(|(i, l)| (i == 0 || indent(l) == key_level) && client.is_match(l))
+            })
+            .collect();
+        if ours.is_empty() {
+            continue;
+        }
+        if ours.len() == ranges.len() {
+            if ours.last().unwrap().1 != stop {
+                continue;
+            }
+            let begin = if start > 0 && lines[start - 1].trim().is_empty() {
+                start - 1
+            } else {
+                start
+            };
+            lines.drain(begin..stop);
+        } else {
+            for (a, b) in ours.into_iter().rev() {
+                lines.drain(a..b);
+            }
+        }
+        changed = true;
+    }
+    if !changed {
+        return file_write(path_to_string(p), WriteAction::NotFound);
+    }
+    if lines.iter().all(|l| trivia(l)) {
+        lines.push("[]".into());
+    }
+    let mut after = lines.join(eol);
+    if !after.ends_with(eol) {
+        after.push_str(eol);
+    }
+    atomic_write_file_sync(p, &after).expect("remove DSH patch");
+    file_write(path_to_string(p), WriteAction::Removed)
+}
 fn refused() -> WriteResult {
     WriteResult::empty().with_notes(["DeepSeek Harness uses $DSH_HOME; use --location=global."])
 }
@@ -122,24 +246,16 @@ impl AgentTarget for DshTarget {
         if !self.supports_location(l) {
             return refused();
         }
-        let p = path();
-        let before = read_text(&p);
-        // Only remove the exact standalone patch emitted by this installer.
-        // Custom and profile rows require the separate roundtrip implementation.
-        let managed = entry();
-        if before.contains(&managed) {
-            let mut after = before.replacen(&managed, "", 1);
-            if after
-                .lines()
-                .all(|l| l.trim().is_empty() || l.trim_start().starts_with('#'))
-            {
-                after.push_str("[]\n");
+        let mut result = WriteResult::with_file(remove_patch(&path()));
+        for profile in profiles() {
+            let file = remove_patch(&profile);
+            if file.action == WriteAction::Removed {
+                result.files.push(file);
             }
-            atomic_write_file_sync(&p, &after).expect("remove DSH patch");
-            return WriteResult::with_file(file_write(path_to_string(p), WriteAction::Removed));
         }
-        WriteResult::with_file(file_write(path_to_string(p), WriteAction::NotFound))
+        result
     }
+
     fn print_config(&self, l: Location) -> String {
         if !self.supports_location(l) {
             return "# Use --location=global.\n".into();

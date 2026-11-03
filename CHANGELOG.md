@@ -4,6 +4,8 @@
 
 ### New Features
 
+- DeepSeek Harness uninstall now removes RustCodeGraph from profile patches while preserving comments, custom settings on reinstall, and other servers.
+
 - DeepSeek Harness users can install RustCodeGraph globally while preserving existing Cordis patches.
 
 - Qwen Code users can install RustCodeGraph in project or global settings while preserving existing configuration.

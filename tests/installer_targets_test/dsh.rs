@@ -80,3 +80,70 @@ fn case_049_override_empty_and_profile() {
         assert_eq!(fs::read_to_string(p).unwrap(), "[]\n");
     });
 }
+
+#[test]
+fn case_050_crlf_roundtrip() {
+    with_fixture("050-crlf", |_| {
+        let t = get_target("dsh").unwrap();
+        let p = PathBuf::from(&t.describe_paths(Location::Global)[0]);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let original = "# keep\r\n- remove: unrelated\r\n";
+        fs::write(&p, original).unwrap();
+        t.install(Location::Global, install_options(false));
+        let installed = fs::read(&p).unwrap();
+        assert_eq!(
+            t.install(Location::Global, install_options(true)).files[0].action,
+            WriteAction::Unchanged
+        );
+        assert_eq!(fs::read(&p).unwrap(), installed);
+        assert_eq!(
+            t.uninstall(Location::Global).files[0].action,
+            WriteAction::Removed
+        );
+        assert_eq!(fs::read_to_string(&p).unwrap(), original);
+        let bytes = fs::read(&p).unwrap();
+        t.uninstall(Location::Global);
+        assert_eq!(fs::read(&p).unwrap(), bytes);
+    });
+}
+
+#[test]
+fn case_050_custom_profile_and_sibling() {
+    with_fixture("050-custom", |f| {
+        let t = get_target("dsh").unwrap();
+        let p = f.home().join(".dsh/profiles/default/cordis.patch.yml");
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        let sibling = "    - name: other\n      config: {serverName: other, enabled: false}\n";
+        let text = format!(
+            "# keep\n- insert:\n    - name: '@deepseek-ai/dsh-mcp-client'\n      disabled: true\n      config: {{serverName: rustcodegraph, command: custom}}\n{sibling}"
+        );
+        fs::write(&p, &text).unwrap();
+        t.install(Location::Global, install_options(true));
+        assert_eq!(fs::read_to_string(&p).unwrap(), text);
+        t.uninstall(Location::Global);
+        assert_eq!(
+            fs::read_to_string(&p).unwrap(),
+            format!("# keep\n- insert:\n{sibling}")
+        );
+        let after = fs::read(&p).unwrap();
+        t.uninstall(Location::Global);
+        assert_eq!(fs::read(&p).unwrap(), after);
+    });
+}
+
+#[test]
+fn case_050_empty_and_uneditable() {
+    with_fixture("050-empty", |_| {
+        let t = get_target("dsh").unwrap();
+        let p = PathBuf::from(&t.describe_paths(Location::Global)[0]);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(&p, "# keep\n[]\n").unwrap();
+        t.install(Location::Global, install_options(false));
+        t.uninstall(Location::Global);
+        assert_eq!(fs::read_to_string(&p).unwrap(), "# keep\n[]\n");
+        let text = "- insert:\n    - name: group\n      config:\n        name: '@deepseek-ai/dsh-mcp-client'\n        serverName: rustcodegraph\n";
+        fs::write(&p, text).unwrap();
+        t.uninstall(Location::Global);
+        assert_eq!(fs::read_to_string(&p).unwrap(), text);
+    });
+}
