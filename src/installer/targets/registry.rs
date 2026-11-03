@@ -12,6 +12,7 @@ use super::copilot_jetbrains::CopilotJetbrainsTarget;
 use super::copilot_vscode::CopilotVscodeTarget;
 use super::cursor::CursorTarget;
 use super::droid::DroidTarget;
+use super::dsh::DshTarget;
 use super::gemini::GeminiTarget;
 use super::hermes::HermesTarget;
 use super::kiro::KiroTarget;
@@ -22,6 +23,7 @@ use super::windsurf::WindsurfTarget;
 
 pub fn all_targets() -> Vec<Box<dyn AgentTarget>> {
     vec![
+        Box::new(DshTarget),
         Box::new(QwenTarget),
         Box::new(BobTarget),
         Box::new(DroidTarget),

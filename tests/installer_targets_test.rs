@@ -47,5 +47,7 @@ mod droid;
 #[path = "installer_targets_test/windsurf.rs"]
 mod windsurf;
 
+#[path = "installer_targets_test/dsh.rs"]
+mod dsh;
 #[path = "installer_targets_test/qwen.rs"]
 mod qwen;

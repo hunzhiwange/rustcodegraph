@@ -4,6 +4,8 @@
 
 ### New Features
 
+- DeepSeek Harness users can install RustCodeGraph globally while preserving existing Cordis patches.
+
 - Qwen Code users can install RustCodeGraph in project or global settings while preserving existing configuration.
 
 - Windsurf users can now install RustCodeGraph globally while preserving existing MCP settings.
