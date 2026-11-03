@@ -14,6 +14,8 @@
 
 ### Fixes
 
+- Windsurf reinstall and uninstall preserve custom launch settings, comments, and other MCP servers.
+
 - Factory Droid reinstall and uninstall preserve custom launch settings, comments, and other MCP servers.
 
 - JetBrains Copilot reinstall preserves custom launch settings, and uninstall keeps comments and other MCP servers.
