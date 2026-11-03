@@ -91,6 +91,9 @@ impl AgentTarget for CopilotVscodeTarget {
             return unchanged();
         };
         server.remove();
+        if servers.properties().is_empty() {
+            object.get("servers").unwrap().remove();
+        }
         super::shared::atomic_write_file_sync(&path, &root.to_string())
             .expect("write VS Code config");
         WriteResult::with_file(file_write(path_to_string(path), WriteAction::Removed))

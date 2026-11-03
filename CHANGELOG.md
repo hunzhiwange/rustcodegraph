@@ -10,6 +10,8 @@
 
 ### Fixes
 
+- Uninstalling VS Code Copilot MCP configuration now removes empty server containers while preserving comments, other servers, and user settings.
+
 - Installer tests now isolate agent configuration overrides so existing user settings remain untouched.
 
 - MCP configuration editing now preserves JSONC comments and existing user settings, and rejects damaged files without overwriting them.
