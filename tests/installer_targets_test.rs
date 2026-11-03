@@ -51,3 +51,6 @@ mod windsurf;
 mod dsh;
 #[path = "installer_targets_test/qwen.rs"]
 mod qwen;
+
+#[path = "installer_targets_test/grok.rs"]
+mod grok;

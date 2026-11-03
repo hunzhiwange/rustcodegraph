@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Grok Build users can install RustCodeGraph locally or globally while preserving existing MCP settings.
+
 - DeepSeek Harness uninstall now removes RustCodeGraph from profile patches while preserving comments, custom settings on reinstall, and other servers.
 
 - DeepSeek Harness users can install RustCodeGraph globally while preserving existing Cordis patches.

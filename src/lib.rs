@@ -77,6 +77,7 @@ pub mod installer {
         pub mod droid;
         pub mod dsh;
         pub mod gemini;
+        pub mod grok;
         pub mod hermes;
         pub mod kiro;
         pub mod opencode;

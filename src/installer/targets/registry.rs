@@ -14,6 +14,7 @@ use super::cursor::CursorTarget;
 use super::droid::DroidTarget;
 use super::dsh::DshTarget;
 use super::gemini::GeminiTarget;
+use super::grok::GrokTarget;
 use super::hermes::HermesTarget;
 use super::kiro::KiroTarget;
 use super::opencode::OpencodeTarget;
@@ -23,6 +24,7 @@ use super::windsurf::WindsurfTarget;
 
 pub fn all_targets() -> Vec<Box<dyn AgentTarget>> {
     vec![
+        Box::new(GrokTarget),
         Box::new(DshTarget),
         Box::new(QwenTarget),
         Box::new(BobTarget),
