@@ -39,6 +39,7 @@ impl Location {
 pub enum TargetId {
     Kimi,
     Qoder,
+    Pi,
     Grok,
     Dsh,
     Qwen,
@@ -66,6 +67,7 @@ impl TargetId {
         match self {
             Self::Kimi => "kimi",
             Self::Qoder => "qoder",
+            Self::Pi => "pi",
             Self::Grok => "grok",
             Self::Dsh => "dsh",
             Self::Qwen => "qwen",
@@ -90,6 +92,7 @@ impl TargetId {
         match value {
             "kimi" => Some(Self::Kimi),
             "qoder" => Some(Self::Qoder),
+            "pi" => Some(Self::Pi),
             "grok" => Some(Self::Grok),
             "dsh" => Some(Self::Dsh),
             "qwen" => Some(Self::Qwen),
@@ -115,6 +118,7 @@ impl TargetId {
 pub const TARGET_IDS: &[TargetId] = &[
     TargetId::Kimi,
     TargetId::Qoder,
+    TargetId::Pi,
     TargetId::Grok,
     TargetId::Dsh,
     TargetId::Qwen,

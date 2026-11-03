@@ -19,6 +19,7 @@ use super::hermes::HermesTarget;
 use super::kimi::KimiTarget;
 use super::kiro::KiroTarget;
 use super::opencode::OpencodeTarget;
+use super::pi::PiTarget;
 use super::qoder::QoderTarget;
 use super::qwen::QwenTarget;
 use super::types::{AgentTarget, DetectionResult, Location, TARGET_IDS, TargetId};
@@ -28,6 +29,7 @@ pub fn all_targets() -> Vec<Box<dyn AgentTarget>> {
     vec![
         Box::new(KimiTarget),
         Box::new(QoderTarget),
+        Box::new(PiTarget),
         Box::new(GrokTarget),
         Box::new(DshTarget),
         Box::new(QwenTarget),

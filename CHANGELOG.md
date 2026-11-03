@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Install RustCodeGraph for Pi locally or globally with tools exposed directly to the model.
+
 - Qoder CLI reinstall preserves custom launch settings and user switches, while uninstall preserves other servers, comments, and line endings.
 
 - Install RustCodeGraph for Qoder CLI globally or in trusted projects while preserving existing settings.

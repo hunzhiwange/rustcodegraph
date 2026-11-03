@@ -60,3 +60,6 @@ mod kimi;
 
 #[path = "installer_targets_test/qoder.rs"]
 mod qoder;
+
+#[path = "installer_targets_test/pi.rs"]
+mod pi;
