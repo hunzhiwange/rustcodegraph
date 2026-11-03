@@ -35,6 +35,11 @@ pub fn match_reference(
     reference: &UnresolvedRef,
     context: &mut dyn ResolutionContext,
 ) -> Option<ResolvedRef> {
+    // A missing Nix import must stay unresolved, even if another module has
+    // the same basename or a similarly named symbol.
+    if reference.language == Language::Nix && reference.reference_kind == ReferenceKind::Imports {
+        return crate::resolution::import_resolver::resolve_nix_import(reference, context);
+    }
     if reference.reference_kind == ReferenceKind::FunctionRef {
         return match_function_ref(reference, context);
     }

@@ -25,6 +25,9 @@ pub fn resolve_via_import(
     reference: &UnresolvedRef,
     context: &mut dyn ResolutionContext,
 ) -> Option<ResolvedRef> {
+    if reference.language == Language::Nix && reference.reference_kind == ReferenceKind::Imports {
+        return super::nix::resolve_nix_import(reference, context);
+    }
     // C/C++ include 通常引用文件而不是符号。先试同目录精确文件，再使用 include
     // path 搜索，能减少大型项目里重名 header 的误连。
     if matches!(reference.language, Language::C | Language::Cpp)

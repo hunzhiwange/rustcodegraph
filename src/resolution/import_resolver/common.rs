@@ -74,6 +74,7 @@ pub(super) fn extension_resolution(language: Language) -> &'static [&'static str
         Language::Php => &[".php"],
         Language::Ruby => &[".rb"],
         Language::ObjC => &[".h", ".m", ".mm"],
+        Language::Nix => &[".nix", "/default.nix"],
         _ => &[],
     }
 }
