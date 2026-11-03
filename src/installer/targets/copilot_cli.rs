@@ -78,7 +78,30 @@ impl AgentTarget for CopilotCliTarget {
         if loc != Location::Global {
             return unsupported();
         }
-        WriteResult::with_file(planned_json_mcp_remove(path()))
+        let path = path();
+        let unchanged =
+            || WriteResult::with_file(file_write(path_to_string(&path), WriteAction::NotFound));
+        if !path.exists() {
+            return unchanged();
+        }
+        let root = jsonc_parser::cst::CstRootNode::parse(&read_text(&path), &Default::default())
+            .expect("invalid Copilot CLI JSONC");
+        let Some(object) = root.object_value() else {
+            return unchanged();
+        };
+        let Some(servers) = object.get("mcpServers").and_then(|p| p.object_value()) else {
+            return unchanged();
+        };
+        let Some(server) = servers.get("rustcodegraph") else {
+            return unchanged();
+        };
+        server.remove();
+        if servers.properties().is_empty() {
+            object.get("mcpServers").unwrap().remove();
+        }
+        super::shared::atomic_write_file_sync(&path, &root.to_string())
+            .expect("write Copilot CLI config");
+        WriteResult::with_file(file_write(path_to_string(path), WriteAction::Removed))
     }
     fn print_config(&self, loc: Location) -> String {
         if loc != Location::Global {

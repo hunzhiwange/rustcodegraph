@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- Copilot CLI reinstall and uninstall preserve user settings, comments, and other MCP servers.
+
 ### New Features
 
 - Install RustCodeGraph for GitHub Copilot CLI using global MCP configuration, including custom COPILOT_HOME directories.
