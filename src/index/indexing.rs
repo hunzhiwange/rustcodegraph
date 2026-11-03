@@ -19,6 +19,31 @@ pub(super) fn index_facade_changed_files(
     selected_paths.extend(changes.added.iter().cloned());
     selected_paths.extend(changes.modified.iter().cloned());
     selected_paths.extend(changes.removed.iter().cloned());
+    // Replacing a target removes its incoming edges. Resolved references are no
+    // longer queued, so re-extract Nix importers before that wiring is deleted.
+    // Scope this to static Nix file imports; unrelated languages stay incremental.
+    if let Ok(conn) = open_facade_database(project_root)
+        && let Ok(mut stmt) = conn.prepare(
+            "SELECT DISTINCT s.file_path FROM edges e
+             JOIN nodes s ON s.id = e.source JOIN nodes t ON t.id = e.target
+             WHERE e.kind = 'imports' AND t.kind = 'file'
+               AND s.language = 'nix' AND t.file_path = ?",
+        )
+    {
+        let mut pending = selected_paths.iter().cloned().collect::<Vec<_>>();
+        let mut visited = HashSet::new();
+        while let Some(path) = pending.pop() {
+            if !visited.insert(path.clone()) {
+                continue;
+            }
+            if let Ok(rows) = stmt.query_map([&path], |row| row.get::<_, String>(0)) {
+                for importer in rows.filter_map(Result::ok) {
+                    selected_paths.insert(importer.clone());
+                    pending.push(importer);
+                }
+            }
+        }
+    }
     index_facade_database_inner(project_root, started, Some(selected_paths), progress)
 }
 
