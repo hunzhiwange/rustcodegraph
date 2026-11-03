@@ -106,15 +106,36 @@ impl AgentTarget for QwenTarget {
         let Some(object) = root.object_value() else {
             return unchanged();
         };
-        let Some(servers) = object.get("mcpServers").and_then(|p| p.object_value()) else {
+        let mut changed = false;
+        if let Some(servers) = object.get("mcpServers").and_then(|p| p.object_value()) {
+            if let Some(server) = servers.get("rustcodegraph") {
+                server.remove();
+                changed = true;
+                if servers.properties().is_empty() {
+                    object.get("mcpServers").unwrap().remove();
+                }
+            }
+        }
+        if let Some(permissions) = object.get("permissions").and_then(|p| p.object_value()) {
+            if let Some(allow) = permissions.array_value("allow") {
+                let mut removed_rule = false;
+                for rule in allow.elements() {
+                    if rule.to_string() == "\"mcp__rustcodegraph\"" {
+                        rule.remove();
+                        removed_rule = true;
+                        changed = true;
+                    }
+                }
+                if removed_rule && allow.elements().is_empty() {
+                    permissions.get("allow").unwrap().remove();
+                    if permissions.properties().is_empty() {
+                        object.get("permissions").unwrap().remove();
+                    }
+                }
+            }
+        }
+        if !changed {
             return unchanged();
-        };
-        let Some(server) = servers.get("rustcodegraph") else {
-            return unchanged();
-        };
-        server.remove();
-        if servers.properties().is_empty() {
-            object.get("mcpServers").unwrap().remove();
         }
         super::shared::atomic_write_file_sync(&path, &root.to_string()).expect("write Qwen config");
         WriteResult::with_file(file_write(path_to_string(path), WriteAction::Removed))

@@ -72,3 +72,51 @@ fn case_047_auto_allow() {
         assert_eq!(text, fs::read_to_string(p).unwrap());
     });
 }
+
+#[test]
+fn case_048_roundtrip() {
+    with_fixture("048", |_| {
+        let t = get_target("qwen").unwrap();
+        for loc in [Location::Local, Location::Global] {
+            let p = PathBuf::from(&t.describe_paths(loc)[0]);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(&p, "{\r\n // keep\r\n \"mcpServers\":{\"other\":{\"command\":\"keep\"},\"rustcodegraph\":{\"command\":\"custom\",\"disabled\":true}},\"permissions\":{\"allow\":[\"user\"]}\r\n}").unwrap();
+            t.install(loc, install_options(true));
+            let before = fs::read_to_string(&p).unwrap();
+            assert!(before.contains("custom"));
+            assert!(before.contains("\"disabled\":true"));
+            assert_eq!(
+                t.install(loc, install_options(true)).files[0].action,
+                WriteAction::Unchanged
+            );
+            assert_eq!(before, fs::read_to_string(&p).unwrap());
+            t.uninstall(loc);
+            let after = fs::read_to_string(&p).unwrap();
+            assert!(!after.contains("mcp__rustcodegraph"));
+            assert!(after.contains("user") && after.contains("other") && after.contains("// keep"));
+            assert!(!after.replace("\r\n", "").contains('\n'));
+            t.uninstall(loc);
+            assert_eq!(after, fs::read_to_string(&p).unwrap());
+        }
+    });
+}
+#[test]
+fn case_048_empty() {
+    with_fixture("048-empty", |_| {
+        let t = get_target("qwen").unwrap();
+        t.install(Location::Local, install_options(true));
+        t.uninstall(Location::Local);
+        let p = PathBuf::from(&t.describe_paths(Location::Local)[0]);
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(p).unwrap()).unwrap();
+        assert_eq!(value, serde_json::json!({}));
+    });
+}
+#[test]
+fn case_048_absent() {
+    with_fixture("048-absent", |_| {
+        let t = get_target("qwen").unwrap();
+        t.uninstall(Location::Local);
+        assert!(!PathBuf::from(&t.describe_paths(Location::Local)[0]).exists());
+    });
+}

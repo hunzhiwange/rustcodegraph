@@ -16,6 +16,8 @@
 
 ### Fixes
 
+- Qwen Code uninstall removes its automatic permission rule while preserving user settings and other MCP servers.
+
 - Windsurf reinstall and uninstall preserve custom launch settings, comments, and other MCP servers.
 
 - Factory Droid reinstall and uninstall preserve custom launch settings, comments, and other MCP servers.
