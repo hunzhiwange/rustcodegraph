@@ -108,6 +108,8 @@ impl Language {
             CodeLanguage::Luau
         } else if lower.contains("lua") {
             CodeLanguage::Lua
+        } else if lower == "nix" || lower.ends_with("/nix.wasm") {
+            CodeLanguage::Nix
         } else if lower.contains("java") {
             CodeLanguage::Java
         } else {
@@ -324,6 +326,7 @@ fn native_language(language: CodeLanguage) -> Option<tree_sitter::Language> {
         CodeLanguage::Pascal => Some(tree_sitter_pascal::LANGUAGE.into()),
         CodeLanguage::Scala => Some(tree_sitter_scala::LANGUAGE.into()),
         CodeLanguage::ObjC => Some(tree_sitter_objc::LANGUAGE.into()),
+        CodeLanguage::Nix => Some(tree_sitter_nix::LANGUAGE.into()),
         CodeLanguage::R => Some(tree_sitter_r::LANGUAGE.into()),
         _ => None,
     }

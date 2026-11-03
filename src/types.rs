@@ -171,6 +171,8 @@ pub enum Language {
     Xml,
     #[serde(rename = "properties")]
     Properties,
+    #[serde(rename = "nix")]
+    Nix,
     #[serde(rename = "unknown")]
     Unknown,
 }
@@ -208,6 +210,7 @@ pub const LANGUAGES: &[Language] = &[
     Language::Twig,
     Language::Xml,
     Language::Properties,
+    Language::Nix,
     Language::Unknown,
 ];
 

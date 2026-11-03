@@ -252,6 +252,7 @@ pub fn language_name(language: Language) -> &'static str {
         Language::Twig => "twig",
         Language::Xml => "xml",
         Language::Properties => "properties",
+        Language::Nix => "nix",
         Language::Unknown => "unknown",
     }
 }

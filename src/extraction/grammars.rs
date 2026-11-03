@@ -50,6 +50,7 @@ pub const NATIVE_GRAMMAR_REGISTRY: &[(&str, &str)] = &[
     ("r", "r"),
     ("luau", "luau"),
     ("objc", "objc"),
+    ("nix", "nix"),
 ];
 
 pub const EXTENSION_MAP: &[(&str, &str)] = &[
@@ -111,6 +112,7 @@ pub const EXTENSION_MAP: &[(&str, &str)] = &[
     (".luau", "luau"),
     (".m", "objc"),
     (".mm", "objc"),
+    (".nix", "nix"),
     (".xml", "xml"),
     (".properties", "properties"),
 ];
@@ -394,6 +396,7 @@ pub fn get_language_display_name(language: Language) -> &'static str {
         Language::Twig => "Twig",
         Language::Xml => "XML",
         Language::Properties => "Java properties",
+        Language::Nix => "Nix",
         Language::Unknown => "Unknown",
     }
 }
@@ -443,6 +446,7 @@ pub fn language_key(language: &Language) -> String {
         Language::Twig => "twig",
         Language::Xml => "xml",
         Language::Properties => "properties",
+        Language::Nix => "nix",
         Language::Unknown => "unknown",
     }
     .to_owned()
@@ -481,6 +485,7 @@ fn language_from_key(language: &str) -> Language {
         "twig" => Language::Twig,
         "xml" => Language::Xml,
         "properties" => Language::Properties,
+        "nix" => Language::Nix,
         _ => Language::Unknown,
     }
 }

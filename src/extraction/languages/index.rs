@@ -43,6 +43,10 @@ pub mod swift;
 #[path = "typescript.rs"]
 pub mod typescript;
 
+#[path = "nix.rs"]
+pub mod nix;
+pub use nix::{NIX_EXTRACTOR, nix_extractor};
+
 use crate::extraction::tree_sitter_types::LanguageExtractor;
 
 pub use c_cpp::{
@@ -92,6 +96,7 @@ pub const EXTRACTOR_LANGUAGES: &[&str] = &[
     "r",
     "luau",
     "objc",
+    "nix",
 ];
 
 pub fn extractor_for(language: &str) -> Option<&'static dyn LanguageExtractor> {
@@ -117,6 +122,7 @@ pub fn extractor_for(language: &str) -> Option<&'static dyn LanguageExtractor> {
         "r" => Some(r_extractor()),
         "luau" => Some(luau_extractor()),
         "objc" => Some(objc_extractor()),
+        "nix" => Some(nix_extractor()),
         _ => None,
     }
 }
