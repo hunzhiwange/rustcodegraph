@@ -31,3 +31,6 @@ mod upstream_033;
 
 #[path = "installer_targets_test/copilot_vscode.rs"]
 mod copilot_vscode;
+
+#[path = "installer_targets_test/copilot_cli.rs"]
+mod copilot_cli;

@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Install RustCodeGraph for GitHub Copilot CLI using global MCP configuration, including custom COPILOT_HOME directories.
+
 - Install RustCodeGraph for VS Code Copilot Chat with workspace or user MCP configuration while preserving comments and other servers.
 
 - Indexing now limits parallel parsing by available memory while preserving file order in the resulting graph.

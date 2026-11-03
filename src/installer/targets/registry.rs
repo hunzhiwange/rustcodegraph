@@ -6,6 +6,7 @@
 use super::antigravity::AntigravityTarget;
 use super::claude::ClaudeTarget;
 use super::codex::CodexTarget;
+use super::copilot_cli::CopilotCliTarget;
 use super::copilot_vscode::CopilotVscodeTarget;
 use super::cursor::CursorTarget;
 use super::gemini::GeminiTarget;
@@ -25,6 +26,7 @@ pub fn all_targets() -> Vec<Box<dyn AgentTarget>> {
         Box::new(AntigravityTarget),
         Box::new(KiroTarget),
         Box::new(CopilotVscodeTarget),
+        Box::new(CopilotCliTarget),
     ]
 }
 

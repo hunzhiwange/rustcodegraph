@@ -47,6 +47,8 @@ pub enum TargetId {
     Kiro,
     #[serde(rename = "copilot-vscode")]
     CopilotVscode,
+    #[serde(rename = "copilot-cli")]
+    CopilotCli,
 }
 
 impl TargetId {
@@ -61,6 +63,7 @@ impl TargetId {
             Self::Antigravity => "antigravity",
             Self::Kiro => "kiro",
             Self::CopilotVscode => "copilot-vscode",
+            Self::CopilotCli => "copilot-cli",
         }
     }
 
@@ -75,6 +78,7 @@ impl TargetId {
             "antigravity" => Some(Self::Antigravity),
             "kiro" => Some(Self::Kiro),
             "copilot-vscode" => Some(Self::CopilotVscode),
+            "copilot-cli" => Some(Self::CopilotCli),
             _ => None,
         }
     }
@@ -90,6 +94,7 @@ pub const TARGET_IDS: &[TargetId] = &[
     TargetId::Antigravity,
     TargetId::Kiro,
     TargetId::CopilotVscode,
+    TargetId::CopilotCli,
 ];
 
 /// Result of `target.detect(location)`.
