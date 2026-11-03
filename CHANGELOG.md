@@ -8,6 +8,8 @@
 
 ### Fixes
 
+- Installer tests now isolate agent configuration overrides so existing user settings remain untouched.
+
 - MCP configuration editing now preserves JSONC comments and existing user settings, and rejects damaged files without overwriting them.
 
 - Large JavaScript and TypeScript files now retain complete class methods and render flows without spurious members from function bodies.

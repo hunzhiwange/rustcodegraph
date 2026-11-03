@@ -67,6 +67,13 @@ impl EnvGuard {
             "APPDATA",
             "XDG_CONFIG_HOME",
             "HERMES_HOME",
+            "COPILOT_HOME",
+            "QWEN_HOME",
+            "DSH_HOME",
+            "GROK_HOME",
+            "KIMI_CODE_HOME",
+            "QODER_CONFIG_DIR",
+            "PI_CODING_AGENT_DIR",
         ]
         .into_iter()
         .map(|key| (key, env::var_os(key)))
@@ -75,7 +82,18 @@ impl EnvGuard {
         set_env("USERPROFILE", dir);
         set_env("APPDATA", dir.join(".config"));
         set_env("XDG_CONFIG_HOME", dir.join(".config"));
-        remove_env("HERMES_HOME");
+        for key in [
+            "HERMES_HOME",
+            "COPILOT_HOME",
+            "QWEN_HOME",
+            "DSH_HOME",
+            "GROK_HOME",
+            "KIMI_CODE_HOME",
+            "QODER_CONFIG_DIR",
+            "PI_CODING_AGENT_DIR",
+        ] {
+            remove_env(key);
+        }
         Self { vars }
     }
 }

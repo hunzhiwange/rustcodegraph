@@ -59,6 +59,29 @@ pub fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// Resolve an agent config override; blank values use the fallback.
+/// Relative paths follow cwd, while a leading tilde follows our HOME policy.
+pub fn config_dir_from_env(name: &str, fallback: impl AsRef<Path>) -> PathBuf {
+    let Some(value) = env::var_os(name) else {
+        return fallback.as_ref().to_path_buf();
+    };
+    let value = value.to_string_lossy();
+    let value = value.trim();
+    if value.is_empty() {
+        return fallback.as_ref().to_path_buf();
+    }
+    let path = if value == "~" || value.starts_with("~/") || value.starts_with("~\\") {
+        home_dir().join(value[1..].trim_start_matches(['/', '\\']))
+    } else {
+        PathBuf::from(value)
+    };
+    if path.is_absolute() {
+        path
+    } else {
+        current_dir().join(path)
+    }
+}
+
 pub fn current_dir() -> PathBuf {
     env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
