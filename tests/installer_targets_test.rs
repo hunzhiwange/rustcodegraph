@@ -67,3 +67,7 @@ mod pi;
 #[cfg(target_os = "macos")]
 #[path = "installer_targets_test/macos_paths.rs"]
 mod macos_paths;
+
+#[cfg(target_os = "linux")]
+#[path = "installer_targets_test/linux_paths.rs"]
+mod linux_paths;
