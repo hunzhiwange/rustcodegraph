@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Connect Kimi Code to RustCodeGraph with local or global installation and support for `KIMI_CODE_HOME`.
+
 - Grok Build uninstall now removes RustCodeGraph settings and environment overrides while preserving other servers, comments, and line endings.
 
 - Grok Build users can install RustCodeGraph locally or globally while preserving existing MCP settings.

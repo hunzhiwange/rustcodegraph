@@ -54,3 +54,6 @@ mod qwen;
 
 #[path = "installer_targets_test/grok.rs"]
 mod grok;
+
+#[path = "installer_targets_test/kimi.rs"]
+mod kimi;

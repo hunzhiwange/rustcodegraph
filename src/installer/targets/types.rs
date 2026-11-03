@@ -37,6 +37,7 @@ impl Location {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TargetId {
+    Kimi,
     Grok,
     Dsh,
     Qwen,
@@ -62,6 +63,7 @@ pub enum TargetId {
 impl TargetId {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Kimi => "kimi",
             Self::Grok => "grok",
             Self::Dsh => "dsh",
             Self::Qwen => "qwen",
@@ -84,6 +86,7 @@ impl TargetId {
 
     pub fn parse(value: &str) -> Option<Self> {
         match value {
+            "kimi" => Some(Self::Kimi),
             "grok" => Some(Self::Grok),
             "dsh" => Some(Self::Dsh),
             "qwen" => Some(Self::Qwen),
@@ -107,6 +110,7 @@ impl TargetId {
 }
 
 pub const TARGET_IDS: &[TargetId] = &[
+    TargetId::Kimi,
     TargetId::Grok,
     TargetId::Dsh,
     TargetId::Qwen,

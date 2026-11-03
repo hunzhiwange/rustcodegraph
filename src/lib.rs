@@ -79,6 +79,7 @@ pub mod installer {
         pub mod gemini;
         pub mod grok;
         pub mod hermes;
+        pub mod kimi;
         pub mod kiro;
         pub mod opencode;
         pub mod qwen;
