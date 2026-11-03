@@ -38,6 +38,7 @@ impl Location {
 #[serde(rename_all = "lowercase")]
 pub enum TargetId {
     Bob,
+    Droid,
     Claude,
     Cursor,
     Codex,
@@ -58,6 +59,7 @@ impl TargetId {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Bob => "bob",
+            Self::Droid => "droid",
             Self::Claude => "claude",
             Self::Cursor => "cursor",
             Self::Codex => "codex",
@@ -75,6 +77,7 @@ impl TargetId {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "bob" => Some(Self::Bob),
+            "droid" => Some(Self::Droid),
             "claude" => Some(Self::Claude),
             "cursor" => Some(Self::Cursor),
             "codex" => Some(Self::Codex),
@@ -93,6 +96,7 @@ impl TargetId {
 
 pub const TARGET_IDS: &[TargetId] = &[
     TargetId::Bob,
+    TargetId::Droid,
     TargetId::Claude,
     TargetId::Cursor,
     TargetId::Codex,

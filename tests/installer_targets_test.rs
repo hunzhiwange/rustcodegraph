@@ -40,3 +40,6 @@ mod copilot_jetbrains;
 
 #[path = "installer_targets_test/bob.rs"]
 mod bob;
+
+#[path = "installer_targets_test/droid.rs"]
+mod droid;

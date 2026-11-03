@@ -11,6 +11,7 @@ use super::copilot_cli::CopilotCliTarget;
 use super::copilot_jetbrains::CopilotJetbrainsTarget;
 use super::copilot_vscode::CopilotVscodeTarget;
 use super::cursor::CursorTarget;
+use super::droid::DroidTarget;
 use super::gemini::GeminiTarget;
 use super::hermes::HermesTarget;
 use super::kiro::KiroTarget;
@@ -20,6 +21,7 @@ use super::types::{AgentTarget, DetectionResult, Location, TARGET_IDS, TargetId}
 pub fn all_targets() -> Vec<Box<dyn AgentTarget>> {
     vec![
         Box::new(BobTarget),
+        Box::new(DroidTarget),
         Box::new(ClaudeTarget),
         Box::new(CursorTarget),
         Box::new(CodexTarget),

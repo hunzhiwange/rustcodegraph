@@ -74,6 +74,7 @@ pub mod installer {
         pub mod copilot_jetbrains;
         pub mod copilot_vscode;
         pub mod cursor;
+        pub mod droid;
         pub mod gemini;
         pub mod hermes;
         pub mod kiro;
