@@ -63,3 +63,7 @@ mod qoder;
 
 #[path = "installer_targets_test/pi.rs"]
 mod pi;
+
+#[cfg(target_os = "macos")]
+#[path = "installer_targets_test/macos_paths.rs"]
+mod macos_paths;
