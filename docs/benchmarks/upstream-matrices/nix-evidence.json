@@ -1,0 +1,521 @@
+{
+  "date": "2026-11-03",
+  "implementation_commit": "51057670b77b35cb25a9cef587deff82e3828315",
+  "upstream_commit": "15483713763f344ff30fb7df92bcf091c7bd9758",
+  "cases": [
+    {
+      "key": "small-1",
+      "exit_code": 0,
+      "flow": [
+        "- isEqual (check-utils.nix:42) --calls--> test (check-utils.nix:31) --calls--> str (check-utils.nix:29) --calls--> sanitizeDerivationName (check-utils.nix:9) --calls--> pipe (check-utils.nix:5)"
+      ],
+      "nodes": [
+        {
+          "id": "function:ab993e889f7ab210f24ab733ca6c5dd6",
+          "name": "isEqual",
+          "file_path": "check-utils.nix",
+          "start_line": 42,
+          "end_line": 45
+        },
+        {
+          "id": "function:f69158b2f82e123be3adede61f0de019",
+          "name": "test",
+          "file_path": "check-utils.nix",
+          "start_line": 31,
+          "end_line": 36
+        },
+        {
+          "id": "function:9a970e77c1b99ec4bda36e97f4c351b1",
+          "name": "str",
+          "file_path": "check-utils.nix",
+          "start_line": 29,
+          "end_line": 29
+        },
+        {
+          "id": "function:6da754782da8664fc8688ef42811cd51",
+          "name": "sanitizeDerivationName",
+          "file_path": "check-utils.nix",
+          "start_line": 9,
+          "end_line": 26
+        },
+        {
+          "id": "function:75c4f73b8b6b631fa6026072059ada41",
+          "name": "pipe",
+          "file_path": "check-utils.nix",
+          "start_line": 5,
+          "end_line": 5
+        }
+      ],
+      "edges": [
+        {
+          "source": "isEqual",
+          "target": "test",
+          "file": "check-utils.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 45,
+              "provenance": null
+            }
+          ]
+        },
+        {
+          "source": "test",
+          "target": "str",
+          "file": "check-utils.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 33,
+              "provenance": null
+            }
+          ]
+        },
+        {
+          "source": "str",
+          "target": "sanitizeDerivationName",
+          "file": "check-utils.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 29,
+              "provenance": null
+            }
+          ]
+        },
+        {
+          "source": "sanitizeDerivationName",
+          "target": "pipe",
+          "file": "check-utils.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 9,
+              "provenance": null
+            }
+          ]
+        }
+      ],
+      "source_sha256": {
+        "check-utils.nix": "faad4f3412cbc8e3430663748f81f965a432bafa4b842121712a91ee432e5ca7"
+      }
+    },
+    {
+      "key": "small-2",
+      "exit_code": 0,
+      "flow": [
+        "- hasKey (check-utils.nix:47) --calls--> str (check-utils.nix:29) --calls--> sanitizeDerivationName (check-utils.nix:9) --calls--> max (check-utils.nix:6)",
+        "- hasKey (check-utils.nix:47) --calls--> test (check-utils.nix:31) --calls--> str (check-utils.nix:29) --calls--> sanitizeDerivationName (check-utils.nix:9) --calls--> max (check-utils.nix:6)"
+      ],
+      "nodes": [
+        {
+          "id": "function:a4901d51cba948a62c16d76437f32a77",
+          "name": "hasKey",
+          "file_path": "check-utils.nix",
+          "start_line": 47,
+          "end_line": 50
+        },
+        {
+          "id": "function:9a970e77c1b99ec4bda36e97f4c351b1",
+          "name": "str",
+          "file_path": "check-utils.nix",
+          "start_line": 29,
+          "end_line": 29
+        },
+        {
+          "id": "function:6da754782da8664fc8688ef42811cd51",
+          "name": "sanitizeDerivationName",
+          "file_path": "check-utils.nix",
+          "start_line": 9,
+          "end_line": 26
+        },
+        {
+          "id": "function:3d44c47870352d07a5428cb5fabc2061",
+          "name": "max",
+          "file_path": "check-utils.nix",
+          "start_line": 6,
+          "end_line": 6
+        }
+      ],
+      "edges": [
+        {
+          "source": "hasKey",
+          "target": "str",
+          "file": "check-utils.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 48,
+              "provenance": null
+            }
+          ]
+        },
+        {
+          "source": "str",
+          "target": "sanitizeDerivationName",
+          "file": "check-utils.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 29,
+              "provenance": null
+            }
+          ]
+        },
+        {
+          "source": "sanitizeDerivationName",
+          "target": "max",
+          "file": "check-utils.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 23,
+              "provenance": null
+            }
+          ]
+        }
+      ],
+      "source_sha256": {
+        "check-utils.nix": "faad4f3412cbc8e3430663748f81f965a432bafa4b842121712a91ee432e5ca7"
+      }
+    },
+    {
+      "key": "small-3",
+      "exit_code": 0,
+      "flow": [
+        "- loadOverlay (simpleFlake.nix:26) --calls--> maybeImport (simpleFlake.nix:33)"
+      ],
+      "nodes": [
+        {
+          "id": "function:5dcd979ada195c0b8986e41f1df0fc3d",
+          "name": "loadOverlay",
+          "file_path": "simpleFlake.nix",
+          "start_line": 26,
+          "end_line": 31
+        },
+        {
+          "id": "function:7e18e80b44d5bf2e04377ae6e450f913",
+          "name": "maybeImport",
+          "file_path": "simpleFlake.nix",
+          "start_line": 33,
+          "end_line": 38
+        }
+      ],
+      "edges": [
+        {
+          "source": "loadOverlay",
+          "target": "maybeImport",
+          "file": "simpleFlake.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 30,
+              "provenance": null
+            }
+          ]
+        }
+      ],
+      "source_sha256": {
+        "simpleFlake.nix": "b65b011c35e197be7aa9dcef3d2f4a92dd4dfc3e33df9a5311bd0e7e060ef548"
+      }
+    },
+    {
+      "key": "medium-1",
+      "exit_code": 0,
+      "flow": [
+        "- storeFileName (modules/lib/strings.nix:36) --calls--> empties (modules/lib/strings.nix:53)"
+      ],
+      "nodes": [
+        {
+          "id": "function:eeab451f74688ffbc43b30a86cccc799",
+          "name": "storeFileName",
+          "file_path": "modules/lib/strings.nix",
+          "start_line": 36,
+          "end_line": 59
+        },
+        {
+          "id": "function:4a240a9b2333fcc3db6eab09584cbc55",
+          "name": "empties",
+          "file_path": "modules/lib/strings.nix",
+          "start_line": 53,
+          "end_line": 53
+        }
+      ],
+      "edges": [
+        {
+          "source": "storeFileName",
+          "target": "empties",
+          "file": "modules/lib/strings.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 55,
+              "provenance": null
+            },
+            {
+              "kind": "contains",
+              "line": null,
+              "provenance": "tree-sitter"
+            }
+          ]
+        }
+      ],
+      "source_sha256": {
+        "modules/lib/strings.nix": "c454034b4187e09acb381c22f653cdf2a34edf5b339ef5f4da2a4009c37c011b"
+      }
+    },
+    {
+      "key": "medium-2",
+      "exit_code": 0,
+      "flow": [
+        "- entryBefore (modules/lib/dag.nix:129) --calls--> entryBetween (modules/lib/dag.nix:123)"
+      ],
+      "nodes": [
+        {
+          "id": "function:e8b1dbc99b4f793021b728e407bed190",
+          "name": "entryBefore",
+          "file_path": "modules/lib/dag.nix",
+          "start_line": 129,
+          "end_line": 129
+        },
+        {
+          "id": "function:67874ffe01555a4b240e35fa3dd3dc19",
+          "name": "entryBetween",
+          "file_path": "modules/lib/dag.nix",
+          "start_line": 123,
+          "end_line": 123
+        }
+      ],
+      "edges": [
+        {
+          "source": "entryBefore",
+          "target": "entryBetween",
+          "file": "modules/lib/dag.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 129,
+              "provenance": null
+            }
+          ]
+        }
+      ],
+      "source_sha256": {
+        "modules/lib/dag.nix": "f4b8c6c52524e6f0dc46f221e7ca060b8a05033043978d8a8d7b8d8a602fa6b8"
+      }
+    },
+    {
+      "key": "medium-3",
+      "exit_code": 0,
+      "flow": [
+        "- mkVariant (modules/lib/gvariant.nix:117) --calls--> mkValue (modules/lib/gvariant.nix:91) --calls--> mkArray (modules/lib/gvariant.nix:108) --calls--> mkPrimitive (modules/lib/gvariant.nix:18)"
+      ],
+      "nodes": [
+        {
+          "id": "function:b1fc50508db7f51e57a675b82fa6fbe9",
+          "name": "mkVariant",
+          "file_path": "modules/lib/gvariant.nix",
+          "start_line": 117,
+          "end_line": 125
+        },
+        {
+          "id": "function:944492e10b87aef0e2fedb8a944b1e65",
+          "name": "mkValue",
+          "file_path": "modules/lib/gvariant.nix",
+          "start_line": 91,
+          "end_line": 106
+        },
+        {
+          "id": "function:6f1cbe9b0c8b67335c4510ae666a6001",
+          "name": "mkArray",
+          "file_path": "modules/lib/gvariant.nix",
+          "start_line": 108,
+          "end_line": 113
+        },
+        {
+          "id": "function:190f858df27e7dcb38a3aa736180dcbe",
+          "name": "mkPrimitive",
+          "file_path": "modules/lib/gvariant.nix",
+          "start_line": 18,
+          "end_line": 23
+        }
+      ],
+      "edges": [
+        {
+          "source": "mkVariant",
+          "target": "mkValue",
+          "file": "modules/lib/gvariant.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 120,
+              "provenance": null
+            }
+          ]
+        },
+        {
+          "source": "mkValue",
+          "target": "mkArray",
+          "file": "modules/lib/gvariant.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 102,
+              "provenance": null
+            }
+          ]
+        },
+        {
+          "source": "mkArray",
+          "target": "mkPrimitive",
+          "file": "modules/lib/gvariant.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 110,
+              "provenance": null
+            }
+          ]
+        }
+      ],
+      "source_sha256": {
+        "modules/lib/gvariant.nix": "bf860612c5f9071d0db39f2118b5fcfd8f17d20cd5d753fd07413bf48114a12b"
+      }
+    },
+    {
+      "key": "large-1",
+      "exit_code": 0,
+      "flow": [
+        "- makeSearchPathOutput (lib/strings.nix:94) --calls--> makeSearchPath (lib/strings.nix:84)"
+      ],
+      "nodes": [
+        {
+          "id": "function:7438da9973db6f2b0353bfcfb6120159",
+          "name": "makeSearchPathOutput",
+          "file_path": "lib/strings.nix",
+          "start_line": 94,
+          "end_line": 94
+        },
+        {
+          "id": "function:6af841050d8b40eb99fa73ff313c5483",
+          "name": "makeSearchPath",
+          "file_path": "lib/strings.nix",
+          "start_line": 84,
+          "end_line": 85
+        }
+      ],
+      "edges": [
+        {
+          "source": "makeSearchPathOutput",
+          "target": "makeSearchPath",
+          "file": "lib/strings.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 94,
+              "provenance": null
+            }
+          ]
+        }
+      ],
+      "source_sha256": {
+        "lib/strings.nix": "8443ecd471c2d1c4662cc43adf91f84fdd1bee00b5c2146aab35d3e74e268a0e"
+      }
+    },
+    {
+      "key": "large-2",
+      "exit_code": 0,
+      "flow": [
+        "- fixedWidthNumber (lib/strings.nix:430) --calls--> fixedWidthString (lib/strings.nix:416)"
+      ],
+      "nodes": [
+        {
+          "id": "function:a727ec0834d33e6e145348faaaa9bb27",
+          "name": "fixedWidthNumber",
+          "file_path": "lib/strings.nix",
+          "start_line": 430,
+          "end_line": 430
+        },
+        {
+          "id": "function:5e156088ec0c2d57b51c9c3763a1faf9",
+          "name": "fixedWidthString",
+          "file_path": "lib/strings.nix",
+          "start_line": 416,
+          "end_line": 422
+        }
+      ],
+      "edges": [
+        {
+          "source": "fixedWidthNumber",
+          "target": "fixedWidthString",
+          "file": "lib/strings.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 430,
+              "provenance": null
+            }
+          ]
+        }
+      ],
+      "source_sha256": {
+        "lib/strings.nix": "8443ecd471c2d1c4662cc43adf91f84fdd1bee00b5c2146aab35d3e74e268a0e"
+      }
+    },
+    {
+      "key": "large-3",
+      "exit_code": 0,
+      "flow": [
+        "- stringAsChars (lib/strings.nix:192) --calls--> stringToCharacters (lib/strings.nix:182)"
+      ],
+      "nodes": [
+        {
+          "id": "function:de14bc02d6a1f2f806dc57238b63f402",
+          "name": "stringAsChars",
+          "file_path": "lib/strings.nix",
+          "start_line": 192,
+          "end_line": 195
+        },
+        {
+          "id": "function:90e24a81a35a81456635d6d23329ecc5",
+          "name": "stringToCharacters",
+          "file_path": "lib/strings.nix",
+          "start_line": 182,
+          "end_line": 183
+        }
+      ],
+      "edges": [
+        {
+          "source": "stringAsChars",
+          "target": "stringToCharacters",
+          "file": "lib/strings.nix",
+          "edges": [
+            {
+              "kind": "calls",
+              "line": 194,
+              "provenance": null
+            }
+          ]
+        }
+      ],
+      "source_sha256": {
+        "lib/strings.nix": "8443ecd471c2d1c4662cc43adf91f84fdd1bee00b5c2146aab35d3e74e268a0e"
+      }
+    }
+  ],
+  "validation": {
+    "matrix_cases_passed": 9,
+    "focused_resolver_tests_passed": 69,
+    "existing_ignored": 78,
+    "framework_tests_passed": 16,
+    "framework_failures_reproduced_on_baseline": 2,
+    "home_manager_nodes_identical": true,
+    "home_manager_call_edges_identical": true,
+    "home_manager_all_edge_topology_identical": true,
+    "home_manager_edge_rows_before": 52838,
+    "home_manager_edge_rows_after": 52842,
+    "raw_logs": "/tmp/rcg-nix-matrix-069",
+    "cargo_slot": 1,
+    "build_profile": "release; default features; root package opt-level=1"
+  }
+}

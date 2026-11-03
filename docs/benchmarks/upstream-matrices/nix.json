@@ -1,0 +1,295 @@
+[
+  {
+    "key": "small-1",
+    "repo_url": "https://github.com/numtide/flake-utils.git",
+    "commit": "b7a79d3fea1e214f6d668d521cecec0c01e26544",
+    "local_path": "/tmp/rcg-nix-matrix-069/flake-utils",
+    "scale": "small",
+    "language_framework": "Nix / flake-utils",
+    "question": "How does isEqual build a failing assertion derivation and sanitize its name through test, str, sanitizeDerivationName and pipe? Stop at pipe; do not trace builtin evaluation.",
+    "symbols": [
+      "isEqual",
+      "test",
+      "str",
+      "sanitizeDerivationName",
+      "pipe"
+    ],
+    "expected_path": [
+      "isEqual",
+      "test",
+      "str",
+      "sanitizeDerivationName",
+      "pipe"
+    ],
+    "baseline_ref": "7c2afed5eeac4560eb76aab8bfa572e290ac9484",
+    "control_repo": "/tmp/rcg-nix-matrix-069/express",
+    "control_query": "createApplication init defaultConfiguration",
+    "control_repo_url": "https://github.com/expressjs/express.git",
+    "control_commit": "43fca52d28a422c8be48fd489cbd4f2d6152bab6",
+    "indexed_file_count": 15,
+    "license": {
+      "spdx": "MIT",
+      "path": "LICENSE",
+      "sha256": "c590f997ac7f69d1d66177ed330f59cb3862ac323559feda1fb9228126db9ed3"
+    },
+    "source_files": [
+      "check-utils.nix"
+    ]
+  },
+  {
+    "key": "small-2",
+    "repo_url": "https://github.com/numtide/flake-utils.git",
+    "commit": "b7a79d3fea1e214f6d668d521cecec0c01e26544",
+    "local_path": "/tmp/rcg-nix-matrix-069/flake-utils",
+    "scale": "small",
+    "language_framework": "Nix / flake-utils",
+    "question": "How does hasKey sanitize a missing-key diagnostic through str and sanitizeDerivationName, including the max calculation used for its length limit? Stop at max.",
+    "symbols": [
+      "hasKey",
+      "str",
+      "sanitizeDerivationName",
+      "max"
+    ],
+    "expected_path": [
+      "hasKey",
+      "str",
+      "sanitizeDerivationName",
+      "max"
+    ],
+    "baseline_ref": "7c2afed5eeac4560eb76aab8bfa572e290ac9484",
+    "control_repo": "/tmp/rcg-nix-matrix-069/express",
+    "control_query": "createApplication init defaultConfiguration",
+    "control_repo_url": "https://github.com/expressjs/express.git",
+    "control_commit": "43fca52d28a422c8be48fd489cbd4f2d6152bab6",
+    "indexed_file_count": 15,
+    "license": {
+      "spdx": "MIT",
+      "path": "LICENSE",
+      "sha256": "c590f997ac7f69d1d66177ed330f59cb3862ac323559feda1fb9228126db9ed3"
+    },
+    "source_files": [
+      "check-utils.nix"
+    ]
+  },
+  {
+    "key": "small-3",
+    "repo_url": "https://github.com/numtide/flake-utils.git",
+    "commit": "b7a79d3fea1e214f6d668d521cecec0c01e26544",
+    "local_path": "/tmp/rcg-nix-matrix-069/flake-utils",
+    "scale": "small",
+    "language_framework": "Nix / flake-utils",
+    "question": "How does simpleFlake loadOverlay decide whether an overlay is absent or pass it to maybeImport for path/function handling? Stop at maybeImport; do not resolve a dynamic import target.",
+    "symbols": [
+      "loadOverlay",
+      "maybeImport"
+    ],
+    "expected_path": [
+      "loadOverlay",
+      "maybeImport"
+    ],
+    "baseline_ref": "7c2afed5eeac4560eb76aab8bfa572e290ac9484",
+    "control_repo": "/tmp/rcg-nix-matrix-069/express",
+    "control_query": "createApplication init defaultConfiguration",
+    "control_repo_url": "https://github.com/expressjs/express.git",
+    "control_commit": "43fca52d28a422c8be48fd489cbd4f2d6152bab6",
+    "indexed_file_count": 15,
+    "license": {
+      "spdx": "MIT",
+      "path": "LICENSE",
+      "sha256": "c590f997ac7f69d1d66177ed330f59cb3862ac323559feda1fb9228126db9ed3"
+    },
+    "source_files": [
+      "simpleFlake.nix"
+    ]
+  },
+  {
+    "key": "medium-1",
+    "repo_url": "https://github.com/nix-community/home-manager.git",
+    "commit": "095fef2f265c3c0da4fe315efba8f8a04495ab34",
+    "local_path": "/tmp/rcg-nix-matrix-069/home-manager",
+    "scale": "medium",
+    "language_framework": "Nix / home-manager",
+    "question": "How does storeFileName remove unsafe filename characters using its local empties helper? Explain the calls from storeFileName to empties and stop there.",
+    "symbols": [
+      "storeFileName",
+      "empties"
+    ],
+    "expected_path": [
+      "storeFileName",
+      "empties"
+    ],
+    "baseline_ref": "7c2afed5eeac4560eb76aab8bfa572e290ac9484",
+    "control_repo": "/tmp/rcg-nix-matrix-069/express",
+    "control_query": "createApplication init defaultConfiguration",
+    "control_repo_url": "https://github.com/expressjs/express.git",
+    "control_commit": "43fca52d28a422c8be48fd489cbd4f2d6152bab6",
+    "indexed_file_count": 4085,
+    "license": {
+      "spdx": "MIT",
+      "path": "LICENSE",
+      "sha256": "8998a19a31199a5ae2c268b71f99b7e2abaaf78e3cf8b72e8a596374279c261a"
+    },
+    "source_files": [
+      "modules/lib/strings.nix"
+    ]
+  },
+  {
+    "key": "medium-2",
+    "repo_url": "https://github.com/nix-community/home-manager.git",
+    "commit": "095fef2f265c3c0da4fe315efba8f8a04495ab34",
+    "local_path": "/tmp/rcg-nix-matrix-069/home-manager",
+    "scale": "medium",
+    "language_framework": "Nix / home-manager",
+    "question": "How does entryBefore construct a DAG entry via entryBetween, assigning the before and after lists? Stop at the returned entry.",
+    "symbols": [
+      "entryBefore",
+      "entryBetween"
+    ],
+    "expected_path": [
+      "entryBefore",
+      "entryBetween"
+    ],
+    "baseline_ref": "7c2afed5eeac4560eb76aab8bfa572e290ac9484",
+    "control_repo": "/tmp/rcg-nix-matrix-069/express",
+    "control_query": "createApplication init defaultConfiguration",
+    "control_repo_url": "https://github.com/expressjs/express.git",
+    "control_commit": "43fca52d28a422c8be48fd489cbd4f2d6152bab6",
+    "indexed_file_count": 4085,
+    "license": {
+      "spdx": "MIT",
+      "path": "LICENSE",
+      "sha256": "8998a19a31199a5ae2c268b71f99b7e2abaaf78e3cf8b72e8a596374279c261a"
+    },
+    "source_files": [
+      "modules/lib/dag.nix"
+    ]
+  },
+  {
+    "key": "medium-3",
+    "repo_url": "https://github.com/nix-community/home-manager.git",
+    "commit": "095fef2f265c3c0da4fe315efba8f8a04495ab34",
+    "local_path": "/tmp/rcg-nix-matrix-069/home-manager",
+    "scale": "medium",
+    "language_framework": "Nix / home-manager",
+    "question": "How does mkVariant convert a list value through mkValue and mkArray into mkPrimitive GVariant representation? Follow this list-valued branch and stop at mkPrimitive.",
+    "symbols": [
+      "mkVariant",
+      "mkValue",
+      "mkArray",
+      "mkPrimitive"
+    ],
+    "expected_path": [
+      "mkVariant",
+      "mkValue",
+      "mkArray",
+      "mkPrimitive"
+    ],
+    "baseline_ref": "7c2afed5eeac4560eb76aab8bfa572e290ac9484",
+    "control_repo": "/tmp/rcg-nix-matrix-069/express",
+    "control_query": "createApplication init defaultConfiguration",
+    "control_repo_url": "https://github.com/expressjs/express.git",
+    "control_commit": "43fca52d28a422c8be48fd489cbd4f2d6152bab6",
+    "indexed_file_count": 4085,
+    "license": {
+      "spdx": "MIT",
+      "path": "LICENSE",
+      "sha256": "8998a19a31199a5ae2c268b71f99b7e2abaaf78e3cf8b72e8a596374279c261a"
+    },
+    "source_files": [
+      "modules/lib/gvariant.nix"
+    ]
+  },
+  {
+    "key": "large-1",
+    "repo_url": "https://github.com/NixOS/nixpkgs.git",
+    "commit": "1849e695b00a54cda86cb75202240d949c10c7ce",
+    "local_path": "/tmp/rcg-nix-matrix-069/nixpkgs-17.03",
+    "scale": "large",
+    "language_framework": "Nix / nixpkgs-17.03",
+    "question": "How does makeSearchPathOutput select package outputs then call makeSearchPath to construct a Unix search path? Stop at makeSearchPath; exclude evaluation of package derivations.",
+    "symbols": [
+      "makeSearchPathOutput",
+      "makeSearchPath"
+    ],
+    "expected_path": [
+      "makeSearchPathOutput",
+      "makeSearchPath"
+    ],
+    "baseline_ref": "7c2afed5eeac4560eb76aab8bfa572e290ac9484",
+    "control_repo": "/tmp/rcg-nix-matrix-069/express",
+    "control_query": "createApplication init defaultConfiguration",
+    "control_repo_url": "https://github.com/expressjs/express.git",
+    "control_commit": "43fca52d28a422c8be48fd489cbd4f2d6152bab6",
+    "indexed_file_count": 9324,
+    "license": {
+      "spdx": "MIT",
+      "path": "COPYING",
+      "sha256": "7bda1b6007edbfad16013a1d1ec89d04eb9dccfba5646e52dd78e4b419b9701e"
+    },
+    "source_files": [
+      "lib/strings.nix"
+    ]
+  },
+  {
+    "key": "large-2",
+    "repo_url": "https://github.com/NixOS/nixpkgs.git",
+    "commit": "1849e695b00a54cda86cb75202240d949c10c7ce",
+    "local_path": "/tmp/rcg-nix-matrix-069/nixpkgs-17.03",
+    "scale": "large",
+    "language_framework": "Nix / nixpkgs-17.03",
+    "question": "How does fixedWidthNumber use fixedWidthString to zero-pad a number and enforce the requested width? Stop at fixedWidthString.",
+    "symbols": [
+      "fixedWidthNumber",
+      "fixedWidthString"
+    ],
+    "expected_path": [
+      "fixedWidthNumber",
+      "fixedWidthString"
+    ],
+    "baseline_ref": "7c2afed5eeac4560eb76aab8bfa572e290ac9484",
+    "control_repo": "/tmp/rcg-nix-matrix-069/express",
+    "control_query": "createApplication init defaultConfiguration",
+    "control_repo_url": "https://github.com/expressjs/express.git",
+    "control_commit": "43fca52d28a422c8be48fd489cbd4f2d6152bab6",
+    "indexed_file_count": 9324,
+    "license": {
+      "spdx": "MIT",
+      "path": "COPYING",
+      "sha256": "7bda1b6007edbfad16013a1d1ec89d04eb9dccfba5646e52dd78e4b419b9701e"
+    },
+    "source_files": [
+      "lib/strings.nix"
+    ]
+  },
+  {
+    "key": "large-3",
+    "repo_url": "https://github.com/NixOS/nixpkgs.git",
+    "commit": "1849e695b00a54cda86cb75202240d949c10c7ce",
+    "local_path": "/tmp/rcg-nix-matrix-069/nixpkgs-17.03",
+    "scale": "large",
+    "language_framework": "Nix / nixpkgs-17.03",
+    "question": "How does stringAsChars split its input through stringToCharacters before mapping its callback and concatenating the result? Stop at stringToCharacters; exclude the supplied callback implementation.",
+    "symbols": [
+      "stringAsChars",
+      "stringToCharacters"
+    ],
+    "expected_path": [
+      "stringAsChars",
+      "stringToCharacters"
+    ],
+    "baseline_ref": "7c2afed5eeac4560eb76aab8bfa572e290ac9484",
+    "control_repo": "/tmp/rcg-nix-matrix-069/express",
+    "control_query": "createApplication init defaultConfiguration",
+    "control_repo_url": "https://github.com/expressjs/express.git",
+    "control_commit": "43fca52d28a422c8be48fd489cbd4f2d6152bab6",
+    "indexed_file_count": 9324,
+    "license": {
+      "spdx": "MIT",
+      "path": "COPYING",
+      "sha256": "7bda1b6007edbfad16013a1d1ec89d04eb9dccfba5646e52dd78e4b419b9701e"
+    },
+    "source_files": [
+      "lib/strings.nix"
+    ]
+  }
+]
