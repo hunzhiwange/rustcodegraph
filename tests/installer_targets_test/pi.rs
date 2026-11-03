@@ -79,3 +79,40 @@ fn case_057_fresh_schema_and_notes() {
         assert!(!f.home().join(".pi/AGENTS.md").exists());
     });
 }
+
+#[test]
+fn case_058_roundtrips() {
+    with_fixture("058", |_| {
+        let t = get_target("pi").unwrap();
+        for original in [
+            "",
+            "{}",
+            "{\r\n // keep\r\n \"mcpServers\":{\"other\":{},\"rustcodegraph\":{\"command\":\"custom\",\"args\":[],\"exposure\":\"direct\",\"enabled\":false}}\r\n}",
+        ] {
+            let loc = Location::Local;
+            let p = PathBuf::from(&t.describe_paths(loc)[0]);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(&p, original).unwrap();
+            t.install(loc, install_options(false));
+            let installed = fs::read_to_string(&p).unwrap();
+            if original.contains("custom") {
+                assert_eq!(installed, original);
+            }
+            assert_eq!(
+                t.install(loc, install_options(false)).files[0].action,
+                WriteAction::Unchanged
+            );
+            assert_eq!(fs::read_to_string(&p).unwrap(), installed);
+            assert_eq!(t.uninstall(loc).files[0].action, WriteAction::Removed);
+            let after = fs::read_to_string(&p).unwrap();
+            assert!(!after.contains("rustcodegraph"));
+            if original.contains("other") {
+                assert!(after.contains("other"));
+                assert!(after.contains("// keep"));
+                assert!(after.contains("\r\n"));
+            }
+            assert_eq!(t.uninstall(loc).files[0].action, WriteAction::NotFound);
+            assert_eq!(fs::read_to_string(&p).unwrap(), after);
+        }
+    });
+}
