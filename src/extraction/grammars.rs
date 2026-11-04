@@ -57,6 +57,7 @@ pub const NATIVE_GRAMMAR_REGISTRY: &[(&str, &str)] = &[
     ("vbnet", "vbnet"),
     ("cobol", "cobol"),
     ("cfml", "cfml"),
+    ("arkts", "arkts"),
 ];
 
 pub const EXTENSION_MAP: &[(&str, &str)] = &[
@@ -121,6 +122,7 @@ pub const EXTENSION_MAP: &[(&str, &str)] = &[
     (".nix", "nix"),
     (".sol", "solidity"),
     (".vb", "vbnet"),
+    (".ets", "arkts"),
     (".cfm", "cfml"),
     (".cfc", "cfml"),
     (".cfml", "cfml"),
@@ -420,6 +422,7 @@ pub fn get_language_display_name(language: Language) -> &'static str {
         Language::Solidity => "Solidity",
         Language::Erlang => "Erlang",
         Language::Vbnet => "VB.NET",
+        Language::Arkts => "ArkTS",
         Language::Cfml => "CFML",
         Language::Cobol => "COBOL",
         Language::Terraform => "Terraform",
@@ -476,6 +479,7 @@ pub fn language_key(language: &Language) -> String {
         Language::Solidity => "solidity",
         Language::Erlang => "erlang",
         Language::Vbnet => "vbnet",
+        Language::Arkts => "arkts",
         Language::Cfml => "cfml",
         Language::Cobol => "cobol",
         Language::Terraform => "terraform",
@@ -521,6 +525,7 @@ fn language_from_key(language: &str) -> Language {
         "solidity" => Language::Solidity,
         "erlang" => Language::Erlang,
         "vbnet" => Language::Vbnet,
+        "arkts" => Language::Arkts,
         "cfml" => Language::Cfml,
         "cobol" => Language::Cobol,
         "terraform" => Language::Terraform,

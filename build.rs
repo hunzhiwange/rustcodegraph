@@ -57,4 +57,12 @@ fn main() {
         .file(format!("{src}/parser.c"))
         .file(format!("{src}/scanner.c"))
         .compile("tree-sitter-cfscript");
+    let src = "vendor/tree-sitter-arkts/src";
+    println!("cargo:rerun-if-changed=vendor/tree-sitter-arkts");
+    cc::Build::new()
+        .std("c11")
+        .include(src)
+        .file(format!("{src}/parser.c"))
+        .file(format!("{src}/scanner.c"))
+        .compile("tree-sitter-arkts");
 }

@@ -43,6 +43,8 @@ pub mod swift;
 #[path = "typescript.rs"]
 pub mod typescript;
 
+#[path = "arkts.rs"]
+pub mod arkts;
 #[path = "cfml.rs"]
 pub mod cfml;
 #[path = "cobol.rs"]
@@ -114,6 +116,7 @@ pub const EXTRACTOR_LANGUAGES: &[&str] = &[
     "vbnet",
     "cobol",
     "cfml",
+    "arkts",
     "terraform",
 ];
 
@@ -141,6 +144,7 @@ pub fn extractor_for(language: &str) -> Option<&'static dyn LanguageExtractor> {
         "luau" => Some(luau_extractor()),
         "objc" => Some(objc_extractor()),
         "nix" => Some(nix_extractor()),
+        "arkts" => Some(&arkts::ARKTS_EXTRACTOR),
         "cfml" => Some(&cfml::CFML_EXTRACTOR),
         "cobol" => Some(&cobol::COBOL_EXTRACTOR),
         "vbnet" => Some(&vbnet::VBNET_EXTRACTOR),

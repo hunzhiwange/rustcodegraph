@@ -108,6 +108,8 @@ impl Language {
             CodeLanguage::Luau
         } else if lower.contains("lua") {
             CodeLanguage::Lua
+        } else if lower == "arkts" || lower.ends_with("/arkts.wasm") {
+            CodeLanguage::Arkts
         } else if lower == "cfml" || lower.ends_with("/cfml.wasm") {
             CodeLanguage::Cfml
         } else if lower == "cobol" || lower.ends_with("/cobol.wasm") {
@@ -351,6 +353,13 @@ fn native_language(language: CodeLanguage) -> Option<tree_sitter::Language> {
         CodeLanguage::Scala => Some(tree_sitter_scala::LANGUAGE.into()),
         CodeLanguage::ObjC => Some(tree_sitter_objc::LANGUAGE.into()),
         CodeLanguage::Nix => Some(tree_sitter_nix::LANGUAGE.into()),
+        CodeLanguage::Arkts => {
+            unsafe extern "C" {
+                fn tree_sitter_arkts() -> *const ();
+            }
+            // SAFETY: pinned generated grammar exports a static ABI-14 language.
+            Some(unsafe { tree_sitter_language::LanguageFn::from_raw(tree_sitter_arkts) }.into())
+        }
         CodeLanguage::Cfml => {
             unsafe extern "C" {
                 fn tree_sitter_cfml() -> *const ();
