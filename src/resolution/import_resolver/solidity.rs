@@ -28,6 +28,30 @@ pub fn resolve_solidity_reference(
             }
         }
     }
+    // Inherited bare calls are statically bound through explicit base declarations.
+    // Resolve each branch conservatively; ambiguous members remain unresolved.
+    if reference.reference_kind == ReferenceKind::Calls
+        && !name.contains('.')
+        && candidates.is_empty()
+    {
+        let nodes = context.get_nodes_in_file(&reference.file_path);
+        if let Some(owner) = nodes.iter().find(|n| n.id == reference.from_node_id) {
+            if let Some((scope, _)) = owner.qualified_name.rsplit_once("::") {
+                if let Some(contract) = nodes.iter().find(|n| {
+                    n.qualified_name == scope
+                        && matches!(n.kind, NodeKind::Class | NodeKind::Interface)
+                }) {
+                    candidates.extend(inherited_members(
+                        contract,
+                        name,
+                        reference,
+                        context,
+                        &mut std::collections::HashSet::new(),
+                    ));
+                }
+            }
+        }
+    }
     for directive in &tree.root_node.named_children {
         if directive.node_type() != "import_directive" || directive.has_error {
             continue;
@@ -98,4 +122,97 @@ pub fn resolve_solidity_reference(
         return None;
     };
     Some(resolved(reference, &target.id, 1.0, ResolvedBy::Import))
+}
+
+// No runtime dispatch is inferred here: only members of explicitly resolved bases.
+fn inherited_members(
+    contract: &crate::types::Node,
+    name: &str,
+    original: &UnresolvedRef,
+    context: &mut dyn ResolutionContext,
+    visited: &mut std::collections::HashSet<String>,
+) -> Vec<crate::types::Node> {
+    if !visited.insert(contract.id.clone()) {
+        return Vec::new();
+    }
+    let Some(content) = context.read_file(&contract.file_path) else {
+        return Vec::new();
+    };
+    let Some(mut parser) = get_parser(Language::Solidity) else {
+        return Vec::new();
+    };
+    let Some(tree) = parser.parse(&content, None) else {
+        return Vec::new();
+    };
+    let Some(declaration) = tree.root_node.named_children.iter().find(|n| {
+        matches!(
+            n.node_type(),
+            "contract_declaration" | "interface_declaration" | "library_declaration"
+        ) && n
+            .child_for_field_name("name")
+            .is_some_and(|n| n.text == contract.name)
+    }) else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    for base in declaration
+        .named_children
+        .iter()
+        .filter(|n| n.node_type() == "inheritance_specifier")
+    {
+        let Some(ancestor) = base.child_for_field_name("ancestor") else {
+            continue;
+        };
+        let mut reference = original.clone();
+        reference.from_node_id = contract.id.clone();
+        reference.file_path = contract.file_path.clone();
+        reference.reference_name = ancestor.text.clone();
+        reference.reference_kind = ReferenceKind::Extends;
+        let Some(resolved) = resolve_solidity_reference(&reference, context) else {
+            continue;
+        };
+        let Some(parent) = context.get_node_by_id(&resolved.target_node_id) else {
+            continue;
+        };
+        let members: Vec<_> = context
+            .get_nodes_in_file(&parent.file_path)
+            .into_iter()
+            .filter(|n| {
+                n.kind == NodeKind::Method
+                    && n.qualified_name == format!("{}::{name}", parent.qualified_name)
+            })
+            .collect();
+        if members.is_empty() {
+            result.extend(inherited_members(&parent, name, original, context, visited));
+        } else {
+            // Private and external functions cannot be called through a bare
+            // inherited identifier. Inspect AST visibility because these nodes
+            // do not yet carry extracted visibility metadata.
+            if let Some(source) = context.read_file(&parent.file_path) {
+                if let Some(tree) = parser.parse(&source, None) {
+                    for member in members {
+                        let accessible = tree
+                            .root_node
+                            .named_children
+                            .iter()
+                            .filter_map(|n| n.child_for_field_name("body"))
+                            .flat_map(|body| &body.named_children)
+                            .find(|n| {
+                                (n.start_position.row + 1) as u64 == member.start_line
+                                    && n.start_position.column as u64 == member.start_column
+                            })
+                            .is_some_and(|n| {
+                                !n.children.iter().any(|child| {
+                                    matches!(child.text.as_str(), "private" | "external")
+                                })
+                            });
+                        if accessible {
+                            result.push(member);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    result
 }
