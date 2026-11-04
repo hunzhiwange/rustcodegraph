@@ -47,6 +47,21 @@ pub(super) fn index_facade_changed_files(
                 .filter(|path| detect_language(path, None) == Language::Solidity),
         );
     }
+    // Erlang module/arity lookup and behaviour dispatch depend on declarations
+    // across files. Resolved references have left the pending queue; replacing a
+    // target drops their edges, while deleting a contract can leave a synthesized
+    // caller -> implementation edge behind. Re-extract Erlang sources together
+    // to restore references and invalidate dispatch, including added candidates.
+    if selected_paths
+        .iter()
+        .any(|path| detect_language(path, None) == Language::Erlang)
+    {
+        selected_paths.extend(
+            existing_source_files(project_root)
+                .into_iter()
+                .filter(|path| detect_language(path, None) == Language::Erlang),
+        );
+    }
     // Replacing a target removes its incoming edges. Resolved references are no
     // longer queued, so re-extract Nix importers before that wiring is deleted.
     // Scope this to static Nix file imports; unrelated languages stay incremental.
