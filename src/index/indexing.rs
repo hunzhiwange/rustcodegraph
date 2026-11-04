@@ -101,6 +101,19 @@ pub(super) fn index_facade_changed_files(
                 .filter(|path| detect_language(path, None) == Language::Cfml),
         );
     }
+    // ArkTS imports and component instantiations consume pending references.
+    // Requeue ArkTS callers when declarations change or return, and rebuild
+    // state/render synthesis from the same current source set as a full index.
+    if selected_paths
+        .iter()
+        .any(|path| detect_language(path, None) == Language::Arkts)
+    {
+        selected_paths.extend(
+            existing_source_files(project_root)
+                .into_iter()
+                .filter(|path| detect_language(path, None) == Language::Arkts),
+        );
+    }
     // Replacing a target removes its incoming edges. Resolved references are no
     // longer queued, so re-extract Nix importers before that wiring is deleted.
     // Scope this to static Nix file imports; unrelated languages stay incremental.
