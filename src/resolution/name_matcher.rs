@@ -35,6 +35,9 @@ pub fn match_reference(
     reference: &UnresolvedRef,
     context: &mut dyn ResolutionContext,
 ) -> Option<ResolvedRef> {
+    if reference.language == Language::Arkts {
+        return crate::resolution::import_resolver::resolve_arkts_reference(reference, context);
+    }
     if reference.language == Language::Cfml {
         return crate::resolution::import_resolver::resolve_cfml_reference(reference, context);
     }

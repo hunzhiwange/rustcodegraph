@@ -4,6 +4,7 @@
 //! 子模块按语言解析到文件或具体符号。公共 helper 保持无状态，方便 resolver
 //! 缓存按文件粒度复用。
 
+mod arkts;
 mod cfml;
 mod cobol;
 mod common;
@@ -26,6 +27,7 @@ mod vbnet;
 mod via;
 pub use vbnet::resolve_vbnet_reference;
 
+pub use arkts::resolve_arkts_reference;
 pub use cfml::resolve_cfml_reference;
 pub use cobol::resolve_cobol_reference;
 pub use cpp::{clear_cpp_include_dir_cache, load_cpp_include_dirs};

@@ -12,6 +12,7 @@ pub(super) fn extension_resolution(language: Language) -> &'static [&'static str
     // 扩展名顺序就是解析优先级；例如 TS 先试 `.ts/.tsx` 再退到 JS，
     // 这样能更贴近 bundler/语言服务的默认行为。
     match language {
+        Language::Arkts => &[".ets", ".ts", ".d.ets", ".d.ts", "/index.ets", "/index.ts"],
         Language::TypeScript => &[
             ".ts",
             ".tsx",

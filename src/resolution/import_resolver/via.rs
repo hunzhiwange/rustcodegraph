@@ -134,6 +134,7 @@ pub fn resolve_via_import(
     if matches!(
         reference.language,
         Language::Python
+            | Language::Arkts
             | Language::TypeScript
             | Language::Tsx
             | Language::JavaScript

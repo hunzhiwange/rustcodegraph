@@ -26,7 +26,14 @@ impl LanguageExtractor for ArktsExtractor {
         &[]
     }
     fn import_types(&self) -> &[&'static str] {
-        &[]
+        &["import_statement"]
+    }
+    fn extract_import(
+        &self,
+        node: &crate::web_tree_sitter::SyntaxNode,
+        source: &str,
+    ) -> Option<crate::extraction::tree_sitter_types::ImportInfo> {
+        super::typescript::TYPESCRIPT_EXTRACTOR.extract_import(node, source)
     }
     fn call_types(&self) -> &[&'static str] {
         &[

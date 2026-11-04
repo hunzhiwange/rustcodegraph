@@ -84,7 +84,8 @@ pub(super) fn resolve_facade_pending_target<'a>(
     // here would leave incorrect edges even when that resolver rejects them.
     if matches!(
         source.language,
-        Language::Terraform
+        Language::Arkts
+            | Language::Terraform
             | Language::Solidity
             | Language::Vbnet
             | Language::Cobol

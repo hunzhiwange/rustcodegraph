@@ -23,9 +23,11 @@ pub fn extract_import_mappings(
 ) -> Vec<ImportMapping> {
     // SFC/模板类语言复用 JS import 规则，因为脚本块已经在上游提取为同一份文本。
     match language {
-        Language::TypeScript | Language::JavaScript | Language::Tsx | Language::Jsx => {
-            extract_js_imports(content)
-        }
+        Language::Arkts
+        | Language::TypeScript
+        | Language::JavaScript
+        | Language::Tsx
+        | Language::Jsx => extract_js_imports(content),
         Language::Svelte | Language::Vue | Language::Astro => extract_js_imports(content),
         Language::Python => extract_python_imports(content),
         Language::Go => extract_go_imports(content),
