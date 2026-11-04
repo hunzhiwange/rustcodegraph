@@ -20,7 +20,7 @@ fn main() {
         {
             assert!(
                 Path::new(dir).join(file).is_file(),
-                "Missing grammar source {dir}/{file}. Run `git submodule update --init --recursive` \
+                "Missing grammar source {dir}/{file}. Run `git submodule update --init` \
                  and `npm run prepare:grammars` before building from source."
             );
         }

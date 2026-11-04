@@ -13,7 +13,7 @@ RustCodeGraph 是一个本地优先的代码智能库 + CLI + MCP 服务器。�
 首次从源码构建及拉取解析器更新后，先执行：
 
 ```bash
-git submodule update --init --recursive
+git submodule update --init
 npm run prepare:grammars
 ```
 
@@ -167,7 +167,7 @@ RustCodeGraph 能影响代理的通道只有低显著性的两类：MCP `initial
 - 不得把第三方解析器的 C/C++、头文件、生成的 parser/grammar/node-types JSON 或整份 grammar 源码复制提交到主仓库；`vendor/tree-sitter-*` 只能是固定 commit 的 Git submodule（Git mode 160000）。
 - 优先兼容的 Cargo crate，其次固定 rev 的上游 Cargo Git 依赖；上游不提供可用 Rust 包时直接使用 submodule，由本项目 build.rs 编译，无须强迫上游增加 Cargo 支持。
 - 需要补丁时，只提交可审阅的增量补丁、来源及许可证；在忽略的 `.grammar-build/` 目录应用补丁并用固定版本生成器生成，不修改子模块工作树、不提交生成文件、不在 Cargo 构建脚本中联网下载。
-- 克隆及 CI 使用递归子模块；源码构建先运行 `git submodule update --init --recursive` 和 `npm run prepare:grammars`。更新语言时同时检查 CI、Cargo 源码包所需文件及许可证，验证源码包包含构建输入、子模块保持 clean。
+- 克隆及 CI 只初始化直接子模块（actions/checkout 的 submodules: true），不要递归获取上游无关测试仓库；源码构建先运行 `git submodule update --init` 和 `npm run prepare:grammars`。更新语言时同时检查 CI、Cargo 源码包所需文件及许可证，验证源码包包含构建输入、子模块保持 clean。
 - 这些要求覆盖已有计划中尚未执行的后续任务及复制到新聊天的提示；遇到旧的 vendoring/复制源码要求，以本节及 `grammars/README.md` 为准。已完成的历史可行性报告不作为继续复制源码的授权。
 - 具体来源、固定提交、生成与升级步骤见 `grammars/README.md`。本地生成与子模块下载仍会占用工作目录空间，但源码内容不属于主仓库 Git blobs。
 

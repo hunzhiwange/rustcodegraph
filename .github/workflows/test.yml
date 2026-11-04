@@ -59,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: recursive
+          submodules: true
       - uses: Swatinem/rust-cache@v2
       - run: bash scripts/check-rust-ignore-count.sh
       - run: node scripts/check-grammar-dependencies.mjs
@@ -71,7 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: recursive
+          submodules: true
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/prepare-grammars
       - run: cargo fetch --locked
@@ -87,7 +87,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: recursive
+          submodules: true
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/prepare-grammars
       - run: cargo fetch --locked

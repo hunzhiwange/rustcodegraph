@@ -7,10 +7,10 @@ committed gitlinks pin exact revisions. Other languages use Cargo dependencies.
 ## Build from a checkout
 
 ```sh
-git clone --recurse-submodules https://github.com/hunzhiwange/rustcodegraph.git
+git clone https://github.com/hunzhiwange/rustcodegraph.git
 cd rustcodegraph
 # Also run this after pulling a commit that changes submodule revisions:
-git submodule update --init --recursive
+git submodule update --init
 npm run prepare:grammars
 cargo build --release
 ```
@@ -20,6 +20,10 @@ Preparation requires Git, Node.js 18+ and npm. The first run obtains
 unchanged prepared grammars. Normal installed binaries need none of these tools.
 `node scripts/prepare-grammars.mjs --check` checks preparation without generation
 or downloads. Cargo itself never fetches or patches grammar sources.
+
+Only direct submodules are needed. Avoid `--recursive`/`--recurse-submodules`:
+ArkTS has an unrelated nested test-fixture repository that is not a build input.
+CI uses `actions/checkout` with `submodules: true` for this reason.
 
 ## Pinned sources
 
@@ -66,7 +70,7 @@ the previous vendored copy differed only in trailing whitespace.
    Do not use floating branches or `git submodule update --remote` in CI.
 
 A plain GitHub source archive does not contain submodule contents. Build from a
-recursive checkout or a prepared Cargo source package. The Cargo package includes
+checkout with initialized direct submodules or a prepared Cargo source package. The Cargo package includes
 the required upstream C sources and prepared output so consumers do not need Git,
 Node, or generation during compilation. It is intentionally larger than the
 parent repository's tracked source snapshot. Existing Git history is unchanged.

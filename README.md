@@ -187,13 +187,14 @@ Install `rustcodegraph` and make sure your MCP configuration points at the Rust 
 Clone with submodules and prepare the two patched grammars before using Cargo:
 
 ```bash
-git clone --recurse-submodules https://github.com/hunzhiwange/rustcodegraph.git
+git clone https://github.com/hunzhiwange/rustcodegraph.git
 cd rustcodegraph
+git submodule update --init
 npm run prepare:grammars
 cargo build --release
 ```
 
-After pulling updates, run `git submodule update --init --recursive` and prepare
+After pulling updates, run `git submodule update --init` and prepare
 again. Preparation uses Git, Node.js 18+, npm, and a pinned tree-sitter generator;
 installed binaries do not require them. See [grammar dependencies](grammars/README.md)
 for source-package builds, licenses, and adding languages without copying parser

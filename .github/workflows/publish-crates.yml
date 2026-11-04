@@ -20,7 +20,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v6
         with:
-          submodules: recursive
+          submodules: true
       - uses: ./.github/actions/prepare-grammars
       - name: Authenticate with crates.io
         id: auth

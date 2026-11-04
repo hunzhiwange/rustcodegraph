@@ -30,7 +30,7 @@ try {
     ['arkts', 'src/parser.c'], ['vbnet', 'grammar.js'], ['cobol', 'grammar.js'],
   ]) {
     if (!existsSync(join(root, 'vendor', `tree-sitter-${name}`, file))) {
-      throw new Error(`Missing ${name} source. Run git submodule update --init --recursive first.`);
+      throw new Error(`Missing ${name} source. Run git submodule update --init first.`);
     }
   }
 
