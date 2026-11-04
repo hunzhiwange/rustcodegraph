@@ -175,6 +175,8 @@ pub enum Language {
     Nix,
     #[serde(rename = "terraform")]
     Terraform,
+    #[serde(rename = "solidity")]
+    Solidity,
     #[serde(rename = "unknown")]
     Unknown,
 }
@@ -214,6 +216,7 @@ pub const LANGUAGES: &[Language] = &[
     Language::Properties,
     Language::Nix,
     Language::Terraform,
+    Language::Solidity,
     Language::Unknown,
 ];
 
