@@ -1,0 +1,32 @@
+{
+  "language_framework": "Terraform / OpenTofu",
+  "status": "用户取消验收",
+  "user_revision_date": "2026-11-03",
+  "scope": "Source inventory only; real-repository matrix preparation and external acceptance were cancelled. No repository replay, A/B, performance or platform result is claimed.",
+  "source": {
+    "commit": "15483713763f344ff30fb7df92bcf091c7bd9758",
+    "files": [
+      "src/extraction/languages/terraform.ts",
+      "src/resolution/frameworks/terraform.ts"
+    ]
+  },
+  "prerequisite_implementations": [
+    {
+      "batch": 86,
+      "commit": "4cf10fc0656ff01c5303b95ebac760167d72c587",
+      "implementation": "src/index/indexing.rs",
+      "local_checks": "tests/upstream_086_test.rs"
+    },
+    {
+      "batch": 3,
+      "commit": "191751fa44a5a7f665e5a5b50a6afd8560f63081",
+      "implementation": "scripts/agent-eval/run-matrix-case.py",
+      "local_checks": "tests/upstream_matrix_runner_test.rs"
+    }
+  ],
+  "cases": [],
+  "case_inventory_note": "No previously frozen Terraform real-repository cases were found in the local benchmark manifests or pinned source inventory. Repository revisions, sizes, paths and flow expectations are therefore not supplied.",
+  "runner_compatible": false,
+  "runner_note": "This cancellation inventory is not the nine-case array required by run-matrix-case.py and must not be passed to that runner.",
+  "external_experiments_executed": false
+}
