@@ -345,9 +345,19 @@ impl TreeSitterExtractor {
                         continue;
                     };
                     let name = get_node_text(name_node, &self.source);
-                    if let Some(created) =
-                        self.create_node(kind, &name, declarator, NodeExtra::default())
-                    {
+                    // Keep the declaration's type for member receiver inference;
+                    // the variable_declarator itself only contains name/value.
+                    let signature = get_child_by_field(node, "type")
+                        .map(|ty| format!("{} {}", get_node_text(ty, &self.source), name));
+                    if let Some(created) = self.create_node(
+                        kind,
+                        &name,
+                        declarator,
+                        NodeExtra {
+                            signature,
+                            ..NodeExtra::default()
+                        },
+                    ) {
                         let id = node_id(&created);
                         self.nodes.push(created);
                         self.extract_decorators_for(node, &id);

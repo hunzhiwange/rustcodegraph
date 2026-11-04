@@ -4,6 +4,8 @@
 
 ### Fixes
 
+- Follow Java calls through fields such as `this.service` into their declared service methods and implementation chains.
+
 - Keep CFML calls and template dependencies consistent with a full rebuild after files are changed, removed, or restored.
 
 ### New Features

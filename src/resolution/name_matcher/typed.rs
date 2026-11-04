@@ -20,7 +20,7 @@ pub(super) fn resolve_method_on_type(
     depth: usize,
 ) -> Option<ResolvedRef> {
     let want = format!("{type_name}::{method_name}");
-    let matches = context
+    let mut matches = context
         .get_nodes_by_name(method_name)
         .into_iter()
         .filter(|node| {
@@ -30,6 +30,12 @@ pub(super) fn resolve_method_on_type(
                     || node.qualified_name.ends_with(&format!("::{want}")))
         })
         .collect::<Vec<_>>();
+
+    // Facade fallback may expose a second identity for the same Java method.
+    // Prefer the native declaration carrying the signature and call references.
+    if reference.language == Language::Java {
+        matches.sort_by_key(|node| node.signature.is_none());
+    }
 
     if matches.is_empty() {
         if depth < 4 {
@@ -150,6 +156,17 @@ pub(super) fn infer_java_field_receiver_type(
                 && node.end_line >= reference.line
         })
         .max_by_key(|node| node.start_line)?;
+    // Java extraction retains the explicit receiver (`this.svc.run`), while
+    // the member-type cache is keyed by the field name (`svc`). Normalize only
+    // this single own-field shape; deeper receiver chains need separate typing.
+    let receiver_name = if reference.language == Language::Java {
+        receiver_name.strip_prefix("this.").unwrap_or(receiver_name)
+    } else {
+        receiver_name
+    };
+    if receiver_name.contains('.') {
+        return None;
+    }
     context.get_member_receiver_type(enclosing, receiver_name)
 }
 
@@ -167,6 +184,7 @@ pub(crate) fn member_types(
                 && !nodes.iter().any(|nested| {
                     matches!(nested.kind, NodeKind::Class | NodeKind::Interface)
                         && nested.id != class.id
+                        && nested.qualified_name != class.qualified_name
                         && nested.start_line >= class.start_line
                         && nested.end_line <= class.end_line
                         && nested.start_line <= field.start_line

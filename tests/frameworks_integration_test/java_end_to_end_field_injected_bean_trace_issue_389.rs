@@ -52,11 +52,15 @@ fn connects_controller_resource_bean_interface_impl_end_to_end() {
     let mut cg = index(&project);
 
     let methods = cg.get_nodes_by_kind(NodeKind::Method);
+    // Java indexing retains facade fallbacks beside native AST declarations
+    // (index/indexing.rs). Select the signed native callable whose references
+    // are resolved, rather than depending on database insertion order.
     let find = |class_name: &str, method_name: &str| {
         methods
             .iter()
             .find(|method| {
-                method.name == method_name
+                method.signature.is_some()
+                    && method.name == method_name
                     && method.file_path.ends_with(&format!("{class_name}.java"))
             })
             .cloned()
@@ -89,6 +93,12 @@ fn connects_controller_resource_bean_interface_impl_end_to_end() {
         .into_iter()
         .find(|edge| edge.target == impl_method.id);
     assert!(svc_to_impl.is_some());
+    assert!(
+        cg.get_callees(&action.id, 3)
+            .iter()
+            .any(|entry| entry.node.id == impl_method.id),
+        "controller -> bean -> interface -> implementation must be continuous"
+    );
 
     cg.close();
 }
@@ -332,13 +342,20 @@ fn resolves_a_this_field_method_call_to_a_unique_implementation_class() {
     let mut cg = index(&project);
 
     let methods = cg.get_nodes_by_kind(NodeKind::Method);
+    // Match the native callable, not its signature-less facade fallback.
+    let field = cg
+        .get_nodes_by_kind(NodeKind::Field)
+        .into_iter()
+        .find(|node| node.name == "svc")
+        .expect("native field");
+    assert_eq!(field.signature.as_deref(), Some("Svc svc"));
     let go = methods
         .iter()
-        .find(|method| method.name == "go")
+        .find(|method| method.name == "go" && method.signature.is_some())
         .expect("go should exist");
     let run = methods
         .iter()
-        .find(|method| method.name == "run")
+        .find(|method| method.name == "run" && method.signature.is_some())
         .expect("run should exist");
 
     let edge = cg

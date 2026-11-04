@@ -274,11 +274,12 @@ pub(super) fn refine(
             selected = context
                 .get_nodes_by_name(name)
                 .into_iter()
-                .find(|n| {
+                .filter(|n| {
                     n.language == Language::Java
                         && n.file_path == class.file_path
                         && n.qualified_name == qualified
                 })
+                .max_by_key(|n| n.signature.is_some())
                 .map(|n| {
                     super::common::resolved(
                         reference,

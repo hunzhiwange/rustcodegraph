@@ -935,9 +935,24 @@ VM/Docker 验证均未执行，不声明外部验收通过。
 `7cad7a92`、`e7f0bfc8`、`794d9c0e`、`e201606e`、`47919f99`、`ef705feb`；
 本地回归用例为 `tests/upstream_189_test.rs` 至 `tests/upstream_194_test.rs`。
 增量修复提交记录本地 3 项通过，导入与渲染周边 11 项通过、0 ignored；
-任务 132 保留“已完成，待回归”，其 5 项聚焦测试通过，但框架套件两项 Java
-字段注入测试在移除 ArkTS 接线后仍失败，未宣称全套回归通过。
-本次只核对文档、实现与测试断言的一致性，并执行 `git diff --check`，没有重跑 Cargo。
+任务 132 的延后本地回归已于 2026-11-04 完成：此前两项 Java 字段注入失败
+在最新工作区仍可复现（框架套件 16 passed / 2 failed，退出 101），与原先移除
+ArkTS 接线后的基线证据一致。本轮修复保留 Java 字段类型签名、归一化
+`this.field` 接收者，并避免把兼容抽取的同义类误当嵌套类；方法匹配优先使用
+带签名的原生声明，测试也明确选择原生调用方，不再依赖同义节点的返回顺序。
+原有边断言保留，并新增控制器 → bean → 接口 → 实现的连续三跳断言。
+
+本轮执行 `cargo fmt --all`（退出 0）及以下本地检查（退出 0）：
+
+```sh
+cargo test -p rustcodegraph --test frameworks_integration_test --test extraction_test --test resolution_test --test upstream_189_test --test upstream_190_test --test upstream_191_test --test upstream_192_test --test upstream_193_test --test upstream_194_test -- --nocapture
+```
+
+合计 580 passed / 0 failed / 78 既有 ignored，其中框架套件 18 项、任务 132
+聚焦 5 项均通过且无 ignored，ArkTS 接线至增量套件共 24 项通过。
+验证使用动态槽位 1，`CARGO_TARGET_DIR` 与 `CARGO_BUILD_BUILD_DIR` 均为
+仓库根目录下的 `target/rust-slot-1`；结束后释放占用锁并保留缓存。
+任务 132 的本地回归阻塞已解除；此结果不代表未执行的外部验收通过。
 
 依赖批次 196–204（任务 135–143）的九项真实仓库流程验收适用用户
 2026-11-03 的取消修订，不再作为支持声明门槛。
