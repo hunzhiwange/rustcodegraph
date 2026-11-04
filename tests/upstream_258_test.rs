@@ -1,5 +1,5 @@
 //! Registration-only prerequisite for Celery dispatch (upstream 15483713).
-pub use rustcodegraph::{types, web_tree_sitter};
+pub use rustcodegraph::{resolution, types, web_tree_sitter};
 #[path = "../src/resolution/callback_synthesizer/celery.rs"]
 mod celery;
 use celery::TaskRegistry;

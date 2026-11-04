@@ -15,8 +15,6 @@ use super::types::ResolutionContext;
 
 mod arkts;
 mod callbacks;
-// Consumed by the separate Celery dispatch step.
-#[allow(dead_code)]
 mod celery;
 mod common;
 mod erlang;
@@ -75,6 +73,7 @@ pub fn synthesize_callback_edges(
     all.extend(redux::redux_thunk_edges(ctx));
     all.extend(redux::rtk_query_edges(ctx));
     all.extend(vue_store::vue_store_edges(ctx));
+    all.extend(celery::dispatch_edges(ctx));
     all.extend(react_render_edges(queries, ctx));
     all.extend(react_jsx_child_edges(ctx));
     all.extend(vue_template_edges(ctx));

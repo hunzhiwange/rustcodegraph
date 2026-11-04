@@ -21,6 +21,8 @@ round-trips than reading files yourself.
 Flow prioritizes paths connecting the most queried symbols; heuristic links include their mechanism and wiring location.
 Vue store flows use registered Pinia action bindings and literal Vuex dispatch/commit keys with explicit store/module registration; dynamic keys and ambiguous bindings are omitted.
 
+Celery flows connect statically bound delay/apply_async calls to decorated task functions; missing registrations and ambiguous or dynamic receivers are omitted.
+
 File symbol maps use names relative to the file header and group repeated names while retaining their indexed line locations.
 
 Explore and node return indexed source and graph context in both CLI and MCP sessions.
