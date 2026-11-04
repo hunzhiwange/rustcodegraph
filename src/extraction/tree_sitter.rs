@@ -421,6 +421,32 @@ impl TreeSitterExtractor {
         }
 
         self.visit_node(&tree.root_node);
+        if matches!(
+            self.language,
+            Language::TypeScript | Language::Tsx | Language::JavaScript | Language::Jsx
+        ) {
+            for (name, collection, function) in
+                crate::extraction::languages::typescript::vue_store::registrations(&tree.root_node)
+            {
+                let signature = format!("= Vue store {collection}");
+                if let Some(existing) = self.nodes.iter_mut().find(|n| {
+                    n.name == name
+                        && n.start_line == function.start_position.row as u64 + 1
+                        && n.kind == NodeKind::Function
+                }) {
+                    existing.signature = Some(signature);
+                } else {
+                    self.extract_function_with_extra(
+                        &function,
+                        Some(name),
+                        NodeExtra {
+                            signature: Some(signature),
+                            ..NodeExtra::default()
+                        },
+                    );
+                }
+            }
+        }
         // 函数引用和值引用依赖“全文件节点已经建完”这个前提，遍历后统一发边。
         self.flush_fn_ref_candidates();
         self.tree = Some(tree);

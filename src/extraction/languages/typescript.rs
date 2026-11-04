@@ -1,6 +1,8 @@
 //! Rust translation of `src/extraction/languages/typescript.ts`.
 #[path = "typescript/rtk.rs"]
 pub(crate) mod rtk;
+#[path = "typescript/vue_store.rs"]
+pub(crate) mod vue_store;
 
 use crate::extraction::tree_sitter_helpers::{get_child_by_field, get_node_text};
 use crate::extraction::tree_sitter_types::{
