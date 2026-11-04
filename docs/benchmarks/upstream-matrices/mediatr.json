@@ -1,0 +1,90 @@
+{
+  "language_framework": "C# / MediatR",
+  "status": "用户取消验收",
+  "user_revision_date": "2026-11-03",
+  "scope": "Source inventory only; real-repository replay, A/B, performance and external platform acceptance were cancelled. No passing external result is claimed.",
+  "source": {
+    "commit": "15483713763f344ff30fb7df92bcf091c7bd9758",
+    "files": [
+      "src/resolution/callback-synthesizer.ts",
+      "__tests__/mediatr-dispatch-synthesizer.test.ts"
+    ]
+  },
+  "prerequisite_implementations": [
+    {
+      "batch": 285,
+      "commit": "8dc34a2a790d8913f621cc50771d955633bbf079",
+      "implementation": "src/resolution/callback_synthesizer/mediatr.rs",
+      "local_checks": "tests/upstream_285_test.rs",
+      "validation_note": "Implementation commit and four test definitions inspected: end-to-end explore and incremental removal; notification fan-out and Send ambiguity; dynamic/missing/unrelated dispatch rejection; solution boundary isolation. Tests were not rerun for this documentation task; inspection is not a new passing result."
+    },
+    {
+      "batch": 3,
+      "commit": "191751fa44a5a7f665e5a5b50a6afd8560f63081",
+      "implementation": "scripts/agent-eval/run-matrix-case.py",
+      "local_checks": "tests/upstream_matrix_runner_test.rs",
+      "validation_note": "Runner entry point and prerequisite commit inspected. Runner and external experiments not executed for this task."
+    }
+  ],
+  "cases": [],
+  "source_fixture_inventory": [
+    {
+      "source_file": "__tests__/mediatr-dispatch-synthesizer.test.ts",
+      "fixture_kind": "synthetic",
+      "flows": [
+        [
+          "ThingsController.GetThings",
+          "GetThingsQueryHandler.Handle"
+        ],
+        [
+          "ThingsController.Create",
+          "CreateThingCommandHandler.Handle"
+        ],
+        [
+          "ThingsController.Delete",
+          "DeleteThingCommandHandler.Handle"
+        ],
+        [
+          "ThingsController.Notify",
+          "ThingDeletedNotificationHandler.Handle"
+        ]
+      ],
+      "note": "Source assertions cover inline construction, typed parameters and local construction with Send/Publish. Unhandled requests and MessagingCenter.Send are negative controls. Source inspection only; these are not real-repository cases or passing local evidence."
+    },
+    {
+      "source_file": "__tests__/mediatr-dispatch-synthesizer.test.ts",
+      "fixture_kind": "synthetic",
+      "flows": [
+        [
+          "Endpoint.Create",
+          "CreateThingHandler.Handle"
+        ],
+        [
+          "Endpoint.Update",
+          "UpdateThingHandler.Handle"
+        ],
+        [
+          "Service.Created",
+          "AuditHandler.Handle"
+        ],
+        [
+          "Service.Deleted",
+          "AuditHandler.Handle"
+        ],
+        [
+          "Service.Tell",
+          "AuditHandler.Handle"
+        ],
+        [
+          "Service.Tell",
+          "ChargeHandler.Handle"
+        ]
+      ],
+      "note": "Separate synthetic fixtures assert mapper-built types, multiple handled types, project/package handler interfaces, solution isolation and notification fan-out. A type/base-list mismatch fixture and a MediatR-free project are negative controls. Source inspection only; upstream assertions do not establish identical local Rust coverage."
+    }
+  ],
+  "case_inventory_note": "No pinned small/medium/large real-repository nine-flow matrix was identified in the inspected source tests. Package names mentioned in comments are not pinned repository cases. Repository revisions and size tiers are not invented; synthetic fixtures are not promoted to runnable real-repository cases.",
+  "runner_compatible": false,
+  "runner_note": "This cancellation inventory is not the nine-case array required by run-matrix-case.py and must not be passed to that runner.",
+  "external_experiments_executed": false
+}
