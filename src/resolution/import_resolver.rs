@@ -20,7 +20,9 @@ mod rust;
 mod script_requires;
 mod solidity;
 mod terraform;
+mod vbnet;
 mod via;
+pub use vbnet::resolve_vbnet_reference;
 
 pub use cpp::{clear_cpp_include_dir_cache, load_cpp_include_dirs};
 pub use erlang::resolve_erlang_reference;
