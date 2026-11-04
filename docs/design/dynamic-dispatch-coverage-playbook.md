@@ -239,6 +239,7 @@ rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # tr
 
 | 语言 | 框架 | 测试的规范流程 | 机制 | 地位 |
 |---|---|---|---|---|
+| COBOL | 静态 PERFORM / literal CALL / COPY | paragraph → program → program | X+R | 静态能力已实现；[覆盖与验收限制](#cobol-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | VB.NET | 静态调用 / namespace Imports / 属性访问器体 | 属性 Get/Set → 跨文件方法 → 本地方法 | X+R | 静态能力已实现；[覆盖与验收限制](#vbnet-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Erlang | 静态调用 / 导入 / behaviour callback | 静态调用 → 模块函数；变量模块调用 → behaviour 实现 → 本地调用 | X+R+S | 静态能力与启发式桥接已实现；[覆盖与验收限制](#erlang-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Solidity | 静态调用 / 导入 / 继承 | 调用方 → 继承 modifier → 基类内部方法；导入别名 → 库函数 | X+R | 静态能力已实现；[覆盖与验收限制](#solidity-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
@@ -830,6 +831,41 @@ structure、enum 和局部变量声明。grammar 有列首 Return/label 与 XML 
 依赖批次 142–150（任务 81–89）的九项真实仓库流程验收适用用户
 2026-11-03 的取消修订，不再作为支持声明门槛。
 [取消验收清单](../benchmarks/upstream-matrices/vbnet.json) 在 `e240ddd0` 归档，
+`cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
+或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
+VM/Docker 验证均未执行，不声明外部验收通过。
+
+<a id="cobol-static-coverage"></a>
+
+### COBOL 静态覆盖收口（2026-11-04）
+
+支持 `.cbl`、`.cob`、`.cpy`（扩展名大小写不敏感），使用原生 AST 抽取
+PROGRAM-ID 为 module、section 与 paragraph 为 function，并重建平铺过程头的
+范围和包含关系；支持固定格式及按声明检测后预处理的自由格式、copybook 片段。
+记录静态 PERFORM（THRU 记录两个端点，不展开区间）、字符串 literal CALL 和 COPY。
+CALL 只匹配唯一的索引内同名 program；PERFORM 限于当前文件的当前 program，
+名称按 ASCII 大小写不敏感匹配。COPY 优先同目录，显式相对路径按路径匹配，
+否则按索引文件名或 stem 匹配唯一目标；不是编译器 copybook 搜索路径实现。
+增量同步覆盖声明变化、目标与 copybook 删除重建、重名歧义增加或消除，并与
+干净索引比较节点和边，保留非 COBOL 控制文件的图内容。
+
+不承诺完整编译器语义、COPY 文本展开或 REPLACING 求值、数据项声明抽取、
+变量 CALL 目标推断、运行时框架派发及外部程序加载；歧义目标保持未解析，
+不以同名猜测补边，也没有新增动态派发合成器。PERFORM THRU 的端点边不代表
+区间内所有 paragraph 的执行顺序。
+
+来源为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758` 的
+`src/extraction/languages/cobol.ts`；原生 grammar 固定于
+`e99dbdc3d800d5fa2796476efd60af91f6b43d93` 并应用该上游的 patch，
+详见 [grammar 来源与可行性记录](upstream-grammars/cobol.md)。
+接线、声明、引用、跨文件解析、静态流程边界与增量修复分别见提交
+`5220c69d`、`a571f026`、`8a42105b`、`98aa0008`、`83db25c3`、`ae59653d`；
+本地回归用例为 `tests/upstream_153_test.rs` 至 `tests/upstream_158_test.rs`。
+本次只核对文档、实现与测试断言的一致性，并执行 `git diff --check`，没有重跑 Cargo。
+
+依赖批次 160–168（任务 99–107）的九项真实仓库流程验收适用用户
+2026-11-03 的取消修订，不再作为支持声明门槛。
+[取消验收清单](../benchmarks/upstream-matrices/cobol.json) 在 `50bce593` 归档，
 `cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
 或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
 VM/Docker 验证均未执行，不声明外部验收通过。

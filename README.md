@@ -136,7 +136,9 @@ If a workspace has no `.rustcodegraph/` index, the MCP server reports itself ina
 
 ## Supported Languages
 
-**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, Terraform/OpenTofu, Solidity, Erlang, and VB.NET.
+**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, Terraform/OpenTofu, Solidity, Erlang, VB.NET, and COBOL.
+
+**COBOL (`.cbl`, `.cob`, `.cpy`):** Search programs, sections, and paragraphs; follow unambiguous static PERFORM targets, literal program CALLs, and indexed COPY references. Incremental sync preserves cross-file links. Dynamic CALL targets, copybook expansion, and full compiler semantics are outside this coverage. See the [COBOL coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#cobol-static-coverage) for grammar and validation limits.
 
 **VB.NET (`.vb`):** Search namespaces, classes, modules, methods, properties, and events; follow unambiguous static calls and indexed namespace imports, including aliases and case-insensitive names. Incremental sync preserves cross-file references. Full compiler semantics, runtime event dispatch, and ambiguous overload resolution are outside this coverage. See the [VB.NET coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#vbnet-static-coverage) for grammar and validation limits.
 
