@@ -287,6 +287,10 @@ impl LanguageExtractor for CExtractor {
 }
 
 impl LanguageExtractor for CppExtractor {
+    fn pre_parse(&self, source: &str) -> Option<String> {
+        blank_cuda_constructs(source)
+    }
+
     fn function_types(&self) -> &'static [&'static str] {
         &["function_definition"]
     }
@@ -395,5 +399,143 @@ impl LanguageExtractor for CppExtractor {
 
     fn extract_import(&self, node: &SyntaxNode, source: &str) -> Option<ImportInfo> {
         extract_c_include(node, source)
+    }
+}
+
+/// Adapt CUDA to the existing C++ parser without moving any byte or line.
+/// Scan code tokens only: comments and literals must retain their contents.
+fn blank_cuda_constructs(source: &str) -> Option<String> {
+    let bytes = source.as_bytes();
+    let mut out = bytes.to_vec();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"//") {
+            i += 2;
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+        } else if bytes[i..].starts_with(b"/*") {
+            i += 2;
+            while i < bytes.len() && !bytes[i..].starts_with(b"*/") {
+                i += 1;
+            }
+            i = (i + 2).min(bytes.len());
+        } else if bytes[i..].starts_with(b"R\"") {
+            // C++ raw strings can contain quotes, CUDA tokens and newlines.
+            if let Some(open) = bytes[i + 2..].iter().take(17).position(|b| *b == b'(') {
+                let delimiter = &source[i + 2..i + 2 + open];
+                let close = format!("){delimiter}\"");
+                let start = i + 3 + open;
+                i = source[start..]
+                    .find(&close)
+                    .map_or(bytes.len(), |p| start + p + close.len());
+            } else {
+                i += 1;
+            }
+        } else if matches!(bytes[i], b'"' | b'\'') {
+            let quote = bytes[i];
+            i += 1;
+            while i < bytes.len() {
+                if bytes[i] == b'\\' {
+                    i = (i + 2).min(bytes.len());
+                } else if bytes[i] == quote {
+                    i += 1;
+                    break;
+                } else {
+                    i += 1;
+                }
+            }
+        } else if bytes[i].is_ascii_alphabetic() || bytes[i] == b'_' {
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            let token = &source[start..i];
+            if matches!(
+                token,
+                "__global__"
+                    | "__device__"
+                    | "__host__"
+                    | "__constant__"
+                    | "__shared__"
+                    | "__managed__"
+                    | "__grid_constant__"
+                    | "__forceinline__"
+                    | "__noinline__"
+                    | "__launch_bounds__"
+            ) {
+                if token == "__launch_bounds__" {
+                    let mut end = i;
+                    while end < bytes.len() && bytes[end].is_ascii_whitespace() {
+                        end += 1;
+                    }
+                    if bytes.get(end) == Some(&b'(') {
+                        let mut depth = 0;
+                        for j in end..bytes.len().min(end + 400) {
+                            match bytes[j] {
+                                b'(' => depth += 1,
+                                b')' => {
+                                    depth -= 1;
+                                    if depth == 0 {
+                                        i = j + 1;
+                                        break;
+                                    }
+                                }
+                                b';' => break,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                blank_cuda_span(&mut out[start..i]);
+            }
+        } else if bytes[i..].starts_with(b"<<<")
+            && bytes.get(i + 3) != Some(&b'<')
+            && (i == 0 || bytes[i - 1] != b'<')
+        {
+            // Bound recovery to one balanced expression, never across statements
+            // or conflict markers. An incomplete launch remains untouched.
+            let mut stack = Vec::new();
+            let mut end = i + 3;
+            while end < bytes.len().min(i + 403) {
+                if bytes[end..].starts_with(b">>>") && stack.is_empty() {
+                    let after = end + 3;
+                    let next = bytes[after..]
+                        .iter()
+                        .position(|b| !b.is_ascii_whitespace())
+                        .map(|p| after + p);
+                    if next.is_some_and(|p| bytes[p] == b'(') {
+                        blank_cuda_span(&mut out[i..after]);
+                        i = after - 1;
+                    }
+                    break;
+                }
+                match bytes[end] {
+                    b';' | b'"' | b'\'' => break,
+                    b'(' => stack.push(b')'),
+                    b'[' => stack.push(b']'),
+                    b'{' => stack.push(b'}'),
+                    b')' | b']' | b'}' => {
+                        if stack.pop() != Some(bytes[end]) {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                end += 1;
+            }
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
+    (out != bytes).then(|| String::from_utf8(out).expect("CUDA masking preserves UTF-8"))
+}
+
+fn blank_cuda_span(span: &mut [u8]) {
+    for byte in span {
+        if !matches!(*byte, b'\r' | b'\n') {
+            *byte = b' ';
+        }
     }
 }
