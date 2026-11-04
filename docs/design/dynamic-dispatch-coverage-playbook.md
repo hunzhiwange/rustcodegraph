@@ -708,3 +708,23 @@ setState 风格的门）； Akka actor 消息调度（无类型）；纯匿名�
 不声明 Read/Grep、延迟、工具调用预算或控制仓库回归验收通过。
 上述历史静态记录不替代已取消实验的结果；矩阵说明中的外部运行步骤仅为历史复现信息。
 本次仅核对文档与实现、固定来源及九案例记录的一致性，并执行 `git diff --check`。
+
+
+<a id="terraform-static-coverage"></a>
+
+### Terraform / OpenTofu 静态覆盖收口（2026-11-04）
+
+支持 `.tf`、`.tofu` 声明抽取、目录作用域内的静态引用、本地模块输入与输出、
+父作用域 provider alias，以及无歧义的 Cloud Posse component remote-state 输出。
+增量同步会重建受影响的作用域引用。动态 source、远程模块下载、运行时求值与
+存在歧义的目标不属于此支持声明。
+
+来源为固定上游 `15483713763f344ff30fb7df92bcf091c7bd9758`；原生 grammar
+与声明抽取、引用解析、provider 接线及增量实现分别见提交
+`949c987c`、`cf07af9e`、`48ed8f26`、`25be52dc`、`66f9b8ae`、`4cf10fc0`。
+本次为文档核对，仅执行 `git diff --check`，没有重新运行 Cargo 测试。
+
+依赖批次 88–96 的九项真实仓库流程验收已由用户于 2026-11-03 取消，
+不再作为支持声明门槛。[取消验收清单](../benchmarks/upstream-matrices/terraform.json)
+在 `96133f22` 归档，案例数组为空，并非九案例通过报告。
+真实仓库回放、重复 A/B、性能与 VM/Docker 验证均未执行；不声明这些外部验证通过。

@@ -136,7 +136,9 @@ If a workspace has no `.rustcodegraph/` index, the MCP server reports itself ina
 
 ## Supported Languages
 
-**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, and Nix.
+**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, and Terraform/OpenTofu.
+
+**Terraform/OpenTofu (`.tf`, `.tofu`):** Search declarations and follow static references, local module inputs and outputs, provider aliases, and unambiguous Cloud Posse component remote-state outputs. Dynamic module sources, remote module loading, and Terraform evaluation are outside this coverage. See the [Terraform coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#terraform-static-coverage) for validation limits.
 
 **Nix (`.nix`):** Index named bindings, functions, attribute sets, and inherited attributes; follow static calls and project-relative `import`, `builtins.import`, `callPackage`, and `callPackages` paths, including directory `default.nix` files. Dynamic paths, dynamic attributes, partial applications, and runtime module composition remain outside the supported flow coverage. See the [Nix coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#nix-static-coverage) for evidence and validation limits.
 

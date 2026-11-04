@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Explore Terraform and OpenTofu declarations and static dependencies across local modules with documented coverage limits.
+
 - Follow Terraform and OpenTofu provider aliases through parent scopes and Cloud Posse remote-state references to unambiguous component outputs.
 
 - Follow local Terraform and OpenTofu module inputs and outputs across files without mixing same-named declarations from unrelated modules.
