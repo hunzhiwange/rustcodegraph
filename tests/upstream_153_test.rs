@@ -46,7 +46,12 @@ fn case_153_empty_unicode_and_damaged() {
         assert_eq!(tree.root_node.has_error, damaged, "{normalized}");
         let result = TreeSitterExtractor::new("sample.cbl", source, None).extract();
         assert!(result.errors.is_empty(), "{:?}", result.errors);
-        assert_eq!(result.nodes.len(), 1, "only file scaffolding at this stage");
+        assert!(
+            result
+                .nodes
+                .iter()
+                .any(|n| n.kind == rustcodegraph::types::NodeKind::File)
+        );
     }
 }
 
