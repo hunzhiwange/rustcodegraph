@@ -233,7 +233,20 @@ fn named_flow_paths(cg: &mut crate::CodeGraph, named_nodes: &[Node]) -> Vec<Vec<
                     .into_iter()
                     .filter(|e| is_flow_edge(e.kind))
                     .collect::<Vec<_>>();
-                edges.sort_by(|a, b| a.target.cmp(&b.target));
+                // A direct name-match may duplicate a registered runtime hop. Keep
+                // the registration evidence when choosing between identical hops.
+                let has_wiring = |e: &Edge| {
+                    e.metadata.as_ref().is_some_and(|m| {
+                        m.contains_key("synthesizedBy") && m.contains_key("registeredAt")
+                    })
+                };
+                edges.sort_by(|a, b| {
+                    a.target
+                        .cmp(&b.target)
+                        .then_with(|| has_wiring(b).cmp(&has_wiring(a)))
+                });
+                let mut seen = HashSet::new();
+                edges.retain(|e| seen.insert((e.target.clone(), e.kind)));
                 edges
                     .into_iter()
                     .filter_map(|e| cg.get_node(&e.target).map(|n| (n, e)))

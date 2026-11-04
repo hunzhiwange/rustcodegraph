@@ -27,6 +27,7 @@ mod react;
 mod redux;
 mod templates;
 mod terraform;
+mod vue_store;
 
 use callbacks::{closure_collection_edges, event_emitter_edges, field_channel_edges};
 use gin::gin_middleware_chain_edges;
@@ -70,6 +71,7 @@ pub fn synthesize_callback_edges(
     all.extend(event_emitter_edges(ctx));
     all.extend(redux::redux_thunk_edges(ctx));
     all.extend(redux::rtk_query_edges(ctx));
+    all.extend(vue_store::vue_store_edges(ctx));
     all.extend(react_render_edges(queries, ctx));
     all.extend(react_jsx_child_edges(ctx));
     all.extend(vue_template_edges(ctx));

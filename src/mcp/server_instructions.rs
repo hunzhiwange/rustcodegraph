@@ -19,6 +19,7 @@ blast radius in view. More accurate context, in far fewer tokens and
 round-trips than reading files yourself.
 
 Flow prioritizes paths connecting the most queried symbols; heuristic links include their mechanism and wiring location.
+Vue store flows use registered Pinia action bindings and literal Vuex dispatch/commit keys with explicit store/module registration; dynamic keys and ambiguous bindings are omitted.
 
 File symbol maps use names relative to the file header and group repeated names while retaining their indexed line locations.
 

@@ -103,6 +103,9 @@ fn synthesize_facade_dynamic_edges_inner(
     full_rebuild: bool,
     db: &mut DatabaseConnection,
 ) -> usize {
+    // Vue registrations may change in a different file from their callers.
+    // Recompute this pass's edges globally, including removal on unchanged files.
+    let _ = db.get_db().exec("DELETE FROM edges WHERE provenance = 'heuristic' AND json_extract(metadata, '$.synthesizedBy') IN ('pinia-store', 'vuex-dispatch')");
     if full_rebuild {
         // 全量索引保持原行为：一次性 load 整库节点供合成上下文做 O(1) 内存查询。
         let mut queries = QueryBuilder::new(db.get_db());
