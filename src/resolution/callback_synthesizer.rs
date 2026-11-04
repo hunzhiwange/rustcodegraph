@@ -28,6 +28,9 @@ mod overrides;
 mod react;
 mod redux;
 mod sidekiq;
+// Registration is consumed by the separate Spring dispatch pass.
+#[allow(dead_code)]
+mod spring_event;
 mod templates;
 mod terraform;
 mod vue_store;
