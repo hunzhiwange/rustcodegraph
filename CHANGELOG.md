@@ -10,6 +10,8 @@
 
 ### New Features
 
+- Follow registered Pinia Options store actions and literal Vuex dispatch and commit chains into their declared handlers.
+
 - Follow registered Redux Toolkit thunk chains and RTK Query React hooks into their statically declared endpoint callbacks.
 
 - Search Metal shader declarations and follow static function calls and local header dependencies that stay connected as files change.

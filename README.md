@@ -168,6 +168,8 @@ Language support is selected automatically from file extensions. RustCodeGraph s
 
 **Redux Toolkit and RTK Query:** Follow import-backed `createAsyncThunk` dispatch chains and React query, lazy-query, and mutation hooks destructured from a same-module `createApi` registration into literal endpoint callbacks. Dynamic registration, general Redux reducer/store execution, and RTK runtime scheduling are outside this coverage. See the [Redux/RTK coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#redux-rtk-static-coverage) for local validation and limits.
 
+**Pinia and Vuex stores (TypeScript/TSX and JavaScript/JSX):** Follow import-backed Pinia Options store instances into registered actions, and Vuex literal `dispatch`/`commit` calls through statically registered root stores and namespaced modules into actions and mutations. Pinia setup stores, dynamic registration or keys, mapping helpers, and reactive state-to-render execution are outside this coverage. See the [Vue store coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#vue-store-static-coverage) for local validation and limits.
+
 **Frontend routes and components:** React, React Router, Next.js, Svelte/SvelteKit, Vue/Vue Router/Nuxt, and Astro.
 
 **Native, mobile, and cross-language flows:** SwiftUI, UIKit, Swift/Objective-C bridging, React Native legacy bridge, React Native TurboModules, React Native native events, Expo Modules, and Fabric/Paper native views.

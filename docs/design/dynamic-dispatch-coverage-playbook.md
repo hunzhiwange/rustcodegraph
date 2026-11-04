@@ -245,6 +245,7 @@ rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # tr
 | Solidity | 静态调用 / 导入 / 继承 | 调用方 → 继承 modifier → 基类内部方法；导入别名 → 库函数 | X+R | 静态能力已实现；[覆盖与验收限制](#solidity-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Nix | 静态函数 / 模块加载 | 命名调用；相对 import / callPackage → 模块文件 → 声明 | X+R | 静态能力已实现；[九案例历史证据与验收范围](#nix-static-coverage)。外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | React / 观察者 / EventEmitter / React Router | 状态→渲染；调度→回调；路线→组件 | S+X | ✅ 渲染+调度（excalidraw）； **React Router JSX 路由** `<Route path component={C}/>` (v5) + `element={<C/>}` (v6) → 组件 (react-realworld **0→10, 10/10**)。 + **对象数据路由器** `createBrowserRouter([{path, element/Component}])`（文字形式）； Next.js config/`nextjs-pages` 误报已修复。 🔬 惰性数据路由器（`path: paths.x.path, lazy: () => import()` — 变量路径 + 惰性模块） |
+| TypeScript/JS | Pinia / Vuex stores | 实例调用 → Options action → helper；literal dispatch → namespaced action → commit → mutation → helper | X+S | 静态注册与派发已实现；[覆盖与验收限制](#vue-store-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | Vue/Nuxt | 模板事件（@click→处理程序）；成分组成；反应→渲染 | S+X | ✅ 事件+组合（vitepress S / vben M / element-plus L）； 🔬 反应式 → 渲染（vue-core 代理运行时 — 前沿，延迟） |
 | TypeScript/JS | Svelte / SvelteKit | 模板调用/组合； SvelteKit 操作→api；存储→DOM | X | ✅ 已经很强大（现实世界S/骨架M/shadcn L）：模板`{fn()}`调用，`<Pascal/>`组合，`import * as api`命名空间，`load`→api所有开箱即用。 + 导出常量函数对象提取 (SvelteKit `actions`)。 🔬 `$lib`-来自操作的命名空间 + 存储/反应边界 |
 | TypeScript/JS | 快递 / 相思木 | 请求 → 路由 → 处理程序 → 服务 | 右+X | ✅ 命名处理程序 + 中间件 + 控制器/服务（解析器） + **内联箭头处理程序 → 服务主体调用**（真实世界 S 19 / 解析 M / 幽灵 L 65 边）。 🔬 自定义路由器（有效负载有 0 条路由——不是 `app.get` 风格） |
@@ -1073,3 +1074,51 @@ hook（含本地别名）连接到该 callback。既有普通调用边可继续�
 未冻结目标版本的候选问题，不构成九案例覆盖矩阵。
 九项均未执行，没有案例 summary 或原始实验日志；真实仓库回放、重复 A/B、
 指定模型、性能指标与 VM/Docker 验证均未执行，不声称外部验收通过。
+
+
+<a id="vue-store-static-coverage"></a>
+### Vue 状态仓库静态覆盖收口（2026-11-04）
+
+沿用 TypeScript/TSX 与 JavaScript/JSX 提取，不新增语言或扩展名；本次
+注册识别与合成器限定为这四种语言，不据此承诺 `.vue` SFC 脚本内的 store
+派发覆盖。来源固定为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758`，
+已核对本地上游 HEAD，以及提取、Pinia 与 Vuex 三份上游测试的来源清单。
+Rust 实现提交为 `110d7d46`（注册提取）与 `382217e6`（端到端派发）。
+
+提取器识别从 `pinia` / `vuex` 导入（含别名）的 `defineStore` / `createStore`
+模块级字面量配置，及 `namespaced: true` 的 default-export Vuex 模块配置。
+从内联或同模块稳定对象中的 `actions`、`mutations`、`getters` 提取静态名称
+的方法、箭头函数和函数表达式，保留函数体调用；提取 getter 不代表覆盖
+getter 属性读取或状态依赖。
+
+Pinia 支持 Options store：实例绑定直接调用可见的本地或导入 store factory，
+再将 `instance.action()` 连接到该注册的唯一 action。Vuex 支持可见的
+`createStore` 注册及静态 `modules`（含导入的 default-export namespaced
+模块），将字符串字面量 `store.dispatch` / `store.commit` 连接到 action /
+mutation，并支持 action 参数解构出的裸 `dispatch` / `commit` 的模块内调用。
+已有普通调用边继续连接 handler 内 helper。本地 explore 断言覆盖
+`Entry → login → finish` 与 `Entry → login → SAVE → finish` 完整路径。
+合成边标为 heuristic，带 `synthesizedBy` 和 `registeredAt`，保留接线位置。
+
+不承诺 Pinia setup store、`this.action()`、解构 action、`mapActions` /
+`mapMutations`、Vuex `new Store`、动态模块注册、动态键、任意 re-export 链、
+Vuex root-option 跨命名空间派发或 Vue Proxy 状态到渲染链。
+检测到的绑定遮蔽、重赋值、未注册目标与多个候选目标保持无合成边，不按
+全局同名 action 猜测目标；静态对象与模块遍历有深度限制。
+
+本次核对既有 `/tmp/rcg246-final.log`：`upstream_245_test` 与
+`upstream_246_test` 各 4 项通过，覆盖注册正负例、导入别名、同名 store
+隔离、动态键/遮蔽/重赋值负例、重复索引稳定性和 sync 移除接线。
+同一日志另记录 Redux/RTK 控制测试 11 项、explore 预算/自适应/Flow
+31 项、closure collection 1 项通过；合计 51 passed、0 failed、0 ignored。
+当前提取模块、派发模块及行为测试与对应实现提交一致。本任务只复核既有
+日志、源码与断言，执行文档清单检查及 `git diff --check`，不重跑 Cargo，
+不声明全套回归通过。
+
+已逐项复核依赖批次 248–256（任务 17–25）的会话收尾记录：九项均按用户
+2026-11-03 修订以“用户取消验收”收尾，不再作为本次文档门槛。
+[取消验收清单](../benchmarks/upstream-matrices/vue-store.json) 由 `8fae8c94`
+归档，`cases=[]`、`external_experiments_executed=false`。
+清单仅列上游合成 fixture，不构成固定版本的小中大九案例真实仓库矩阵。
+九项均未执行，没有案例 summary 或原始实验日志；真实仓库回放、重复 A/B、
+指定模型、性能指标及 VM/Docker 验证均未执行，不声明外部验收通过。
