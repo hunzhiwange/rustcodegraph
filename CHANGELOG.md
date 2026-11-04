@@ -8,6 +8,8 @@
 
 ### New Features
 
+- Explore CUDA declarations, static kernel calls, and local header dependencies that stay connected as files change.
+
 - Explore ArkTS declarations, local imports, and ArkUI component rendering links that stay connected as files change.
 
 - Source checkouts now reference pinned upstream grammar repositories instead of storing generated parser sources, keeping language dependency updates easier to review.

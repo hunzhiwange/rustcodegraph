@@ -945,3 +945,38 @@ VM/Docker 验证均未执行，不声明外部验收通过。
 `cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
 或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
 VM/Docker 验证均未执行，不声明外部验收通过。
+
+
+<a id="cuda-static-coverage"></a>
+### CUDA 静态覆盖收口（2026-11-04）
+
+支持 `.cu`、`.cuh`（扩展名大小写不敏感），复用现有 C++ grammar，
+节点语言仍为 `cpp`，没有新增第三方解析器副本。
+预处理屏蔽受支持的 CUDA 修饰符、launch bounds 和完整的 kernel launch
+配置，保留字节位置与换行，再由 C++ AST 抽取声明与静态调用。
+本地测试覆盖 host → kernel → device helper、UTF-8/CRLF 坐标、
+注释与字符串保护，以及不完整 launch 后续代码恢复。
+本地 `.cuh` 与 `.h` include 可解析到索引内目标；头文件变更及逐个删除
+头文件、调用方后的增量图与全量重建比较，并检查无悬空边。
+缺失头文件和外部 CUDA SDK 不制造目标节点。
+
+此覆盖不等同于 CUDA 编译器或 GPU 运行时分析：不推断线程、stream、
+异步调度、内存同步或动态调用；不加载外部 SDK。
+Launch 配置的扫描有界，复杂或不完整语法不保证识别；常量和 launch
+配置表达式的运行语义不在覆盖范围内。
+
+计划来源固定为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758`；
+实际 Rust 抽取与增量实现见 `9ae81776`、`e418f20c`，
+本地用例为 `tests/upstream_206_test.rs` 和 `tests/upstream_207_test.rs`。
+已核对增量实现的原始本地日志 `/tmp/rcg207-green.log`：
+两套用例分别 4 项与 2 项通过，均 0 failed、0 ignored；
+周边 include 解析日志 `/tmp/rcg207-neighbor.log` 为 12 passed、1 ignored。
+这些是前置实现的既有证据，本次仅审查文档与代码、测试断言的一致性，
+执行文档清单检查和 `git diff --check`，未重跑 Cargo，也不宣称全套回归通过。
+
+依赖批次 209–217（任务 148–156）的九项真实仓库流程验收适用用户
+2026-11-03 的取消修订，不再作为支持声明门槛。
+[取消验收清单](../benchmarks/upstream-matrices/cuda.json) 已由 `fdfcf466` 归档，
+其 `cases` 为空、`external_experiments_executed` 为 false，状态为“用户取消验收”。
+九项均未执行，没有案例 summary 或原始实验日志，不能视作验收通过；
+真实仓库回放、重复 A/B、性能指标及 VM/Docker 验证均未执行。

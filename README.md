@@ -136,7 +136,9 @@ If a workspace has no `.rustcodegraph/` index, the MCP server reports itself ina
 
 ## Supported Languages
 
-**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, Terraform/OpenTofu, Solidity, Erlang, VB.NET, COBOL, CFML, and ArkTS.
+**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, Terraform/OpenTofu, Solidity, Erlang, VB.NET, COBOL, CFML, ArkTS, and CUDA (via C++).
+
+**CUDA (`.cu`, `.cuh`):** Search declarations and follow static host-to-kernel and device-function calls using the existing C++ parser. Local header dependencies stay connected through incremental sync. CUDA runtime scheduling, GPU execution, and external SDK resolution are outside this coverage. See the [CUDA coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#cuda-static-coverage) for limits and validation status.
 
 **ArkTS (`.ets`):** Search structs, methods, and builder functions; follow local imports, static component calls, and heuristic links from direct reactive-field writes to component rendering. Incremental sync preserves these links. Dynamic receivers, external HarmonyOS APIs, and full ArkUI runtime semantics are outside this coverage. See the [ArkTS coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#arkts-static-coverage) for limits and validation status.
 
