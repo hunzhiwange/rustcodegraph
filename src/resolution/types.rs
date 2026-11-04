@@ -257,6 +257,7 @@ pub fn language_name(language: Language) -> &'static str {
         Language::Solidity => "solidity",
         Language::Erlang => "erlang",
         Language::Vbnet => "vbnet",
+        Language::Cfml => "cfml",
         Language::Cobol => "cobol",
         Language::Unknown => "unknown",
     }

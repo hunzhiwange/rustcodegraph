@@ -42,4 +42,12 @@ fn main() {
         .file(format!("{src}/parser.c"))
         .file(format!("{src}/scanner.c"))
         .compile("tree-sitter-cobol");
+    let src = "vendor/tree-sitter-cfml/cfml/src";
+    println!("cargo:rerun-if-changed=vendor/tree-sitter-cfml");
+    cc::Build::new()
+        .std("c11")
+        .include(src)
+        .file(format!("{src}/parser.c"))
+        .file(format!("{src}/scanner.c"))
+        .compile("tree-sitter-cfml");
 }

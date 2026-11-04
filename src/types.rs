@@ -183,6 +183,8 @@ pub enum Language {
     Vbnet,
     #[serde(rename = "cobol")]
     Cobol,
+    #[serde(rename = "cfml")]
+    Cfml,
     #[serde(rename = "unknown")]
     Unknown,
 }
@@ -226,6 +228,7 @@ pub const LANGUAGES: &[Language] = &[
     Language::Erlang,
     Language::Vbnet,
     Language::Cobol,
+    Language::Cfml,
     Language::Unknown,
 ];
 

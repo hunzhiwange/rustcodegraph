@@ -1,0 +1,500 @@
+# Known Limitations
+
+Each limitation below that was found by scanning public CFML code has a minimal
+reproduction in `test/probes/`; see [CORPUS.md](CORPUS.md) for how that corpus is
+fetched and what it turned up. `npm run probe` reports the current status of all
+of them.
+
+## cfscript
+
+### Keyword casing coverage
+
+CFML keywords are case-insensitive, and so is every keyword here, in any casing
+— `reTURN` and `vAr` included. Keywords are written in **PascalCase** in the
+grammar (`Break`, `QueryExecute`, `<Cf`) and go through the `keyword()` helper,
+which turns the word into one token, a character class per letter
+(`/[bB][rR][eE][aA][kK]/`) at `prec(1)`, aliased to a canonical node name.
+
+The node name is `lowerFirst(word)`, so `.scm` queries keep matching
+(`"break"`, `"queryExecute"`) regardless of the casing in the source.
+
+Until the change recorded in `CHANGELOG.md` under `[Unreleased]`, the helper
+enumerated four string casings instead and interior mixed casing parsed as an
+identifier. That cost three or four terminal symbols per keyword, between a
+quarter and a third of each grammar's `parser.c`.
+
+#### `<Cf` needs an explicit node name
+
+`lowerFirst` is `word.charAt(0).toLowerCase() + word.slice(1)`, so for a token
+starting with punctuation it is a no-op: `'<Cf'` would stay `<Cf` and rename the
+node, breaking `brackets-zed.scm` and `indents-zed.scm` which match `"<cf"`.
+Those two tokens therefore pass the node name explicitly:
+
+```js
+_cf_open_tag:  $ => prec.right(1, keyword('<Cf', '<cf')),
+_cf_close_tag: $ => prec.right(1, keyword('</Cf', '</cf')),
+```
+
+This is a known, deliberate decision. Any future keyword whose first character
+is not a letter needs the same treatment.
+
+#### `keyword()` vs. a bare case-insensitive regex — which to use
+
+Both are character-class regexes now, and they are still **not**
+interchangeable. What separates them is keyword extraction and precedence, not
+casing coverage. Do not "consistency-fix" one into the other; each is a
+regression in the other's territory.
+
+| | `keyword('Word')` | bare regex `/[wW][oO].../` |
+|---|---|---|
+| **use when** | the token competes with `identifier` in the same position, **or** a `.scm` query matches its literal | operator or SQL token that cannot collide with an identifier, or whose node name is uniform anyway |
+| **gives you** | keyword extraction; stable node name via the alias | one compact DFA; longest-match protects identifiers |
+| **costs you** | must stay extracted — see below | no keyword extraction; node name varies with the matched text |
+
+**A `keyword()` token must be keyword-extracted, and nothing in `generate`
+tells you when one is not.** It is `token(prec(1, …))`, and a precedence
+overrides longest-match, so an *un*-extracted keyword out-lexes a longer
+identifier wherever the keyword is valid: `while_value = 1;` parses as
+`while` + `_value`, and `<cfset x = functionalImpact>` as `function` +
+`alImpact`. An extracted one cannot, because the keyword lexer only runs after
+`identifier` has matched the whole word. `npm run check:keywords` reads the
+committed tables and fails on any keyword the keyword lexer does not own; CI
+runs it. Things that have silently excluded keywords here, with the fix for
+each, are listed in `keyword()` in `cfscript/grammar.js` — a `\uXXXX` escape in
+`identifier`, a missing precedence, and the same word also spelled as a plain
+string (`'get'` beside `keyword('Get')`).
+
+The regexes currently in the grammar are all correctly on the bare-regex side:
+
+- **word operators** (`eq`, `is`, `neq`, `ct`, `gt`, `gte`, `contains`,
+  `does not contain`, …) — bare regexes with no explicit precedence, so
+  longest-match protects identifiers. Verified: `containsKey`, `eqValue`,
+  `isValue`, `gteLimit`, `notFlag`, `modValue`, `greaterThanY` all parse
+  correctly. No query matches an operator literal, so the alias would buy
+  nothing, and converting one would add a `prec(1)` token that has to survive
+  keyword extraction — which these do not: they are excluded as matching the
+  same strings as `regex_flags`, in every grammar, before and after the
+  keyword change.
+- **SQL tables** (`query_keyword`, `query_function_name`) — `token(choice(...))`
+  with no precedence, and every alternative collapses into the single
+  `query_keyword` node, so the node name does not vary by which alternative
+  matched. Identifiers like `orders` and `selected_items` are safe.
+- **multi-word tokens** (`static get`, `does not contain`) — contain mandatory
+  `\s+`, so they can never be a subset of the identifier token and the
+  collision hazard does not exist.
+
+Two entries sit deliberately on the other side: `$._kw_instanceof` and
+`$._kw_in` are `keyword()` rules *inside* the operator table, because unlike
+`eq` or `ct` they are real keywords that also appear in identifier position
+elsewhere and are matched by the highlight queries.
+
+Covered by `cfml/test/corpus/case_insensitivity.txt`,
+`cfscript/test/corpus/case_insensitivity.txt` and the keyword-prefix tests in
+`cfquery/test/corpus/cfquery.txt`.
+
+### `function` as an identifier
+
+`f(function=1)` and `x = function.foo` do not parse — `function` is not in
+`_reserved_identifier`.
+
+It was deliberately left out. Adding it does make those forms parse, but it also
+makes the bare statement `function;` parse, which is not valid CFML, and it
+costs a further 8 GLR conflicts and ~4% parser size. A variable named `function`
+is rare enough that the trade is not worth it.
+
+`import` needs no such entry: keyword extraction already lets it fall back to an
+identifier wherever the `import` statement is not valid, so `x = import.foo`
+parses as an ordinary member expression.
+
+### `var` as a variable name straight after `(`
+
+`x = (var)` and `x = (var.a)` do not parse: directly inside parentheses `var`
+lexes as the keyword, because `( var name = value )` — a `var` declaration used
+as an expression, which CommandBox writes in `while` conditions — is valid there.
+A variable named `var` does not occur in the corpus, and `var` could not start a
+statement as a name before either. Elsewhere (`f(var)`, `a == var`) it is still
+an identifier.
+
+Only a plain name is accepted in the parenthesized form (`( var x = … )`, not
+`( var local.x = … )`): the full declarator's scoped and destructured names made
+the `cfml` table 2.9% larger instead of 0.1%, and appear nowhere in that
+position.
+
+### Bare reserved words parse as expressions
+
+`new;`, `static;`, `public;`, `final;` and the other `_reserved_identifier`
+words parse as a bare expression statement even though CFML does not accept
+them. The grammar is deliberately permissive here: these words must stay usable
+as ordinary identifiers (`static['key']`, `query.newQuery()`), and the parser
+does not distinguish the standalone case.
+
+### Space-separated arguments are accepted on any call
+
+`f( a=1 b=2 )` parses even though `f` is not a CF tag, and a CFML engine would
+reject it. Restricting the form to `cf`-prefixed callees would need a token
+matching `cf\w+`, which is a subset of `identifier` and would out-lex ordinary
+identifiers wherever it is valid — the hazard described above under
+`keyword()` vs. regex. The grammar is deliberately permissive here, as it is
+with bare reserved words.
+
+### `#` in cfscript
+
+- **A lone `#` in a string is an error, as it is in Lucee** ([#134](https://github.com/cfmleditor/tree-sitter-cfml/issues/134)). `"# Report"` must be written `"## Report"`: Lucee's string parser starts an expression at every `#` and throws "Invalid Syntax Closing [#] not found" when the closing `#` is missing. The grammar reports it too, and the error stays inside that statement. A heading, `#1 item`, `Price: #`, a CSS colour and a URL fragment were all checked, and none spills onto the next line. The probe `cfml/hash_in_script_string.cfm` records `fail` on purpose. Its source, ColdBox's `PerformanceSuite.cfc`, has since been fixed upstream to `##`.
+- **`#a#.b` and `#a#[1]` are accepted, though Lucee rejects them.** Lucee drops the hashes around a bare `#expr#` in code (`arrayLen(#arr#)` is `arrayLen(arr)`), but `sharp()` returns before any member or subscript is read. The grammar is lenient here and attaches the suffix to the hash: `(#a#).b`. `x = #a#++` is valid in both.
+
+## cfml
+
+### IE conditional comments
+
+`<!--[if gt IE 8]><!-->` is parsed as a comment node. The expression inside (`gt IE 8`) is not evaluated — it's treated as comment content.
+
+### `<cfprocessingdirective>` implicit close
+
+`<cfprocessingdirective>` can be used with or without a body. When used without a closing tag, the grammar treats it as a paired tag and consumes content until EOF or another implicit close trigger. Use self-closing syntax (`/>`) for bodyless usage.
+
+`<cfsetting>` is now a void tag — `</cfsetting>` never appears in the 15,083-file corpus, while `<cfsetting …>` appears 417 times — so it no longer swallows the rest of the template.
+
+### Dynamic tag names not fully evaluated
+
+`<#expr#>` dynamic tag names are parsed and the hash expression is evaluated, but the scanner consumes the expression content for tag matching purposes. Open/close matching works positionally (any dynamic open matches any dynamic close).
+
+## cfquery
+
+### `queryExecute` with non-string first argument
+
+`queryExecute(variable)` or `queryExecute(condition ? "sql1" : "sql2")` falls through to a regular function call (no SQL parsing). Only `queryExecute("SELECT ...")` with a string literal first argument gets SQL injection parsing.
+
+### `+` before `<cfif>` blocks
+
+The `+` concatenation operator allows an optional right operand to support patterns like `col1 + <cfif x>col2 + </cfif>col3`. This means a trailing `+` without a right operand won't produce a parse error.
+
+## Constructs found in public CFML that do not parse
+
+These come from the corpus scan described in [CORPUS.md](CORPUS.md). Each has a
+probe under `test/probes/`, and `npm run probe` reports the moment one is fixed
+or regresses. [`docs/FAILING-PATTERNS.md`](docs/FAILING-PATTERNS.md) has the full
+assessment, including how many files each affects and what fixing it would cost.
+
+### cfscript
+
+- **Script-syntax tag calls where the *first* separator is a comma** — `cfdirectory(action="list", directory=trg, name="x" recurse=true)` (Lucee tests). The space-separated form parses, including calls that switch to commas after the first junction (`cflog(file="#n#" text="t", type="error")`). Requiring the space at the first junction is what keeps the rule unambiguous with an ordinary comma-separated call; 11 calls across 4 files put a comma there instead.
+- **Dotted key in a struct literal — fixed** ([#136](https://github.com/cfmleditor/tree-sitter-cfml/issues/136)). `var objects = { obj_a.meta = { … }, obj_b.meta = { … } };` (Preside tests) parses in both grammars, with the key as a `path`. The first implementation was reverted at 1.8× cfscript parse time; the same change measured +1–3% on today's grammar. A `{` at the start of a statement is still read as a block, so `if (x) { a.b = 1 }` keeps its `statement_block`. The known mislabel below still applies to the `=` spelling: `x = { a.b = 1 }` is an `object_pattern`.
+- **Subscript index holding more than one pair** — `animals = $[ Aardwolf: "…", aardvark: "…" ];` (Lucee tests). **Deliberately not supported, and no longer described as a gap in the ordered-struct feature.** `$` is a legal variable name and `[` subscripts any expression, so `$[ … ]` is an ordinary array-style reference and stays a `subscript_expression`; a single `key: value` inside it is Lucee's own slice syntax, and more than one comma-separated pair is not a reference at all. Lucee means that spelling as an ordered-struct literal; this grammar spells that `${ … }` (below) and leaves the brackets to the variable. Probe `cfscript/subscript_multiple_pairs.cfc` stays `fail` and now records a decision rather than a missing rule.
+- **The `${ … }` ordered-struct literal — fixed** ([#80](https://github.com/cfmleditor/tree-sitter-cfml/issues/80)). `animals = ${ Aardwolf: "…", aardvark: "…" };` yields an `ordered_struct`, the same node the empty `[:]` and `[=]` forms already produced. **+46 parse states**, no new conflicts, zero changed trees.
+
+  **The design question this entry used to pose is answered, and the answer is about postfix operators rather than about this rule.** `[` subscripts any expression, so `$[ … ]` already means something — an array-style reference on a variable named `$` — and making it a literal would take that meaning away. `{` is not a postfix operator on anything, so `${ … }` has no competing reading to lose: a `$` followed by a brace cannot be a reference at all, which is precisely what frees it to be the literal. `$` therefore stays an ordinary identifier, and `$ = 1`, `x = $`, `$.foo`, `$( "sel" )` and `$[ 1 ]` keep the trees they had.
+
+  **`'${'` was already a token of the grammar** (`template_substitution`, inside a backtick string), so this admits an existing lexical form in a new position rather than adding one. Every other `${…}` in the corpus sits inside a string literal — Java-style placeholders in Slatwall's shipping URLs, JS template literals in TestBox's coverage browser — and a string lexes as one token, so none of them reach the rule. The single exception is `cfwheels`' `tools/vscode-ext/assets/templates/controller.cfc`, a **VS Code snippet template rather than CFML**, whose `${modelNamePlural}` placeholders sit in code position; it failed to parse before this change (12 error nodes) and still does (18), with the shape of its recovery moved rather than its validity.
+- **A numeric struct key by dot notation in write position — fixed** ([#86](https://github.com/cfmleditor/tree-sitter-cfml/issues/86)). `myNumb.4 = "4";` now yields an ordinary `member_expression` assignment. Kept here because the *cause* is the reusable part, and neither the issue nor the earlier note here had it. It is not the property rule: `identifier` is a permissive negated character class that matches `4` and `4b` quite happily, which is why the read position always worked. It is the **number** token. `.4` is a legal leading-dot float — `x = .5` is real CFML, Mura writes `imageQuality=.95` and Lucee has a ticket (LDEV4480) about treating `.0` as a number — so as the longer match it out-lexed `.` followed by a property wherever a number was *also* valid. At a statement head the `tag_statement` reading keeps a number valid, which is the whole of the difference: `var myNumb.4 = 1` and `a.b.4 = 1` both parsed on master, because `var` and the first `.` each commit the parser and take the tag reading out of play. The fix splits the leading-dot form into its own token at `prec(-1)`, so `.` wins wherever `.` is valid and the float wins everywhere a number literal actually appears. **+8 parse states, no new conflicts.** Note this also fixed a silent misparse the issue never mentioned: `myNumb.4.5 = "x"` was error-free and wrong, reading `myNumb` as a *tag name* and `4.5` as a member expression of the number `4`.
+- **A statement followed by a tag island — fixed** ([#118](https://github.com/cfmleditor/tree-sitter-cfml/issues/118)). `thread name="x" { … }` then a ` ``` ` block (Lucee LDEV4157) parses, and so does every other statement in front of a fence. Kept here because the entry it replaces named the wrong construct. It was filed, and recorded here, as a `thread`-specific gap — "each parses on its own; only the combination fails" — and `thread` had nothing to do with it. The fence never fired the **automatic semicolon**: `scan_automatic_semicolon` in `cfscript/src/scanner.c` descends from the JavaScript scanner, where a backtick opens a template literal and so must *not* take a semicolon in front of it, and that case survived the port. CFScript has no template literal, and its only backtick is the fence of a tag island — a statement of its own, never a continuation. So anything relying on insertion in front of a fence came out `MISSING ";"`: `thread name="t" { … }`, `lock { … }`, and a bare `var q = queryNew( "col" )`, which is the separate probe `cfscript/cfml_template_after_bare_statement.cfc` — the same cause, recorded twice as two unrelated symptoms. Deleting the case is the whole fix: **no change to `STATE_COUNT`** (scanner-only, `parser.c` byte-identical), corpus **654 → 648 error nodes across 127 → 124 files**, and the tree-shape diff reports **zero** changed files in both grammars. `common/scanner.h` carries the same inherited case and is deliberately left alone: the `cfml`/`cfquery` grammars have no ` ``` ` rule at all, so there the backtick is unreachable rather than wrong.
+- **Function-listener callback on a `new` *target* — fixed** ([#98](https://github.com/cfmleditor/tree-sitter-cfml/issues/98), split out of [#87](https://github.com/cfmleditor/tree-sitter-cfml/issues/87)). `threadName = new Query():function( result, error ) { … };` parses, completing the eleven forms in Lucee's [Function Listeners](https://docs.lucee.org/recipes/function-listeners.html) recipe. **+53 parse states**, one declared conflict, corpus 644 → 642, zero changed trees.
+
+  **This entry's cost figures were all measured before the fix that made them obsolete**, and the history is worth keeping because it is a lesson about *when* a measurement expires. The `+591` recorded here was taken when `new_expression` could complete on the bare keyword; requiring its `arguments` (shipped separately) removed that, and the same widening then measured **+14**. A number from before a related change is not evidence about after it.
+
+  **What actually blocked it was never table size.** With the target widened, `new Foo()` before a contested `:` is either a listener target or a ternary consequence, and only an open `?` tells them apart — which is precisely what GLR carries. The rule as shipped in #87 sat at `prec.right('call', …)`, and `'call'` binds tighter than `'ternary'`, so the listener reading won inside `c ? new Foo() : obj` and that ternary stopped parsing. Every attempt recorded here failed the same way, including the +260 variant that restricted the listener side to a function literal.
+
+  **The fix is a second arm at a lower precedence**, below `'ternary'`, plus the conflict `[$.expression, $.function_listener_expression]` that `tree-sitter generate` asks for. Where a `?` is open the ternary wins; where none is, nothing competes for the colon and the listener wins. The call-target arm keeps `'call'` and is untouched. Both ternary controls — `c ? new Foo() : obj` and `isNull(o) ? new() : o` — are pinned by corpus tests, because they are what every earlier attempt broke.
+
+  **Reserving `new` stays ruled out** for the reasons recorded before: 395 `.new(` call sites across 160 corpus files, and Lucee's documented reserved-word list is `null`, `true`, `false`.
+- **`savecontent` as an expression — fixed** ([#82](https://github.com/cfmleditor/tree-sitter-cfml/issues/82)). `greeting = savecontent { writeOutput("hi") };` now yields a `savecontent_expression`. It is Adobe ColdFusion 2021+ syntax; Lucee does not accept it yet (LDEV-3623), and it is supported for the Adobe code this grammar edits. Kept here because the route that does *not* work is the instructive part, and it is the one anybody would try first. The statement form has no `savecontent` rule at all — it goes through the generic `tag_statement` as an ordinary identifier — so an expression form looks like it needs a `keyword('Savecontent')`, which is exactly the trap this file's "keyword extraction is lexical" section describes. It generates cleanly at 31 states and then breaks the *working* statement form and every ordinary use of the word: `savecontent = 1`, `x = savecontent`, `x = savecontent.foo` and `savecontent()` all become ERRORs. A `_reserved_identifier` entry does not rescue it, because the keyword out-lexes the identifier before the parser reaches the fallback. Admitting `identifier statement_block` as an expression instead is far too broad — it is live at every identifier followed by `{`.
+
+  **What works is the external token**, `_savecontent_kw` in `cfscript/src/scanner.c`: it matches the word only when the next non-whitespace character is `{`, and declines otherwise, so the word keeps its identifier reading everywhere else. The scanner can look past the word; the lexer cannot, and that is the whole difference. **+28 parse states** (5489 → 5517), no new conflicts, zero changed trees. The statement form and the three identifier spellings above are pinned by the corpus test `savecontent as an expression (#82)` and the probe `cfscript/savecontent_expression.cfc`, because they are what the first attempt broke.
+
+  **The issue's file count was too high.** It names three Lucee files; only `test/tickets/_LDEV3623.cfc` writes the expression form. `CodeIsland.cfc` and `Jira2659.cfc` use the statement form, which already parsed, and their errors are unrelated constructs — tag-island fences and `<cfbreak "outer">`. Across the 15,392-file corpus the expression form occurs **once**.
+- **`function` as a bare value** — `h = function.foo;`. `function` is accepted as
+  an assignable name (`admin ... function="" ...`) and as a property
+  (`x.function`), but not as the object of a member expression. Making it a
+  general expression start is what previously broke `function instanceOf( ... )`.
+
+#### Constructs that fail in both CFScript grammars
+
+These came from the RustCFML engine test suite; see [CORPUS.md](CORPUS.md).
+
+**Correction.** This section previously said the constructs below "parse in the
+embedded CFScript of `common/define-grammar.js` and fail only in
+`cfscript/grammar.js`", and `docs/FAILING-PATTERNS.md` costed them as a port of
+rules that already existed. That was wrong, and it under-rated all of them.
+
+The `cfml` grammar does not parse CFScript bodies at all: `<cfscript>` becomes
+`cf_script_content` and a component body becomes `cf_component_content`, both
+raw text handed to the standalone grammar by `injections.scm`. So "the `cfml`
+grammar accepted the same source" only ever meant it had not looked at it.
+`common/define-grammar.js` *does* carry a copy of the CFScript rules, reachable
+through an expression context such as `<cfset f = function( … ) { … }>` — and
+reached that way, every construct below fails there too. `_formal_parameter` and
+`formal_parameters` are byte-identical between the two files, which is the
+direct confirmation that there was nothing to port.
+
+Each is therefore a real grammar change, needed in **both** files, in the area
+where keyword extraction is lexical. Verify a fix in both — a `.cfs` file for
+`cfscript/grammar.js`, and a `<cfset>` closure for `common/define-grammar.js`.
+
+**Second correction, narrower.** "Needed in both files" held for every construct
+here that was checked, and then did not hold for [#52](https://github.com/cfmleditor/tree-sitter-cfml/issues/52).
+`common/define-grammar.js` has no `tag_statement` rule at all, so its copy of
+CFScript carries no `param` statement in any spelling — the attribute form
+`param name="x" default="0";` fails there too, not just the shorthand. #52 was
+therefore a `cfscript`-only fix. The rule to carry forward is that the two files
+have to be *checked* rather than assumed symmetric in either direction: they had
+drifted apart on `_for_header` (a missing alternative) and on `tag_statement` (a
+missing rule).
+
+- **Comma-less function parameters — fixed** ([#49](https://github.com/cfmleditor/tree-sitter-cfml/issues/49)). `function f( boolean a = false ⏎ boolean b = true )` now parses, giving the same tree as the comma form. Lucee, ACF and BoxLang all treat a newline between parameters as a soft separator; TestBox's `BaseSpec.cfc` `createMock` mixes the two, three commas then one omitted. **+34 parse states, no new conflicts, `cfscript` only.** Corpus 682 → 667 nodes across 140 → 130 files, 11 files improved. Two things here are worth keeping. First, the issue's premise was **wrong**: it said the rule already worked in the embedded CFScript of `common/define-grammar.js`, but that was measured by parsing a `<cfscript>` block with the `cfml` grammar, where the body is opaque `cf_script_content` and literal garbage "passes" too — where that copy is genuinely reachable it failed identically, and the two rule definitions were character-identical. Second, the separator **must** be newline-anchored and external: making the comma `optional(',')` does not generate at all, because with a bare `a b` the readings "type `a` named `b`" and "two parameters" are both valid, and the resulting conflict is live at every parameter list in the language.
+- **`not` as a parameter name behind a type** — `function f( array not )`. The rest of the word-operator set parses since [#50](https://github.com/cfmleditor/tree-sitter-cfml/issues/50) was fixed, and `not` is the one word that cannot join them: every other entry in `_operator_shaped_name` is a *binary* operator, competing only with a reading that needs a left operand the name slot has not got, while `not` is a prefix operator (`not_operator`, since #141 gave `!` and `NOT` their own precedence level below the comparisons), so `function f( array not x )` is genuinely ambiguous. The only resolutions `generate` offers are a conflict or a precedence between `_operator_shaped_name` and `not_operator`, both live at every `!` and `NOT` in the language. Not worth that for the least plausible name in the set.
+- **A default on an operator-shaped parameter name** — `function f( array in = [] )`. The bare `array in` parses; giving it a default means aliasing a `seq` to `assignment_pattern`, because that rule's left is a `pattern` and no pattern can reach these words. That spelling generates without conflicts but produces a malformed tree — the name outside a nested, duplicated `assignment_pattern` — and adds 5% to the state table. No corpus file writes it.
+- **A statement as an arrow-function body** — `list.each( (v) => if ( v < 0 ) throw( … ) )` ([#75](https://github.com/cfmleditor/tree-sitter-cfml/issues/75), Lucee `LDEV1819/test2.cfm`). **Implemented, measured and reverted — three times now, by three different routes.** It needs `$.if_statement` in the arrow body `choice` and an automatic semicolon before `)` in `scan_automatic_semicolon`; without the second, only the assignment-position form parses, because the body statement runs to the call's closing paren.
+
+  **Re-measured on today's base, and the original figure holds.** This matters because [#98](https://github.com/cfmleditor/tree-sitter-cfml/issues/98)'s parked cost turned out to have expired once a related change landed, so a parked number is worth re-taking rather than trusting. Here it did not move:
+
+  | route | `STATE_COUNT` | `parser.c` |
+  |---|---|---|
+  | base | 5,315 | 19.5 MB |
+  | `$.if_statement` in the body `choice` | **10,704 (+101%)** | 39.3 MB |
+  | the same, gated on an external zero-width marker | **10,758** | 39.4 MB |
+  | a purpose-built conditional whose branches are expressions, at `'member'` | **7,330 (+38%)** | 27.5 MB |
+
+  **The middle row is the useful new finding, and it delimits a technique.** The external marker is what made `savecontent` as an expression and the empty arrow body affordable — the scanner looks ahead one token where the grammar cannot. It buys **nothing** here, and slightly less than nothing. That is because the cost is not ambiguity at the decision point: it is the `if_statement` subtree becoming reachable in expression position at all, which duplicates states across the whole expression hierarchy. **Reach for the marker when the problem is one token of lookahead; it does not help when a rule category becomes reachable in a new context.**
+
+  The third row shows even a hand-written conditional that admits only expressions in its branches costs +38% and +8 MB, because it still mentions `$.expression` in a new context. For one corpus file, none of these is worth it.
+- **A `final` modifier on a parameter** — `function testFunc( final required s )` (Lucee `LDEV3671/test3671.cfc`). Surfaced by fixing [#77](https://github.com/cfmleditor/tree-sitter-cfml/issues/77): that file starts `final component`, so it used to degrade to plain text and this gap was never reachable. Adding `optional($._kw_final)` beside `optional(keyword('Required'))` in `_formal_parameter` fails to generate in all three grammars — `( final (` is ambiguous between the modifier and `final` as a `_reserved_identifier` expression, and that prefix is live at **every parameter list in the language**, the shape the cost table warns about. One file does not pay for it.
+- **A multi-modifier component header** — `final abstract component { … }`. The shared scanner skips a *run* of modifiers when deciding a file is a component file, but `cfscript`'s `component` rule takes only one. Widening it to `repeat` makes `abstract` at the head of a component-body member ambiguous between an `access_type` and a nested component's modifier list, and the conflict then pulls in `variable_declaration` as well (`final MEMBER = "v"`). No corpus file writes two modifiers there; six write the single-modifier `final component`, which parses.
+- **A `param` type spelled with a `_reserved_identifier` word** — `param query x;` and `param component x;` fail in *every* spelling, including `param query x default=1;`. Found while fixing #52 and unrelated to it: `tag_statement` takes its type through `$.identifier`, and `query` and `component` are in `_reserved_identifier`, so they lex as keywords in that slot. Every other type name tested parses (`string numeric any boolean date array struct xml binary guid void`). Narrow, and no corpus file writes it. Not yet filed.
+
+### cfml
+
+- **Dynamic tag name with a static prefix or namespace — fixed** ([#132](https://github.com/cfmleditor/tree-sitter-cfml/issues/132)). `<h#field.getLevel()#>…</h#field.getLevel()#>` and `<dc:#container#>` pair through the tag stack like any other name; the expression inside the name is text.
+- **Dynamic tag opened and closed in different blocks — the close side fixed** ([#132](https://github.com/cfmleditor/tree-sitter-cfml/issues/132)). A stray `</#expr#>`, whose open tag was in an earlier `<cfoutput>`, is an `erroneous_end_tag`, as a stray `</p>` is (Taffy examples). **Still open:** a fully dynamic `<#expr#>` is never on the scanner's tag stack, so nothing can close it implicitly. `<cfoutput><#t#>x</cfoutput>` fails where `<p>x</cfoutput>` and `<h#t#>x</cfoutput>` do not, and the grammar pairs it with whatever end tag comes next — in `<div><#t#>x</div>` the dynamic element takes `</div>`. One corpus file, Mura's `dsp_content_list.cfm`.
+- **A `<style>` block with many `#` tokens — fixed** ([#133](https://github.com/cfmleditor/tree-sitter-cfml/issues/133), [#146](https://github.com/cfmleditor/tree-sitter-cfml/issues/146)). Lucee's `debug/Simple.cfc` went from 71 errors to none. The failure did not come from accumulation. The cause was one `#` read as an expression opener in a function body that Lucee does not evaluate, and the recovery cascade from it is why nothing shorter than 20 lines reproduced it. `#` in template text is now an expression only inside `<cfoutput>`, `<cfmail>`, `<cfobjectcache>` and `<cfquery>`, and inside a `<cffunction>` or `<cfcomponent>` whose `output` is a literal true. That matches Lucee's compiler. An `output` deeper than 32 nested CF tags is not seen and reads as false.
+- **A deep run of unpaired custom tags followed by a CF tag — fixed** ([#55](https://github.com/cfmleditor/tree-sitter-cfml/issues/55)). Kept here rather than deleted, because the mechanism is a standing trap for anyone touching the tag stack. An unpaired `<cf_foo>` opens a block the next one nests inside, so N in a row is N levels deep, and each level costs `1 + 1 + name + sizeof(html_depth)` bytes in `SERIALIZE_TAGS` against the fixed `TREE_SITTER_SERIALIZATION_BUFFER_SIZE`. Overflow is survivable by design — `_serialized` and `_count` are both recorded and deserialize pads the difference — so truncation costs tag *names*, not tag *count*. **The fatal detail, which two earlier write-ups here missed, is whose name is dropped:** not one of the custom tags, but the `<cfscript>` that follows them, which is itself pushed and becomes the entry with no room left. That is exactly why plain text, `<div>`, an explicit `</cf_runtest>` and EOF all parsed at any depth while `<cfscript>` and `<cfoutput>` did not — none of those four pushes a tag. It is also why the old `depth × (name + 4) ≈ 1,014` model fitted some name lengths and not others (the swept product ran 938 to 4,080): the threshold is where *the next pushing tag* stops fitting, not where the run itself does. The scanner now refuses to nest a `CFML`-typed custom tag once the stack could no longer round-trip through `serialize`, reserving headroom so the tags that legitimately nest still fit; such a tag is emitted as `CF_VOID_START_TAG_NAME` and simply does not nest. RustCFML's `runner.cfm` (624 unpaired `<cf_runtest>` tags, then a `<cfscript>`) went from one ERROR at `1:1` to a clean parse, and Slatwall's `menu.cfm` from 36 error nodes to 0.
+
+  **The HTML side of the same trap — fixed.** Any tag whose name is not in `TAG_TYPES_BY_TAG_NAME` is `CUSTOM` and costs its name on the stack, where a known one like `<div>` costs a single byte: 200 unclosed `<div>` then a `<cfloop>` parsed, 200 `<xh>` did not, and nor did 30 of tassweb's `<control:hiddenfield …>` custom-tag calls (`webroot/attendance/bulk_absentee.cfm`). The #55 check ran only for `CFML`-typed tags, so these were pushed unchecked, used up the headroom, and the `<cfloop>` — itself `CFML`-typed — was the tag that failed the check and was completed as void, orphaning its `</cfloop>`. A `CUSTOM` tag is now held to a budget `CUSTOM_HTML_TAG_HEADROOM` (128 bytes) tighter still, so a run of them leaves room for about ten nested `<cfloop>` levels, and past it the tag is pushed as `CUSTOM_VOID`, which closes like `<input>` instead of nesting. Probes `deep_unpaired_prefixed_tags.cfm` and `deep_unpaired_html_custom_tags.cfm`.
+- **`<cfimport>`-prefixed custom tags are HTML elements, with evaluated attributes.** `<cfimport prefix="control" taglib="…">` makes `<control:x …>` a custom-tag call, whose attributes CFML evaluates wherever the tag is. The scanner reads `prefix` while lexing the `<cfimport>` tag name — as lookahead, after `mark_end` — and keeps up to 64 bytes of prefixes in its serialised state; while inside the start tag of an element whose prefix it holds, `#` opens a `hash_expression` rather than a `hash_single`, so `click="#URLEncodedFormat("a=b")#"` keeps its inner quotes (tassweb `webroot/academicreports/resultFormats_list.cfm`, probe `cfimport_prefix_hash_attribute.cfm`). What this does **not** do:
+  - **The tree shape is still HTML** — `element`/`start_tag`/`attribute`, not `cf_tag`/`cf_attribute`. Making them CF tag nodes was measured and deferred: 4,148 of tassweb's 6,597 files import a prefix, and every consumer that renders a `cf_tag` as `<cf` + name (cfmleditor-lsp's formatter does) would need matching work first.
+  - **Only this template's `<cfimport>` counts.** A prefix imported in a file that `<cfinclude>`s this one, a `#…#` prefix, and CFScript's `import taglib=… prefix=…;` are not seen, and their tags keep the plain-HTML reading, where an inner quote still ends the value.
+  - **A prefix's tags written before its `<cfimport>`** are HTML-read too: the scanner learns a prefix only on reaching the import.
+- **An unquoted struct as a tag attribute value — now rejected, deliberately** ([#115](https://github.com/cfmleditor/tree-sitter-cfml/issues/115)). `<cfcomponent output="false" javasettings={ maven: ["x"] }>` used to parse with **no ERROR node at all**, the struct torn into six bogus attributes. It now reports an ERROR at the `{`. That is the *correct* answer rather than a gap left open: **Lucee rejects this syntax**, and its own test says so — `test/tickets/LDEV5763.cfc` wraps `createObject( "component", "LDEV5763.LDEV5763_tag_unquoted_struct" )` in `expect( … ).toThrow()`, alongside `struct literal (now throws validation error)` for the tag-in-script spelling and `struct literal (parse error)` for the function-style one. Only the quoted and JSON-string spellings pass there, and both already parsed here.
+
+  **Why it was silent.** Nothing failed: `cf_attribute_value` excluded `'`, `"`, whitespace, `#`, `:`, `;`, `<` and `>` but not braces, so `{` matched as a complete unquoted value; `cf_attribute_name` excludes `<>"'/=` and `#` but allows `{`, `}`, `[`, `]` and `:`, so `maven:`, `[`, `]` and `}` all matched as attribute names, and the string in between matched as a bare quoted value. Six pieces, six legal matches, one confident wrong tree. Adding `{}` to the value token's excluded set is the whole change: **no `STATE_COUNT` movement in either grammar**, and the corpus moves the other way on purpose — 640 → 641 error nodes across 121 → 122 files, the one new file being Lucee's `LDEV5763_tag_unquoted_struct.cfc`.
+
+  **Correction to the issue, which reported a second symptom that is not one.** `<cfcomponent … >` closing with `(cf_selfclose_void_tag_end)` is not caused by the struct and does not mean the parser invented a self-close. That node is the tag-end of *every* `<cfcomponent …>` and `<cfargument …>`: a bare `<cfcomponent>` produces it, and so does the quoted control in the issue. A genuine `/>` is recorded as a `(self_closing_tag_delimiter)` child inside it, so the tree does distinguish the two — the name is what misleads. A rename is a separate question from this one.
+
+  The fragments still visible inside the erroring parse are error *recovery*, not a claim about the source. What matters downstream is that `hasError` is now true, so a consumer can decline to act on the file instead of formatting it into nonsense. Pinned by the corpus test `an unquoted struct as a tag attribute value is rejected (#115)` rather than a probe, since a probe keyed on error nodes would file this under "known gap" when it is the intended answer.
+- **A start tag whose `>` sits inside a `<cfif>` branch** — `<a title="Back" <cfif x>⏎ href="a">⏎<cfelse>⏎ href="b">⏎</cfif>` ([#119](https://github.com/cfmleditor/tree-sitter-cfml/issues/119), ContentBox `authors/editor.cfm`; probes `cfml/cfif_supplies_close_delimiter.cfm` and `cfml/cfif_supplies_tag_opening.cfm`, both recorded `fail`). **Implemented, measured and reverted**, like [#75](https://github.com/cfmleditor/tree-sitter-cfml/issues/75) before it. Only one thing is missing — a way for `start_tag` to end without its own `>` — and adding it as an alternative (the conditional terminates the tag) does make the construct parse. It also breaks the spelling that works today, which is the issue's own control: `<a title="Back" <cfif x>href="a"<cfelse>href="b"</cfif>>`, where the `>` stays on the tag's side. That control becomes `ERROR`, and two corpus tests fail with it (`cfif in self-closing tag attributes with ampersands and hash expressions`, `mixed cfset, cfscript, cfoutput, and complex attribute hashes`).
+
+  | attempt | states (cfml) | result |
+  |---|---|---|
+  | `start_tag` may end with any `$._cf_tags` | 5494 → 5622 (**+128**) | construct parses, control regresses |
+  | narrowed to `$.cf_if_tag` at `prec(-1)` | 5494 → 5512 (**+18**) | identical outcome, cheaper |
+  | two explicit `start_tag` arms, `prec.right(3)` vs `prec.right(2)` | 5512 | unchanged — precedence does not move it |
+  | declaring `[$.start_tag, $.tag_attributes]` | — | `generate` reports an **unnecessary conflict** |
+
+  **Precedence cannot decide it, and the unnecessary-conflict warning is the tell.** The two readings do not diverge in how tokens *combine*; they diverge in what the next token *is*. When `</cfif>` reduces, the parser has already had to choose between "the conditional was an attribute and a `>` follows" and "the conditional ended the tag" — and `>` is an **external** token whose identity depends on which state that choice produces: `_close_tag_delim` in one, `html_text` in the other. There is no parser-level ambiguity for GLR to carry two stacks through, which is why the declared conflict reads as unnecessary, and it is the lexical-divergence case `.claude/skills/parse-gap/references/scanner.md` names as the hard one. Both spellings are lexically identical up to the deciding point, so whichever wins, the other breaks.
+
+  **The second shape in that issue is not reachable at all.** `<cfif x><a disabled="disabled"<cfelse><a class="confirmIt"</cfif> title="Delete">` (ContentBox `settings/rawSettingsTable.cfm`) needs a start tag that *begins* inside a branch and ends outside it, so the tag node and the conditional node would have to overlap. No rule shape expresses that in a tree-sitter tree.
+
+  **The CF-tag spelling is a different, smaller gap.** `<cfoutput <cfif x>group="a"<cfelse>group="b"</cfif>>` fails even in the shape that works for HTML tags, because `cf_tag_attributes` has no `$._cf_tags` arm where `tag_attributes` does. Adding one is **not** the fix it looks like: measured at **+252 cfml states and +60 cfquery states**, with the construct still failing, so the missing arm is not what blocks it. Reverted unmeasured-further; anyone picking this up should start by finding out what else that spelling needs, not by re-adding the arm.
+
+  Reach is 2 files in 15,392 — one of each shape, both in ContentBox — which is what settles it against the +18 and a regressed control.
+
+  **Two more shapes of the same class, from Galaxie Blog** (probes `cfml/cfif_opens_element_in_one_branch.cfm` and `cfml/cfif_quote_spans_branch.cfm`, both recorded `fail`): an element opened in one branch only, `<cfif a>⏎<style>⏎<cfelse>⏎<cfcontent type="text/css" />⏎</cfif>` with its end tag after the `</cfif>` (`includes/templates/blogContentCss.cfm`), and an attribute quote opened inside a branch and closed after it, `<video <cfif a>poster="<cfoutput>#u#</cfoutput></cfif>" id="p">` (`galaxiePlayer.cfm`). **Decision: these stay unsupported.** An engine runs the `<cfif>` first and a tree cannot, which is the reason above; the entry and the probes are kept so the question can be reopened.
+- **A literal `<` before a hash expression** — `<span><#context#/index.cfm/[siteid]?</span>` ([#177](https://github.com/cfmleditor/tree-sitter-cfml/issues/177), MuraCMS `core/setup/inc/_form.cfm:192`; probe `cfml/literal_lt_before_hash_expression.cfm`, recorded `fail`). `<#expr#>` is a dynamic tag name ([#132](https://github.com/cfmleditor/tree-sitter-cfml/issues/132)), so `<` followed by `#` starts a start tag, and with no `>` before the next `<` it never closes. The error is reported on the enclosing element, far above the `<`; the engine prints the `<` and the value. Telling the two apart is the scanner's decision at `<`, made before it can see what follows, and it cannot rewind, so a fix is a restructuring of start-tag-name scanning, not a rule. **Decision: stays unsupported**; one corpus file. If reopened, the direction is to treat `<#…#` as text when no `>` follows before the next `<`, the way `<- back` and `<< Go Back` already are.
+- **`</cfscript>` inside a string literal — fixed** ([#56](https://github.com/cfmleditor/tree-sitter-cfml/issues/56)). `FileWrite( p, "<cfscript>…</cfscript>" )` used to end the block at the literal, leaving the rest as template text and the real closing tag as a stray end tag. The raw scan in `common/scanner.h` now tracks strings, `#…#` interpolations and all three comment forms, so the close tag only counts where it is code.
+
+  **Lucee agrees, and that was the open question this entry used to carry.** `cfscript` has a `tagdependent` body handled by `CFMLScriptTransformer`, which ends it through `isFinish()` (`isCurrent("</", data.tagName)`) called only between complete statements — so the string is consumed by the expression parser long before the tag inside it could be noticed, and there is no raw search for `</cfscript>` in that file at all. Read from Lucee's source rather than by running it; Adobe CF was not checked.
+
+  **Three things the first two attempts got wrong, each caught by the corpus scan and none by the test suite:**
+
+  - **Comments have to be skipped as well as strings**, and not as a nicety. CFML escapes a quote by doubling it and has no backslash escape, so the apostrophe in `// don't do this` opens a string that runs to the end of the file. Strings alone took the corpus from 640 error nodes to **7,932**.
+  - **A line comment ends at `\r` too.** ColdBox ships CR-only files — `cbi18n`'s `i18n.cfc` is one, and RustCFML has a fixture named `PresideFixCrEndings.cfc` — where stopping only at `\n` makes one `//` swallow the whole file. That alone was 667 error nodes in a single file.
+  - **A string and an interpolation nest arbitrarily.** `'"#replaceNoCase( v, '"', '""', 'all' )#"'` is one string containing an interpolation containing three more strings (RustCFML's `test_tag_return_nested_quote_interpolation.cfm`, and Lucee's `admin/server.export.cfm` writes the same shape). A single boolean desynchronises on the first one; the scan keeps a small context stack instead.
+
+  **Consequence worth knowing:** a `<cfscript>` block containing an *unterminated* string no longer parses, because the string now swallows the close tag. That is invalid CFML — Lucee throws on it — and no corpus file does it: the scan moved 642 → **638** error nodes across 119 → 117 files with **no file regressing**, and the tree-shape diff reports zero changed trees. Probe `cfml/close_tag_in_script_string.cfm` flips to `pass`.
+
+The following were gaps and now parse: typed `catch` with `var`, `var` with a
+scoped or dotted name, tag comments in a script body, `final` and
+access-modifier member declarations, the empty struct literal `[=]`, bare `>` or
+`<` in template text, the typed `param` statement, array return types
+(`User[] function getUsers()`), script-syntax tag calls with space-separated
+attributes, a subscript as a `var` declaration name
+(`var mappings[ key ] = value`), `new` with a dotted Java path
+(`new java.util.Properties()`), `debugger` as an ordinary identifier, the
+thin-arrow lambda (`t -> t.b()`), the `''` escape inside a single-quoted tag
+attribute value (`default='x ''y'' z'`), an array type in parameter position
+(`function f( string[] v )`, nested `string[][]`), a `var`-scoped dotted
+loop variable in a for-in header (`for ( var local.package in items )`), the
+`=` spelling of a typed `param` default (`param numeric shortBad = "abc";`,
+`cfscript` only), and a word-shaped binary operator as a parameter name behind
+any type (`function f( array in )`, `query contains`, `struct eq`), the untyped
+`param` shorthand (`param x;`, `param url.number;`, `cfscript` only), an access
+modifier combined with `final` in a member declaration
+(`public final MEMBER = "v";`), and a return type written before the access
+modifiers (`struct public static function f()`), a subscripted static access
+(`Test::["f"]()`, `Test::[m]()`), and the `default` modifier on an interface
+method (`public default any function f()`, reachable after another modifier but
+not as the first one), the bodyless tag-statement form of `throw` and `query`
+(`throw message="x" type="y";`, `query name="q" dbtype="query";`), and a bare
+string argument in a tag statement (`exit "exitTemplate";`,
+`pageencoding "utf-8";`), a brace-less `try` body
+(`try x = y; catch( any e ){ }`, an expression statement only), and a
+parenthesised component attribute list (`component( javasettings = { } ) { }`),
+and `name:value` annotations on components and functions
+(`component displayname:"X" { }`, `function f() access:remote { }`), and
+colon-separated attributes in a script tag call
+(`cfparam (name:"local.d" default:"DDD")`). A `.cfc` beginning
+`final component` is now recognised as a component file rather than silently
+degrading to `html_text`, a `static { … }` initialiser parses at the top level
+of an injected region as well as inside a component body, and a colon
+assignment to a dotted name (`msSQL.class: 'x';`), and Lucee's inline
+`java { … }` class block, whose body is recognised but deliberately left opaque
+(`<cfjava>` as a *tag* already parsed). A bare `foo: bar;` still
+parses as a `labeled_statement` rather than an assignment; the two spellings are
+indistinguishable without a semantic pass, and no corpus file depends on it. The
+`new java:` / `new cfml:`
+type prefix now works in both CFScript grammars, where it had been
+`cfscript`-only, in any casing and with Lucee's `class:` / `cfc:` synonyms.
+
+Two words are deliberately not accepted in the *leading* return-type slot, only
+in the modifiers-first spelling: `query`, which collides with the head of
+`query_tag`, and `function`, which if allowed there makes an access modifier
+valid straight after the word `function` and so breaks a function *named*
+`static` (`function static( … )`, Mura's `MuraScope.cfc`). `public query
+function f()` and `public function function f()` are unaffected.
+
+### `=>` and `->` produce the same node
+
+Lucee distinguishes them at runtime — `=>` is a closure, `->` is a lambda, and
+they capture scope differently — but they are syntactically identical, so both
+produce an `arrow_function`. A consumer that needs to tell them apart can read
+the operator token itself; `highlights.scm` matches both.
+
+### cfquery
+
+No known gaps. Bitwise `&`, `|` and `^` were the last failing construct across
+the corpus's 2,247 `<cfquery>` bodies and now parse as `query_math_expression`.
+
+## Constructs that parse, but produce the wrong tree
+
+- **A block holding one assignment without a semicolon, read as a struct — fixed.** `if (x) { a = 1 }` gave the `if` a struct literal as its body. A `{` that starts a statement is now always a block, as in Lucee, through `prec.dynamic(1)` on `statement_block`. A block whose only content is a label, such as `{ a: 1 }` or `(x) => { a: 1 }`, still reads as a struct; `labeled_statement` is at −2 to keep that.
+
+These are not gaps — every input below parses cleanly, with no ERROR or MISSING
+node. What differs from what a reader would expect is the *shape* of the tree,
+which makes these invisible to `npm run scan` and untrackable by a probe: probes
+assert on error nodes, and there are none. They were found with
+`npm run treediff`, which diffs tree shapes against a baseline parser.
+
+The section exists because the file previously had no home for this category. A
+reader scanning the gap lists above would reasonably conclude that anything
+absent parses correctly, and that is not true.
+
+One entry below is an **accepted behaviour** and one is an open defect; each
+says which.
+
+- **`{ a = 1 }` and `{}` struct literals carry JS destructuring node types —
+  accepted, not a defect** ([#92](https://github.com/cfmleditor/tree-sitter-cfml/issues/92),
+  closed as intended behaviour). `{ a: 1 }` yields `(object (pair …))`, while
+  the `=` spelling yields `(object_pattern (object_assignment_pattern left:
+  (shorthand_property_identifier_pattern) …))` and `{}` yields a bare
+  `(object_pattern)`. Inherited from the `tree-sitter-javascript` fork, where
+  `=` inside braces means a default value; CFML has no destructuring assignment,
+  so the names do not describe what they match.
+
+  **What a consumer must do:** treat `object` and `object_pattern` as the same
+  construct, and `shorthand_property_identifier` and
+  `shorthand_property_identifier_pattern` likewise. The shipped queries already
+  do exactly this — `cfscript/queries/indents.scm:11-14`,
+  `indents-zed.scm:7-8`, `highlights.scm:16` and `:89`;
+  `cfml/queries/indents.scm:41-44`, `indents-zed.scm:26-27`,
+  `highlights.scm:84`, `:86`; `cfquery/queries/highlights.scm:42`, `:44` — which
+  is why highlighting and indentation are correct today. Anything matching only
+  `(object)` or `(pair)` will miss most struct literals.
+
+  The scale is why this is worth knowing rather than a footnote: across the
+  8,664 cleanly-parsed corpus `.cfc`/`.cfs` files there are **18,234
+  `object_pattern` nodes in 2,698 files (31%)** against 11,185 `object`, so
+  roughly **62% of struct literals** take the pattern shape. It affects all three
+  grammars, the rules being duplicated at `cfscript/grammar.js:753`/`768`/`789`
+  and `common/define-grammar.js:1438`/`1453`/`1474`.
+
+  Renaming the nodes would be a **breaking change** for every downstream
+  consumer, reshaping ~26k nodes across the corpus for no behavioural gain, and
+  it was declined on that basis. If it is ever revisited, it needs a
+  major-version note and a coordinated update of the queries above.
+
+- **A `cfml:` / `java:` prefix on a static call — fixed, see `prefixed_type`**
+  ([#93](https://github.com/cfmleditor/tree-sitter-cfml/issues/93)).
+  `cfml:Query::new( … )` used to yield `(labeled_statement …)`, losing the
+  prefix. It now yields `(prefixed_type prefix: (type_prefix) name:
+  (identifier))` under the `member_expression`'s `static_chain`. Left here as a
+  standing warning rather than deleted, because the *shape* of the fix is the
+  reusable part: the prefix could not be a grammar token. `_new_type_prefix`
+  carries its colon inside `token(seq(choice('java','cfml'), ':'))`, and
+  wherever such a token is valid, longest-match takes `cfml:` over `cfml`
+  followed by `:` — so every label and struct key named `java` or `cfml` was
+  swallowed with it. What separates the two readings is what comes *after* the
+  name (`::` for a static call, a statement for a label, a value for a pair),
+  which is a bounded lookahead only an external scanner can do. The inverse of
+  [#90](https://github.com/cfmleditor/tree-sitter-cfml/issues/90): same rule,
+  opposite direction, so anyone touching `labeled_statement` should read both.
+
+- **An unpaired custom tag swallowing the end tag of the element around it — fixed** ([#160](https://github.com/cfmleditor/tree-sitter-cfml/issues/160)). `<div><cf_foo a="1"></div>` made the `</div>` an `erroneous_end_tag` inside the custom tag, and gave the div an invented `implicit_end_tag`. An HTML end tag already closed open HTML children, and a CF end tag already closed open custom tags, but an HTML end tag did not close a custom tag. It now does, for a tag whose end tag is optional (`<cf_foo>` and `<cfmodule>`), when the element was opened outside it and nothing is open inside it. It does so only when the custom tag is really unpaired, because the engine gives a custom tag a body exactly when its end tag exists. A read-ahead settles that, and it stops at the next `<cf_foo` start tag (the open one is then unpaired), at the end tag of the enclosing block CF tag, or at end of input. That keeps it linear: scanning to the end of the document at every decision took a synthetic file of 4,000 unpaired tags in divs from 132 ms to 3.2 s.
+
+  Two things are unchanged, on purpose. A **paired** custom tag that crosses an HTML end tag, `<div><cf_foo>body</div></cf_foo>`, keeps its body, so the `</div>` stays the stray. Closing it there would strand `</cf_foo>` as an ERROR, and the engine, which reads HTML as text, sees the body. Unpaired custom tags that are **siblings**, with no enclosing end tag between them, still nest. That is the remaining half of #55's question of whether they should nest at all.
+
+## Removed JavaScript constructs
+
+This grammar is a fork of `tree-sitter-javascript`, and some JS-only rules were
+carried over. The following were removed because CFML has no equivalent:
+
+- the `import` **rule** (a named `(import)` node used as an expression operand,
+  so that JS `import("mod")` dynamic imports parsed). CFML's `import` is only
+  ever the statement `import foo.Bar;`, which uses the bare keyword token — that
+  is what `highlights.scm` matches as `"import"`.
+- `meta_property` — JS `new.target` and `import.meta`.
+
+Removing them dropped 5 conflict declarations and let `x = import.foo` parse as
+an ordinary member expression. `"target"` was dropped from
+`cfscript/queries/highlights.scm` at the same time.
+
+Other JS leftovers still present and *not* valid CFML: `debugger_statement`,
+`with_statement`, `template_string`, `regex`, `namespace_import`,
+`_from_clause`, `export`.
+
+**These are deliberately kept, and the decision is settled** — see
+[#94](https://github.com/cfmleditor/tree-sitter-cfml/issues/94), closed as not
+planned. They will look like dead weight to a reader, so the reasoning is worth
+having here rather than only on the issue.
+
+They are *unused*, not *unreachable*: every one of them parses today. `with (x)
+{ y = 1; }`, `` x = `hello`; ``, `x = /foo/g;` and `import * as ns from 'mod';`
+all produce their node and no ERROR. Removing them would therefore be a
+behaviour change, not a cleanup — those inputs would start failing — and a
+parser being lenient about syntax nobody writes costs nothing in practice. The
+measured saving was small: **43 parse states, 0.85%**, for the two least
+entangled of the five.
+
+The two carrying any real value are also the two hardest to remove, which is
+what settled it:
+
+- `regex` references `regex_pattern`, an **external token**, so removing it
+  shifts the scanner's enum ordering — a different risk class from deleting a
+  grammar rule. It is also actively disambiguating a regex literal from
+  division: `a / b / c`, `arr[1] / arr[2] / arr[3]` and `f() / g() / h()` all
+  parse as `binary_expression`, and something has to keep deciding that.
+- `namespace_import` and `_from_clause` live inside `import_statement`, and
+  CFML's `import foo.Bar;` is live. Only the JS `import x from 'y'` half is
+  dead, so it is surgery inside a rule that matters.
+
+Even `template_string`, the apparently isolated one, shares the backtick with
+CFML **tag islands** (` ``` ` fences, `cfml_template_content`), which the
+`cfml template block` corpus test covers.
+
+`debugger_statement` is the one that had a cost. Because keyword extraction is
+lexical, the `debugger` token out-lexed `identifier` at statement start, so
+`debugger.log( … )` and `debugger = 1` failed — while `x = debugger.foo`, which
+is not statement position, parsed. Preside's SAML module uses `debugger` as an
+ordinary scope. The fix is to put `debugger` in `_reserved_identifier` like
+`new`, `static` and `final`, which makes `debugger;` ambiguous between the
+statement and a bare expression statement; `debugger_statement` carries a
+`prec(1, …)` so the statement still wins. This costs no declared conflict.
+Covered by `test/probes/cfscript/debugger_identifier.cfc` and the
+`debugger as an ordinary identifier` corpus tests in both grammars.
