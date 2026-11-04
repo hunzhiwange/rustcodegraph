@@ -131,6 +131,12 @@ impl TreeSitterExtractor {
         let Some(extractor) = self.extractor else {
             return;
         };
+        // ArkTS structs contain ordinary class-style methods, including build
+        // and @Builder members. Reuse the class traversal with struct identity.
+        if self.language == Language::Arkts {
+            self.extract_class(node, NodeKind::Struct);
+            return;
+        }
         let name = extract_name(node, &self.source, extractor);
         if let Some(created) = self.create_node(NodeKind::Struct, &name, node, NodeExtra::default())
         {
