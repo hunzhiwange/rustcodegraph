@@ -488,6 +488,15 @@ impl TreeSitterExtractor {
     }
 
     pub(super) fn visit_function_body(&mut self, body: &SyntaxNode, _function_id: &str) {
+        // Expression-bodied JS/TS callbacks can be a call themselves.
+        if matches!(
+            self.language,
+            Language::TypeScript | Language::Tsx | Language::JavaScript | Language::Jsx
+        ) && body.node_type() == "call_expression"
+        {
+            self.visit_function_body_node(body);
+            return;
+        }
         for child in &body.named_children {
             self.visit_function_body_node(child);
         }

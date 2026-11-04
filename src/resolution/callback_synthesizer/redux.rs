@@ -194,3 +194,69 @@ pub(super) fn redux_thunk_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
     }
     edges
 }
+
+/// Generated hook bindings are scoped to the exact API registration, never a global name match.
+pub(super) fn rtk_query_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
+    let mut edges = Vec::new();
+    for file in ctx.get_all_files() {
+        let nodes = ctx.get_nodes_in_file(&file);
+        let Some(language) = nodes.first().map(|n| n.language).filter(|l| {
+            matches!(
+                l,
+                Language::TypeScript | Language::Tsx | Language::JavaScript | Language::Jsx
+            )
+        }) else {
+            continue;
+        };
+        if !nodes
+            .iter()
+            .any(|n| n.signature.as_deref() == Some("= RTK Query generated hook"))
+        {
+            continue;
+        }
+        let Some(source) = ctx.read_file(&file) else {
+            continue;
+        };
+        let Ok(grammar) = Grammar::for_code_language(language) else {
+            continue;
+        };
+        let mut parser = Parser::default();
+        parser.set_language(Some(grammar));
+        let Some(tree) = parser.parse(&source, None) else {
+            continue;
+        };
+        for registration in
+            crate::extraction::languages::typescript::rtk::registrations(&tree.root_node)
+        {
+            let hooks: Vec<_> = nodes
+                .iter()
+                .filter(|n| {
+                    n.name == registration.hook
+                        && n.start_line == registration.binding.start_position.row as u64 + 1
+                        && n.signature.as_deref() == Some("= RTK Query generated hook")
+                })
+                .collect();
+            let targets: Vec<_> = nodes
+                .iter()
+                .filter(|n| {
+                    n.name == registration.endpoint
+                        && n.start_line <= registration.callback.start_position.row as u64 + 1
+                        && n.end_line >= registration.callback.end_position.row as u64 + 1
+                })
+                .collect();
+            if hooks.len() != 1 || targets.len() != 1 {
+                continue;
+            }
+            let line = registration.binding.start_position.row as u64 + 1;
+            edges.push(edge(
+                &hooks[0].id,
+                &targets[0].id,
+                EdgeKind::Calls,
+                Some(line),
+                "rtk-query",
+                [("registeredAt", json!(format!("{file}:{line}")))],
+            ));
+        }
+    }
+    edges
+}

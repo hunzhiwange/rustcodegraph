@@ -1,4 +1,6 @@
 //! Rust translation of `src/extraction/languages/typescript.ts`.
+#[path = "typescript/rtk.rs"]
+pub(crate) mod rtk;
 
 use crate::extraction::tree_sitter_helpers::{get_child_by_field, get_node_text};
 use crate::extraction::tree_sitter_types::{
@@ -203,7 +205,40 @@ pub(crate) fn extract_ts_js_variables(
         let Some(name_node) = get_child_by_field(child, "name") else {
             continue;
         };
-        if matches!(name_node.node_type(), "object_pattern" | "array_pattern") {
+        if name_node.node_type() == "object_pattern" {
+            if !rtk::is_module_declaration(child)
+                || !source.contains("@reduxjs/toolkit/query/react")
+            {
+                continue;
+            }
+            let mut parser = crate::web_tree_sitter::Parser::default();
+            let Ok(grammar) =
+                crate::web_tree_sitter::Language::for_code_language(crate::types::Language::Tsx)
+            else {
+                continue;
+            };
+            parser.set_language(Some(grammar));
+            let Some(tree) = parser.parse(source, None) else {
+                continue;
+            };
+            for registration in rtk::registrations(&tree.root_node)
+                .into_iter()
+                .filter(|r| r.binding.start_position == child.start_position)
+            {
+                variables.push(VariableInfo {
+                    name: registration.hook,
+                    kind: NodeKind::Function,
+                    signature: Some("= RTK Query generated hook".into()),
+                    is_exported: Some(is_exported),
+                    delegate_to_function: None,
+                    position_node: Some(child.clone()),
+                    visit_value: None,
+                    object_literal_functions: None,
+                });
+            }
+            continue;
+        }
+        if name_node.node_type() == "array_pattern" {
             continue;
         }
 
@@ -213,6 +248,48 @@ pub(crate) fn extract_ts_js_variables(
         }
 
         let value_node = get_child_by_field(child, "value").cloned();
+        if rtk::is_module_declaration(child)
+            && source.contains("@reduxjs/toolkit/query/react")
+            && value_node.as_ref().is_some_and(|v| {
+                v.node_type() == "call_expression"
+                    && v.descendants_of_type(&["pair", "method_definition"])
+                        .iter()
+                        .any(|n| {
+                            n.child_for_field_name("key")
+                                .or_else(|| n.child_for_field_name("name"))
+                                .is_some_and(|key| key.text() == "endpoints")
+                        })
+            })
+        {
+            let mut parser = crate::web_tree_sitter::Parser::default();
+            if let Ok(grammar) =
+                crate::web_tree_sitter::Language::for_code_language(crate::types::Language::Tsx)
+            {
+                parser.set_language(Some(grammar));
+                if let Some(tree) = parser.parse(source, None) {
+                    let mut seen = std::collections::HashSet::new();
+                    for registration in rtk::registrations(&tree.root_node) {
+                        let callback = registration.callback;
+                        if callback.start_index < child.start_index
+                            || callback.end_index > child.end_index
+                            || !seen.insert(callback.start_index)
+                        {
+                            continue;
+                        }
+                        variables.push(VariableInfo {
+                            name: registration.endpoint,
+                            kind: NodeKind::Function,
+                            signature: None,
+                            is_exported: Some(false),
+                            delegate_to_function: Some(callback),
+                            position_node: Some(child.clone()),
+                            visit_value: None,
+                            object_literal_functions: None,
+                        });
+                    }
+                }
+            }
+        }
         if let Some(value) = value_node.as_ref().filter(|value| is_function_value(value)) {
             // `const fn = () => {}` 在图上更像 function；delegate_to_function 让通用 visitor 访问真实 body。
             variables.push(VariableInfo {

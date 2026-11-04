@@ -8,10 +8,13 @@ pub(super) fn try_ts_js_store_object_fallback(
     source: &str,
     language: &Language,
 ) -> Option<ExtractionResult> {
+    // RTK registrations require the full AST; the store text fallback discards
+    // imports, destructured hooks, and sibling declarations.
     if !matches!(
         language,
         Language::TypeScript | Language::JavaScript | Language::Tsx | Language::Jsx
-    ) || !source.contains("export const")
+    ) || source.contains("@reduxjs/toolkit/query/react")
+        || !source.contains("export const")
         || !source.contains("create")
     {
         return None;

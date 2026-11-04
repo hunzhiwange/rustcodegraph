@@ -69,6 +69,7 @@ pub fn synthesize_callback_edges(
     all.extend(closure_collection_edges(queries, ctx));
     all.extend(event_emitter_edges(ctx));
     all.extend(redux::redux_thunk_edges(ctx));
+    all.extend(redux::rtk_query_edges(ctx));
     all.extend(react_render_edges(queries, ctx));
     all.extend(react_jsx_child_edges(ctx));
     all.extend(vue_template_edges(ctx));
