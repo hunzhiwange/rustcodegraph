@@ -51,6 +51,16 @@ impl TreeSitterExtractor {
             Language::TypeScript | Language::JavaScript | Language::Tsx | Language::Jsx
         ) {
             self.ts_js_call_callee_name(node)
+        } else if self.language == Language::Vbnet {
+            get_child_by_field(node, "function")
+                .or_else(|| get_child_by_field(node, "array"))
+                .filter(|n| {
+                    matches!(
+                        n.node_type(),
+                        "identifier" | "simple_name" | "member_access_expression"
+                    )
+                })
+                .map(|n| get_node_text(n, &self.source))
         } else if self.language == Language::Java {
             get_child_by_field(node, "name").map(|name| {
                 let method = get_node_text(name, &self.source);
@@ -361,6 +371,17 @@ impl TreeSitterExtractor {
         };
         let node_type = node.node_type();
 
+        if self.language == Language::Vbnet && node_type == "event_member" {
+            if let Some(owner) = self.node_stack.last().cloned() {
+                self.push_unresolved_reference(
+                    &owner,
+                    node.text.clone(),
+                    ReferenceKind::References,
+                    node,
+                );
+            }
+            return;
+        }
         if extractor.call_types().contains(&node_type) {
             self.extract_call(node);
             return;
