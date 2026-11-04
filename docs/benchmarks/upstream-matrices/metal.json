@@ -1,0 +1,36 @@
+{
+  "language_framework": "Metal / C++",
+  "status": "用户取消验收",
+  "user_revision_date": "2026-11-03",
+  "scope": "Source inventory only; real-repository matrix preparation and external acceptance were cancelled. No repository replay, A/B, performance or platform result is claimed.",
+  "source": {
+    "commit": "15483713763f344ff30fb7df92bcf091c7bd9758",
+    "files": [
+      "src/extraction/grammars.ts",
+      "src/extraction/languages/c-cpp.ts",
+      "src/resolution/cpp-supertypes.ts"
+    ]
+  },
+  "prerequisite_implementations": [
+    {
+      "batch": 220,
+      "commit": "525324d601f5f68e70b442d02b1ffbb42fff3b1b",
+      "implementation": [
+        "src/index/indexing.rs"
+      ],
+      "local_checks": "tests/upstream_220_test.rs",
+      "validation_note": "Implementation commit and test source inspected. A previously built test executable failed its incremental/full graph comparison; its correspondence to current source was not established. No current-source pass or external acceptance is claimed; this cancelled inventory does not execute Metal indexing."
+    },
+    {
+      "batch": 3,
+      "commit": "191751fa44a5a7f665e5a5b50a6afd8560f63081",
+      "implementation": "scripts/agent-eval/run-matrix-case.py",
+      "local_checks": "tests/upstream_matrix_runner_test.rs"
+    }
+  ],
+  "cases": [],
+  "case_inventory_note": "No previously frozen Metal real-repository cases were found in the local benchmark manifests or agent-eval scripts. Repository revisions, sizes, paths and flow expectations are therefore not supplied.",
+  "runner_compatible": false,
+  "runner_note": "This cancellation inventory is not the nine-case array required by run-matrix-case.py and must not be passed to that runner.",
+  "external_experiments_executed": false
+}
