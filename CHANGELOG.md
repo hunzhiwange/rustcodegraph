@@ -8,12 +8,7 @@
 
 ### New Features
 
-- Follow CFML method calls directly chained onto static component construction without confusing same-named methods in other components.
-
-- Resolve CFML static component paths and relative template includes without connecting missing dependencies or unrelated same-named methods.
-
-- Explore CFML component and function declarations in tag syntax, script components, and embedded script blocks.
-- Capture CFML static component construction, inheritance, template includes, and calls while excluding dynamic paths and commented examples.
+- Explore CFML tag and script declarations with static component calls and template dependencies that stay connected as files change.
 
 - Explore COBOL programs, sections, paragraphs, static calls, and copybook references that stay consistent as files change.
 

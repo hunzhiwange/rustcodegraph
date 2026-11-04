@@ -869,3 +869,40 @@ CALL 只匹配唯一的索引内同名 program；PERFORM 限于当前文件的�
 `cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
 或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
 VM/Docker 验证均未执行，不声明外部验收通过。
+
+
+<a id="cfml-static-coverage"></a>
+
+### CFML 静态覆盖收口（2026-11-04）
+
+支持 `.cfm`、`.cfc`、`.cfml`（扩展名大小写不敏感），使用原生 tag AST，
+对裸 script 和嵌入的 cfscript 重新解析并保留原始源码位置。抽取 component 为
+class、组件内函数为 method、顶层函数为 function，记录访问可见性和包含关系。
+记录静态 new/createObject 组件构造、extends、相对 template include 和调用；
+组件路径优先当前目录，再匹配索引根目录下完整路径，名称按大小写不敏感匹配。
+普通调用限于同文件唯一函数或方法，支持 this/variables 限定；直接链在静态
+组件构造后的方法调用按已解析组件限定，不回退到其他组件的同名方法。
+增量同步覆盖声明变化、组件与模板删除重建、本地组件遮蔽根目录组件，
+并与干净索引比较节点和边。
+
+不承诺完整 CFML 编译器语义、运行时应用/服务器路径映射、变量接收者推断、
+动态路径求值、框架运行时派发或外部依赖加载；缺失及歧义目标保持未解析。
+当前不单独抽取 property、参数和局部变量声明，也不分析 cfquery 内嵌 SQL，
+没有新增动态派发合成器。原生 grammar 与上游 WASM 的确切版本等价性未经证明。
+
+来源为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758` 的
+`src/extraction/cfml-extractor.ts`、`src/extraction/languages/cfscript.ts` 和
+`src/extraction/languages/cfquery.ts`；原生 grammar 固定于
+`24051c091c9c1a69b36914533aee7aa3286d5526`（0.26.44），详见
+[grammar 来源与可行性记录](upstream-grammars/cfml.md)。
+接线、声明、引用、跨文件解析、构造链调用与增量修复分别见提交
+`95821ffe`、`496c7e84`、`93905c5b`、`c82a9531`、`ea94bafe`、`de88414a`；
+本地回归用例为 `tests/upstream_171_test.rs` 至 `tests/upstream_176_test.rs`。
+本次只核对文档、实现与测试断言的一致性，并执行 `git diff --check`，没有重跑 Cargo。
+
+依赖批次 178–186（任务 117–125）的九项真实仓库流程验收适用用户
+2026-11-03 的取消修订，不再作为支持声明门槛。
+[取消验收清单](../benchmarks/upstream-matrices/cfml.json) 在 `59295eae` 归档，
+`cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
+或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
+VM/Docker 验证均未执行，不声明外部验收通过。

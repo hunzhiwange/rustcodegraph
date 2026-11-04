@@ -136,7 +136,9 @@ If a workspace has no `.rustcodegraph/` index, the MCP server reports itself ina
 
 ## Supported Languages
 
-**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, Terraform/OpenTofu, Solidity, Erlang, VB.NET, and COBOL.
+**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, Terraform/OpenTofu, Solidity, Erlang, VB.NET, COBOL, and CFML.
+
+**CFML (`.cfm`, `.cfc`, `.cfml`):** Search tag and script component/function declarations; follow unambiguous static component construction, inheritance, relative template includes, and local calls, including methods directly chained onto component construction. Incremental sync preserves these links. Runtime mappings, dynamic receiver inference, and embedded SQL analysis are outside this coverage. See the [CFML coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#cfml-static-coverage) for grammar and validation limits.
 
 **COBOL (`.cbl`, `.cob`, `.cpy`):** Search programs, sections, and paragraphs; follow unambiguous static PERFORM targets, literal program CALLs, and indexed COPY references. Incremental sync preserves cross-file links. Dynamic CALL targets, copybook expansion, and full compiler semantics are outside this coverage. See the [COBOL coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#cobol-static-coverage) for grammar and validation limits.
 
