@@ -1,0 +1,1 @@
+{"grammars":[{"name":"vbnet","camelcase":"Vbnet","scope":"source.vbnet","path":".","file-types":["vb"]}],"metadata":{"version":"0.1.0","license":"MIT","description":"VB.NET grammar","links":{"repository":"https://github.com/govindbanura/tree-sitter-vbnet"}}}

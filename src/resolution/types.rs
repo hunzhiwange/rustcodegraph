@@ -256,6 +256,7 @@ pub fn language_name(language: Language) -> &'static str {
         Language::Terraform => "terraform",
         Language::Solidity => "solidity",
         Language::Erlang => "erlang",
+        Language::Vbnet => "vbnet",
         Language::Unknown => "unknown",
     }
 }

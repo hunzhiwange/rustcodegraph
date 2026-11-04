@@ -51,6 +51,8 @@ pub mod nix;
 pub mod solidity;
 #[path = "terraform.rs"]
 pub mod terraform;
+#[path = "vbnet.rs"]
+pub mod vbnet;
 pub use nix::{NIX_EXTRACTOR, nix_extractor};
 
 use crate::extraction::tree_sitter_types::LanguageExtractor;
@@ -105,6 +107,7 @@ pub const EXTRACTOR_LANGUAGES: &[&str] = &[
     "nix",
     "solidity",
     "erlang",
+    "vbnet",
     "terraform",
 ];
 
@@ -132,6 +135,7 @@ pub fn extractor_for(language: &str) -> Option<&'static dyn LanguageExtractor> {
         "luau" => Some(luau_extractor()),
         "objc" => Some(objc_extractor()),
         "nix" => Some(nix_extractor()),
+        "vbnet" => Some(&vbnet::VBNET_EXTRACTOR),
         "erlang" => Some(&erlang::ERLANG_EXTRACTOR),
         "solidity" => Some(&solidity::SOLIDITY_EXTRACTOR),
         "terraform" => Some(&terraform::TERRAFORM_EXTRACTOR),

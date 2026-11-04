@@ -26,4 +26,12 @@ fn main() {
         .file(format!("{erlang_src}/parser.c"))
         .file(format!("{erlang_src}/scanner.c"))
         .compile("tree-sitter-erlang");
+    let vbnet_src = "vendor/tree-sitter-vbnet/src";
+    println!("cargo:rerun-if-changed={vbnet_src}");
+    cc::Build::new()
+        .std("c11")
+        .include(vbnet_src)
+        .file(format!("{vbnet_src}/parser.c"))
+        .file(format!("{vbnet_src}/scanner.c"))
+        .compile("tree-sitter-vbnet");
 }

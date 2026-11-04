@@ -54,6 +54,7 @@ pub const NATIVE_GRAMMAR_REGISTRY: &[(&str, &str)] = &[
     ("terraform", "terraform"),
     ("solidity", "solidity"),
     ("erlang", "erlang"),
+    ("vbnet", "vbnet"),
 ];
 
 pub const EXTENSION_MAP: &[(&str, &str)] = &[
@@ -117,6 +118,7 @@ pub const EXTENSION_MAP: &[(&str, &str)] = &[
     (".mm", "objc"),
     (".nix", "nix"),
     (".sol", "solidity"),
+    (".vb", "vbnet"),
     (".erl", "erlang"),
     (".hrl", "erlang"),
     (".escript", "erlang"),
@@ -409,6 +411,7 @@ pub fn get_language_display_name(language: Language) -> &'static str {
         Language::Nix => "Nix",
         Language::Solidity => "Solidity",
         Language::Erlang => "Erlang",
+        Language::Vbnet => "VB.NET",
         Language::Terraform => "Terraform",
         Language::Unknown => "Unknown",
     }
@@ -462,6 +465,7 @@ pub fn language_key(language: &Language) -> String {
         Language::Nix => "nix",
         Language::Solidity => "solidity",
         Language::Erlang => "erlang",
+        Language::Vbnet => "vbnet",
         Language::Terraform => "terraform",
         Language::Unknown => "unknown",
     }
@@ -504,6 +508,7 @@ fn language_from_key(language: &str) -> Language {
         "nix" => Language::Nix,
         "solidity" => Language::Solidity,
         "erlang" => Language::Erlang,
+        "vbnet" => Language::Vbnet,
         "terraform" => Language::Terraform,
         _ => Language::Unknown,
     }

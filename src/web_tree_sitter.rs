@@ -108,6 +108,8 @@ impl Language {
             CodeLanguage::Luau
         } else if lower.contains("lua") {
             CodeLanguage::Lua
+        } else if lower == "vbnet" || lower.ends_with("/vbnet.wasm") {
+            CodeLanguage::Vbnet
         } else if lower == "erlang" || lower.ends_with("/erlang.wasm") {
             CodeLanguage::Erlang
         } else if lower == "solidity" || lower.ends_with("/solidity.wasm") {
@@ -333,6 +335,13 @@ fn native_language(language: CodeLanguage) -> Option<tree_sitter::Language> {
         CodeLanguage::Scala => Some(tree_sitter_scala::LANGUAGE.into()),
         CodeLanguage::ObjC => Some(tree_sitter_objc::LANGUAGE.into()),
         CodeLanguage::Nix => Some(tree_sitter_nix::LANGUAGE.into()),
+        CodeLanguage::Vbnet => {
+            unsafe extern "C" {
+                fn tree_sitter_vbnet() -> *const ();
+            }
+            // SAFETY: the pinned vendored parser exports a static ABI-15 language.
+            Some(unsafe { tree_sitter_language::LanguageFn::from_raw(tree_sitter_vbnet) }.into())
+        }
         CodeLanguage::Erlang => {
             unsafe extern "C" {
                 fn tree_sitter_erlang() -> *const ();

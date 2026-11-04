@@ -179,6 +179,8 @@ pub enum Language {
     Solidity,
     #[serde(rename = "erlang")]
     Erlang,
+    #[serde(rename = "vbnet")]
+    Vbnet,
     #[serde(rename = "unknown")]
     Unknown,
 }
@@ -220,6 +222,7 @@ pub const LANGUAGES: &[Language] = &[
     Language::Terraform,
     Language::Solidity,
     Language::Erlang,
+    Language::Vbnet,
     Language::Unknown,
 ];
 
