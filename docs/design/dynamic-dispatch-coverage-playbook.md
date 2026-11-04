@@ -245,6 +245,7 @@ rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # tr
 | Solidity | 静态调用 / 导入 / 继承 | 调用方 → 继承 modifier → 基类内部方法；导入别名 → 库函数 | X+R | 静态能力已实现；[覆盖与验收限制](#solidity-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Nix | 静态函数 / 模块加载 | 命名调用；相对 import / callPackage → 模块文件 → 声明 | X+R | 静态能力已实现；[九案例历史证据与验收范围](#nix-static-coverage)。外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | React / 观察者 / EventEmitter / React Router | 状态→渲染；调度→回调；路线→组件 | S+X | ✅ 渲染+调度（excalidraw）； **React Router JSX 路由** `<Route path component={C}/>` (v5) + `element={<C/>}` (v6) → 组件 (react-realworld **0→10, 10/10**)。 + **对象数据路由器** `createBrowserRouter([{path, element/Component}])`（文字形式）； Next.js config/`nextjs-pages` 误报已修复。 🔬 惰性数据路由器（`path: paths.x.path, lazy: () => import()` — 变量路径 + 惰性模块） |
+| Ruby | Sidekiq | 调用方 → literal worker dispatch → perform → helper | X+S | 静态注册派发已实现；[覆盖与验收限制](#sidekiq-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Python | Celery | 调用方 → delay/apply_async 注册任务 → helper | X+S | 静态绑定派发已实现；[覆盖与验收限制](#celery-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | Pinia / Vuex stores | 实例调用 → Options action → helper；literal dispatch → namespaced action → commit → mutation → helper | X+S | 静态注册与派发已实现；[覆盖与验收限制](#vue-store-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | Vue/Nuxt | 模板事件（@click→处理程序）；成分组成；反应→渲染 | S+X | ✅ 事件+组合（vitepress S / vben M / element-plus L）； 🔬 反应式 → 渲染（vue-core 代理运行时 — 前沿，延迟） |
@@ -1161,3 +1162,44 @@ Vuex root-option 跨命名空间派发或 Vue Proxy 状态到渲染链。
 上游合成 fixture 不构成固定版本的小中大九案例真实仓库矩阵。
 九项均未执行，没有案例 summary 或原始实验日志；真实仓库回放、重复 A/B、
 指定模型、性能指标及 VM/Docker 验证均未执行，不声明外部验收通过。
+
+
+<a id="sidekiq-static-coverage"></a>
+### Sidekiq 静态覆盖收口（2026-11-05）
+
+沿用 Ruby `.rb` 提取，不新增语言或扩展名。AST 注册证据要求类体直接
+`include Sidekiq::Worker` 或 `include Sidekiq::Job`（也接受前导 `::`），
+并有唯一的直接实例 `perform` 方法；不把字符串、注释、嵌套类的方法、
+单例方法或方法体内 include 当作该类的注册证据，不新增 worker 节点。
+这是语法识别，不验证 Sidekiq 常量来自实际安装的 gem。
+
+将函数或方法体内常量接收器的 `perform_async`、`perform_in`、`perform_at`
+连接到唯一注册 worker 的 `perform`，已有普通调用边继续连接其静态 helper。
+Rails 风格的同一个 `app/` 树共享注册；其他 Ruby 文件按所在目录隔离。
+限定名称精确匹配，短名称要求唯一；类或 module 内要求以 `::` 开头的绝对
+接收器，未证明的相对词法名称保持无合成边。每文件最多连接 80 个不同
+来源/目标对，边标记 heuristic、`sidekiq-dispatch` 和调用位置 `registeredAt`。
+
+不承诺继承或间接 include 的注册、ActiveJob `perform_later`、动态接收器、
+`const_get`、常量别名或重绑定、跨应用注册、运行时队列投递与调度执行；
+同名歧义保持无边。调用时间参数不用于推断实际执行顺序。
+
+来源固定为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758`，
+本次已核对其 HEAD。注册与派发提交分别为 `75f76202`、`bbea5e3f`，
+当前注册/派发实现和两份测试相对派发提交无差异。
+复核既有 `/tmp/rcg272-final.log`：`upstream_271_test` 注册 4 项、
+`upstream_272_test` 派发 4 项及 `upstream_259_test` Celery 回归 4 项通过，
+合计 12 passed、0 failed、0 ignored，日志中的测试入口为 `target/debug/deps/`。
+本地断言包括完整 `enqueue → perform → deliver` explore Flow 及接线标注、
+移除注册后 sync 删除边且节点数不变、命名空间歧义、动态与未注册负例、
+跨应用隔离、延时派发和绝对名称。注册测试还检查重复索引节点稳定性。
+本次仅核对既有日志、实现和测试断言，运行文档清单检查及 `git diff --check`，
+没有运行 Cargo，不声明全套回归通过。
+
+依赖批次 274–282（任务 43–51）的九项外部验收按用户 2026-11-03 修订
+以“用户取消验收”收口，不再作为本文静态支持范围的完成门槛。
+[取消验收清单](../benchmarks/upstream-matrices/sidekiq.json) 已由 `fa3cb798`
+归档，`cases=[]`、`external_experiments_executed=false`；上游合成 fixture
+不构成固定版本的小中大九案例真实仓库矩阵。九项均未执行，没有案例 summary
+或原始实验日志；真实仓库回放、重复 A/B、指定模型、性能指标及 VM/Docker
+验证均未执行，不声明外部验收通过。

@@ -172,6 +172,8 @@ Language support is selected automatically from file extensions. RustCodeGraph s
 
 **Celery (Python `.py`):** Follow `delay` and `apply_async` calls on local or explicitly imported registered tasks into task bodies and their static helper calls. Dynamic task names, canvas workflows, broker delivery, and worker scheduling are outside this coverage. See the [Celery coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#celery-static-coverage) for registration rules, local validation, and limits.
 
+**Sidekiq (Ruby `.rb`):** Follow literal `perform_async`, `perform_in`, and `perform_at` calls into directly registered worker `perform` bodies and their static helpers within the same application tree. Dynamic receivers, inherited registrations, ActiveJob, and runtime queue delivery are outside this coverage. See the [Sidekiq coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#sidekiq-static-coverage) for namespace rules, local validation, and limits.
+
 **Frontend routes and components:** React, React Router, Next.js, Svelte/SvelteKit, Vue/Vue Router/Nuxt, and Astro.
 
 **Native, mobile, and cross-language flows:** SwiftUI, UIKit, Swift/Objective-C bridging, React Native legacy bridge, React Native TurboModules, React Native native events, Expo Modules, and Fabric/Paper native views.

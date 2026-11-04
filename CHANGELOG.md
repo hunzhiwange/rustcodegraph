@@ -10,6 +10,8 @@
 
 ### New Features
 
+- Follow literal Sidekiq worker dispatch into registered Ruby job bodies and their static helper calls.
+
 - Follow statically bound Celery task dispatch through `delay` and `apply_async` into registered Python task bodies.
 
 - Follow registered Pinia Options store actions and literal Vuex dispatch and commit chains into their declared handlers.
