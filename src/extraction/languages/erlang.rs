@@ -1,7 +1,9 @@
 //! Form-based Erlang declarations (native ELP grammar).
 use crate::extraction::tree_sitter_helpers::{get_child_by_field, get_node_text};
-use crate::extraction::tree_sitter_types::{ExtractorContext, LanguageExtractor, NodeExtra};
-use crate::types::NodeKind;
+use crate::extraction::tree_sitter_types::{
+    ExtractorContext, LanguageExtractor, NodeExtra, UnresolvedReferenceInput,
+};
+use crate::types::{NodeKind, ReferenceKind};
 use crate::web_tree_sitter::SyntaxNode;
 use std::collections::HashSet;
 
@@ -25,6 +27,184 @@ fn identity(node: &SyntaxNode, source: &str) -> Option<(String, usize)> {
             .filter(|c| c.node_type() != "comment")
             .count(),
     ))
+}
+
+fn reference(ctx: &mut dyn ExtractorContext, node: &SyntaxNode, name: String, kind: ReferenceKind) {
+    if let Some(owner) = ctx.node_stack().last().cloned() {
+        ctx.add_unresolved_reference(UnresolvedReferenceInput {
+            from_node_id: owner,
+            reference_name: name,
+            reference_kind: kind,
+            line: Some(node.start_position.row + 1),
+            column: Some(node.start_position.column),
+            file_path: None,
+        });
+    }
+}
+
+// Preserve the remote wrapper: the grammar puts the module outside `call`.
+// Only atoms (and the compiler's current-module macro) have static targets.
+fn module_prefix(node: &SyntaxNode, source: &str) -> Option<String> {
+    if node.node_type() == "atom" {
+        return Some(format!("{}::", atom(node, source)));
+    }
+    if node.node_type() == "macro_call_expr"
+        && get_child_by_field(node, "name").is_some_and(|n| get_node_text(n, source) == "MODULE")
+    {
+        return Some(String::new());
+    }
+    None
+}
+fn walk_refs(node: &SyntaxNode, ctx: &mut dyn ExtractorContext, source: &str) {
+    match node.node_type() {
+        "spec" | "callback" | "type_alias" | "opaque" | "record_decl" => return,
+        "remote" => {
+            if let (Some(module), Some(call)) = (
+                get_child_by_field(node, "module").and_then(|n| get_child_by_field(n, "module")),
+                get_child_by_field(node, "fun"),
+            ) {
+                if call.node_type() == "call" {
+                    emit_call(call, node, module_prefix(module, source), ctx, source);
+                    if let Some(args) = get_child_by_field(call, "args") {
+                        walk_refs(args, ctx, source);
+                    }
+                    return;
+                }
+            }
+        }
+        "call" => {
+            emit_call(node, node, Some(String::new()), ctx, source);
+        }
+        "internal_fun" | "external_fun" => {
+            let prefix = if node.node_type() == "external_fun" {
+                get_child_by_field(node, "module")
+                    .and_then(|n| get_child_by_field(n, "name"))
+                    .and_then(|n| module_prefix(n, source))
+            } else {
+                Some(String::new())
+            };
+            if let (Some(prefix), Some(fun), Some(arity)) = (
+                prefix,
+                get_child_by_field(node, "fun").filter(|n| n.node_type() == "atom"),
+                get_child_by_field(node, "arity")
+                    .and_then(|n| get_child_by_field(n, "value"))
+                    .filter(|n| n.node_type() == "integer"),
+            ) {
+                reference(
+                    ctx,
+                    node,
+                    format!(
+                        "{prefix}{}/{}",
+                        atom(fun, source),
+                        get_node_text(arity, source)
+                    ),
+                    ReferenceKind::References,
+                );
+            }
+            return;
+        }
+        "macro_call_expr" => {
+            if let Some(name) = get_child_by_field(node, "name") {
+                let name = get_node_text(name, source);
+                if !matches!(
+                    name.as_str(),
+                    "MODULE"
+                        | "MODULE_STRING"
+                        | "FILE"
+                        | "LINE"
+                        | "FUNCTION_NAME"
+                        | "FUNCTION_ARITY"
+                        | "MACHINE"
+                        | "OTP_RELEASE"
+                ) {
+                    reference(
+                        ctx,
+                        node,
+                        name,
+                        if get_child_by_field(node, "args").is_some() {
+                            ReferenceKind::Calls
+                        } else {
+                            ReferenceKind::References
+                        },
+                    );
+                }
+            }
+        }
+        _ => {}
+    }
+    for child in &node.named_children {
+        walk_refs(child, ctx, source);
+    }
+}
+fn emit_call(
+    call: &SyntaxNode,
+    position: &SyntaxNode,
+    prefix: Option<String>,
+    ctx: &mut dyn ExtractorContext,
+    source: &str,
+) {
+    if let (Some(prefix), Some(fun), Some(args)) = (
+        prefix,
+        get_child_by_field(call, "expr").filter(|n| n.node_type() == "atom"),
+        get_child_by_field(call, "args"),
+    ) {
+        let arity = args
+            .named_children
+            .iter()
+            .filter(|n| n.node_type() != "comment")
+            .count();
+        reference(
+            ctx,
+            position,
+            format!("{prefix}{}/{arity}", atom(fun, source)),
+            ReferenceKind::Calls,
+        );
+    }
+}
+fn directive(form: &SyntaxNode, ctx: &mut dyn ExtractorContext, source: &str) {
+    match form.node_type() {
+        "behaviour_attribute" => {
+            if let Some(name) = get_child_by_field(form, "name").filter(|n| n.node_type() == "atom")
+            {
+                reference(ctx, form, atom(name, source), ReferenceKind::Implements);
+            }
+        }
+        "pp_include" | "pp_include_lib" | "import_attribute" => {
+            let field = if form.node_type() == "import_attribute" {
+                "module"
+            } else {
+                "file"
+            };
+            if let Some(name) = get_child_by_field(form, field)
+                .filter(|n| matches!(n.node_type(), "atom" | "string"))
+            {
+                let name = get_node_text(name, source)
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .to_owned();
+                reference(ctx, form, name, ReferenceKind::Imports);
+            }
+        }
+        "pp_define" => {
+            if let Some(name) =
+                get_child_by_field(form, "lhs").and_then(|n| get_child_by_field(n, "name"))
+            {
+                if let Some(n) = ctx.create_node(
+                    NodeKind::Constant,
+                    &get_node_text(name, source),
+                    form,
+                    NodeExtra::default(),
+                ) {
+                    ctx.push_scope(n.id);
+                    if let Some(body) = get_child_by_field(form, "replacement") {
+                        walk_refs(body, ctx, source);
+                    }
+                    ctx.pop_scope();
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 pub struct ErlangExtractor;
@@ -90,6 +270,7 @@ impl LanguageExtractor for ErlangExtractor {
             let Some((name, arity)) =
                 identity(form, &source).filter(|_| form.node_type() == "fun_decl")
             else {
+                directive(form, ctx, &source);
                 i += 1;
                 continue;
             };
@@ -113,7 +294,7 @@ impl LanguageExtractor for ErlangExtractor {
                 Some((m, _)) => format!("{m}::{name}/{arity}"),
                 None => format!("{name}/{arity}"),
             };
-            ctx.create_node(
+            let function = ctx.create_node(
                 NodeKind::Function,
                 &name,
                 &span,
@@ -132,6 +313,13 @@ impl LanguageExtractor for ErlangExtractor {
                     ..Default::default()
                 },
             );
+            if let Some(function) = function {
+                ctx.push_scope(function.id);
+                for clause in &forms[i..j] {
+                    walk_refs(clause, ctx, &source);
+                }
+                ctx.pop_scope();
+            }
             i = j;
         }
         if module.is_some() {
