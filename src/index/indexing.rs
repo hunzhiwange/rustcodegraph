@@ -19,6 +19,20 @@ pub(super) fn index_facade_changed_files(
     selected_paths.extend(changes.added.iter().cloned());
     selected_paths.extend(changes.modified.iter().cloned());
     selected_paths.extend(changes.removed.iter().cloned());
+    // Terraform lookup depends on the whole module directory, local-module sources,
+    // provider ancestors and component names. A new/renamed declaration can also
+    // invalidate a previously unique match with no incoming edge to follow.
+    // Requeue Terraform sources together, leaving other languages incremental.
+    if selected_paths
+        .iter()
+        .any(|path| detect_language(path, None) == Language::Terraform)
+    {
+        selected_paths.extend(
+            existing_source_files(project_root)
+                .into_iter()
+                .filter(|path| detect_language(path, None) == Language::Terraform),
+        );
+    }
     // Replacing a target removes its incoming edges. Resolved references are no
     // longer queued, so re-extract Nix importers before that wiring is deleted.
     // Scope this to static Nix file imports; unrelated languages stay incremental.

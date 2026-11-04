@@ -48,6 +48,8 @@
 
 ### Fixes
 
+- Keep Terraform and OpenTofu references consistent with a fresh index after declarations change or files are added or deleted.
+
 - Qwen Code uninstall removes its automatic permission rule while preserving user settings and other MCP servers.
 
 - Windsurf reinstall and uninstall preserve custom launch settings, comments, and other MCP servers.
