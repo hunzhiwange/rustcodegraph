@@ -1033,3 +1033,43 @@ kernel/vertex/fragment 函数到 helper 的调用，以及注释、字符串、�
 `cases=[]`、`external_experiments_executed=false`，状态为“用户取消验收”。
 九项均未执行，没有案例 summary 或原始实验日志；真实仓库回放、Agent A/B、
 性能指标及 VM/Docker 实验均未执行，不声明这些验收通过。
+
+
+<a id="redux-rtk-static-coverage"></a>
+### Redux / RTK 静态覆盖收口（2026-11-04）
+
+沿用 TypeScript/TSX 与 JavaScript/JSX 抽取，不新增语言或扩展名。
+Redux Toolkit 支持从 `@reduxjs/toolkit` 导入（含别名）的
+`createAsyncThunk` 注册：连接 callback 中直接 `dispatch(thunk())` 到唯一的
+本地或导入注册目标，支持多级 thunk 链。要求第二个参数解构出 `dispatch`；
+遮蔽绑定、延迟嵌套 callback、未注册目标不合成该调用，单个来源最多连接
+24 个目标。这不是任意 redux-thunk、中间件、reducer 或 store 运行时分析。
+
+RTK Query 支持从 `@reduxjs/toolkit/query/react` 导入的 `createApi`，
+在同模块字面量 endpoints 中识别 builder 的 query/mutation 与唯一内联
+`query`/`queryFn` callback，再从 API 解构出的 query、lazy-query、mutation
+hook（含本地别名）连接到该 callback。既有普通调用边可继续连接导入的
+调用方和 callback 内 helper；本地 explore 测试验证完整
+`View → useGetItemsQuery → getItems → fetchItems` 路径及 wiring 标注。
+不承诺 `injectEndpoints`、跨模块 API 注册、动态键、运行时缓存/网络调度
+或所有间接 dispatch 形式；检测到的重赋值、配置展开、重复注册与同名歧义
+保持无合成边。两类合成边均标为 heuristic，并带 `registeredAt`。
+
+来源固定为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758`，
+已核对本地上游 HEAD。Rust 实现提交为 `32464a89`（thunk）与
+`fb4a7cde`（RTK Query）；当前实现与这两个提交后的版本一致。
+已核对既有 `/tmp/rcg233-regression-final.log`：
+`upstream_232_test` 5 项、`upstream_233_test` 6 项、object-literal methods
+6 项、explore 预算 4 项及 flow 3 项通过，合计 24 passed、0 failed、0 ignored。
+这包括跨文件别名/同名隔离、缺失与动态注册负例、重复索引稳定性和删除接线。
+`fb4a7cde` 提交说明记录初始缺失 hook 的失败探针、最终通过和共享 Cargo
+槽位 1；本次仅复核这些既有证据、源码及断言，运行文档清单检查与
+`git diff --check`，没有重跑 Cargo，也不声明全套回归通过。
+
+依赖批次 235–243 的九项外部验收适用用户 2026-11-03 的取消修订，
+按“用户取消验收”收尾，不再作为本次文档门槛。
+[取消验收清单](../benchmarks/upstream-matrices/redux.json) 由 `1fa51138`
+归档，`cases=[]`、`external_experiments_executed=false`；上游仅有两个
+未冻结目标版本的候选问题，不构成九案例覆盖矩阵。
+九项均未执行，没有案例 summary 或原始实验日志；真实仓库回放、重复 A/B、
+指定模型、性能指标与 VM/Docker 验证均未执行，不声称外部验收通过。

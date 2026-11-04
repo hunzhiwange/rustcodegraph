@@ -166,6 +166,8 @@ Language support is selected automatically from file extensions. RustCodeGraph s
 
 **Backend and web routes:** Django, Flask, FastAPI, Express, NestJS, Laravel, Drupal, Rails, Spring, Play Framework, Gin, chi, gorilla/mux, Axum, actix, Rocket, ASP.NET, and Vapor.
 
+**Redux Toolkit and RTK Query:** Follow import-backed `createAsyncThunk` dispatch chains and React query, lazy-query, and mutation hooks destructured from a same-module `createApi` registration into literal endpoint callbacks. Dynamic registration, general Redux reducer/store execution, and RTK runtime scheduling are outside this coverage. See the [Redux/RTK coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#redux-rtk-static-coverage) for local validation and limits.
+
 **Frontend routes and components:** React, React Router, Next.js, Svelte/SvelteKit, Vue/Vue Router/Nuxt, and Astro.
 
 **Native, mobile, and cross-language flows:** SwiftUI, UIKit, Swift/Objective-C bridging, React Native legacy bridge, React Native TurboModules, React Native native events, Expo Modules, and Fabric/Paper native views.
