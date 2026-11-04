@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Follow Terraform and OpenTofu provider aliases through parent scopes and Cloud Posse remote-state references to unambiguous component outputs.
+
 - Follow local Terraform and OpenTofu module inputs and outputs across files without mixing same-named declarations from unrelated modules.
 
 - Capture Terraform and OpenTofu dependencies on module outputs, provider aliases, and remote state for reference resolution.

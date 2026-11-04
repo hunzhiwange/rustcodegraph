@@ -58,7 +58,7 @@ fn case_082_boundaries() {
         "",
         "region = 1\n",
         "resource \"\" \"bad\" {}\nvariable \"\" {}\n",
-        "terraform { required_providers {} }\nprovider \"aws\" {}\n",
+        "terraform { required_providers {} }\n",
         "resource \"only_one\" {}\nmodule \"a\" \"extra\" {}\nlocals \"labeled\" { bad = 1 }\n",
         "unknown { resource \"fake\" \"nested\" {} }\n",
     ] {

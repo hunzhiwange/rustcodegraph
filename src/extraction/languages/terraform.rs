@@ -142,6 +142,32 @@ fn extract_block(block: &SyntaxNode, ctx: &mut dyn ExtractorContext) {
             format!("module.{name}"),
             false,
         ),
+        ("provider", [name]) => {
+            let alias = block
+                .named_children
+                .iter()
+                .find(|n| n.node_type() == "body")
+                .and_then(|body| {
+                    body.named_children.iter().find(|a| {
+                        a.node_type() == "attribute"
+                            && a.named_children
+                                .first()
+                                .is_some_and(|k| get_node_text(k, ctx.source()) == "alias")
+                    })
+                })
+                .map(|a| {
+                    a.named_children
+                        .iter()
+                        .find(|n| n.node_type() == "expression")
+                        .and_then(|e| literal_string(&get_node_text(e, ctx.source())))
+                });
+            let address = match alias {
+                Some(Some(alias)) if !alias.is_empty() => format!("provider.{name}.{alias}"),
+                Some(_) => return,
+                None => format!("provider.{name}"),
+            };
+            (NodeKind::Namespace, name.clone(), address, false)
+        }
         ("variable", [name]) => (
             NodeKind::Variable,
             name.clone(),
@@ -364,4 +390,10 @@ fn pending(ctx: &mut dyn ExtractorContext, owner: &str, name: String, node: &Syn
         column: Some(node.start_position.column),
         file_path: None,
     });
+}
+
+/// Only direct, non-interpolated HCL string literals carry static wiring.
+pub(crate) fn literal_string(expression: &str) -> Option<String> {
+    let value: String = serde_json::from_str(expression.trim()).ok()?;
+    (!value.contains("${") && !value.contains("%{")).then_some(value)
 }

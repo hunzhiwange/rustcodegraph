@@ -82,6 +82,24 @@ pub fn resolve_terraform_reference(
             candidates.push(node);
         }
     }
+    if candidates.is_empty() && address.starts_with("provider.") {
+        let mut ancestor = dir.parent();
+        while let Some(parent) = ancestor {
+            candidates = context
+                .get_nodes_by_qualified_name(address)
+                .into_iter()
+                .filter(|n| {
+                    n.language == Language::Terraform
+                        && n.kind == NodeKind::Namespace
+                        && Path::new(&n.file_path).parent() == Some(parent)
+                })
+                .collect();
+            if !candidates.is_empty() {
+                break;
+            }
+            ancestor = parent.parent();
+        }
+    }
     let [target] = candidates.as_slice() else {
         return None;
     };

@@ -23,6 +23,7 @@ mod mobile;
 mod overrides;
 mod react;
 mod templates;
+mod terraform;
 
 use callbacks::{closure_collection_edges, event_emitter_edges, field_channel_edges};
 use gin::gin_middleware_chain_edges;
@@ -58,6 +59,7 @@ pub fn synthesize_callback_edges(
 
     let mut all = Vec::new();
     // 后续 pass 都是运行时/框架调度的保守桥接，统一批量去重后写入。
+    all.extend(terraform::terraform_remote_state_edges(ctx));
     all.extend(field_channel_edges(queries, ctx));
     all.extend(closure_collection_edges(queries, ctx));
     all.extend(event_emitter_edges(ctx));
