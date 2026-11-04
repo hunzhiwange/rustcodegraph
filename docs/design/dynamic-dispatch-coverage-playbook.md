@@ -239,6 +239,7 @@ rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # tr
 
 | 语言 | 框架 | 测试的规范流程 | 机制 | 地位 |
 |---|---|---|---|---|
+| Erlang | 静态调用 / 导入 / behaviour callback | 静态调用 → 模块函数；变量模块调用 → behaviour 实现 → 本地调用 | X+R+S | 静态能力与启发式桥接已实现；[覆盖与验收限制](#erlang-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Solidity | 静态调用 / 导入 / 继承 | 调用方 → 继承 modifier → 基类内部方法；导入别名 → 库函数 | X+R | 静态能力已实现；[覆盖与验收限制](#solidity-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Nix | 静态函数 / 模块加载 | 命名调用；相对 import / callPackage → 模块文件 → 声明 | X+R | 静态能力已实现；[九案例历史证据与验收范围](#nix-static-coverage)。外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | React / 观察者 / EventEmitter / React Router | 状态→渲染；调度→回调；路线→组件 | S+X | ✅ 渲染+调度（excalidraw）； **React Router JSX 路由** `<Route path component={C}/>` (v5) + `element={<C/>}` (v6) → 组件 (react-realworld **0→10, 10/10**)。 + **对象数据路由器** `createBrowserRouter([{path, element/Component}])`（文字形式）； Next.js config/`nextjs-pages` 误报已修复。 🔬 惰性数据路由器（`path: paths.x.path, lazy: () => import()` — 变量路径 + 惰性模块） |
@@ -759,6 +760,42 @@ setState 风格的门）； Akka actor 消息调度（无类型）；纯匿名�
 依赖批次 106–114（任务 45–53）的九项真实仓库流程验收适用用户
 2026-11-03 的取消修订，不再作为支持声明门槛。
 [取消验收清单](../benchmarks/upstream-matrices/solidity.json) 在 `c033556e` 归档，
+`cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
+或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
+VM/Docker 验证均未执行，不声明外部验收通过。
+
+<a id="erlang-static-coverage"></a>
+
+### Erlang 静态覆盖收口（2026-11-04）
+
+支持 `.erl`、`.hrl`、`.escript`，抽取模块 namespace、按名称/参数个数区分的函数、
+合并的连续函数子句、export/export_all 可见性与宏常量。记录静态本地和远程调用、
+函数引用、宏引用、模块导入、header 导入与 behaviour 声明；按唯一目标解析索引内
+模块、显式 import 与相对 header，不回退到模糊同名匹配。
+
+变量模块调用的 behaviour 桥接属于启发式候选关系，不证明运行时接收者绑定：
+仅在索引内相同名称/参数个数对应唯一 callback 契约时，连接显式声明该 behaviour
+且导出匹配函数的实现。歧义契约、重复模块、私有函数、参数个数不匹配不接边，
+超过 24 个候选目标时保持沉默；边带 heuristic 来源、合成器名称和调用位置。
+增量同步覆盖声明/参数个数变化、目标或契约删除、模块重建与无变化同步，
+并与干净索引比较节点和边。
+
+不承诺完整预处理、条件编译、宏展开、record/type/spec 声明索引、OTP 应用路径
+查找、外部依赖加载、通用 OTP 消息/进程派发或动态 apply/函数变量求值。
+函数引用不等同于执行调用，behaviour 候选边不等同于精确的数据流解析。
+
+来源为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758` 的
+`src/extraction/languages/erlang.ts`；原生 ELP grammar 0.19 固定于
+`836aa2b6c3af2c7cef3f84049b0ed6d44485a870`，详见
+[grammar 来源与可行性记录](upstream-grammars/erlang.md)。
+接线、声明、调用、跨文件解析、behaviour 桥接与增量修复分别见提交
+`cfd7860a`、`7aadf8f8`、`9ab87f45`、`5baa1aeb`、`aeb73ab2`、`15126c22`；
+本地回归用例为 `tests/upstream_117_test.rs` 至 `tests/upstream_122_test.rs`。
+本次只核对文档、实现与测试断言的一致性，并执行 `git diff --check`，没有重跑 Cargo。
+
+依赖批次 124–132（任务 63–71）的九项真实仓库流程验收适用用户
+2026-11-03 的取消修订，不再作为支持声明门槛。
+[取消验收清单](../benchmarks/upstream-matrices/erlang.json) 在 `c642ff07` 归档，
 `cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
 或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
 VM/Docker 验证均未执行，不声明外部验收通过。

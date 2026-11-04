@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Explore Erlang modules, arity-aware functions, static references, and heuristic behaviour callback links that stay consistent as files change.
+
 - Explore Solidity declarations, indexed imports, and unambiguous static calls that stay connected as files change.
 
 - Explore Terraform and OpenTofu declarations and static dependencies across local modules with documented coverage limits.
