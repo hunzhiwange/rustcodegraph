@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Explore CFML component and function declarations in tag syntax, script components, and embedded script blocks.
+
 - Explore COBOL programs, sections, paragraphs, static calls, and copybook references that stay consistent as files change.
 
 - Explore VB.NET declarations, indexed namespace imports, and unambiguous static calls that stay connected as files change.

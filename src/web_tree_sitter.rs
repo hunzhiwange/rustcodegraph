@@ -313,6 +313,18 @@ impl Tree {
     }
 }
 
+/// CFML's opaque script injections use the sibling native grammar.
+pub(crate) fn parse_cfscript(source: &str) -> Option<Tree> {
+    unsafe extern "C" {
+        fn tree_sitter_cfscript() -> *const ();
+    }
+    // SAFETY: the pinned vendored grammar exports a static ABI-15 language.
+    let native = unsafe { tree_sitter_language::LanguageFn::from_raw(tree_sitter_cfscript) }.into();
+    let mut parser = Parser::default();
+    parser.set_language(Some(Language::from_native(CodeLanguage::Cfml, native)));
+    parser.parse(source, None)
+}
+
 fn native_language(language: CodeLanguage) -> Option<tree_sitter::Language> {
     // 只有真正有 native grammar 的语言才能通过这里；模板/配置格式由专用抽取器处理。
     match language {

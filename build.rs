@@ -50,4 +50,11 @@ fn main() {
         .file(format!("{src}/parser.c"))
         .file(format!("{src}/scanner.c"))
         .compile("tree-sitter-cfml");
+    let src = "vendor/tree-sitter-cfml/cfscript/src";
+    cc::Build::new()
+        .std("c11")
+        .include(src)
+        .file(format!("{src}/parser.c"))
+        .file(format!("{src}/scanner.c"))
+        .compile("tree-sitter-cfscript");
 }
