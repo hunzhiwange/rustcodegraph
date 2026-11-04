@@ -35,6 +35,9 @@ pub fn match_reference(
     reference: &UnresolvedRef,
     context: &mut dyn ResolutionContext,
 ) -> Option<ResolvedRef> {
+    if reference.language == Language::Solidity {
+        return crate::resolution::import_resolver::resolve_solidity_reference(reference, context);
+    }
     if reference.language == Language::Terraform {
         return crate::resolution::import_resolver::resolve_terraform_reference(reference, context);
     }

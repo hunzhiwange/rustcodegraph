@@ -11,6 +11,19 @@ pub const SOLIDITY_EXTRACTOR: SolidityExtractor = SolidityExtractor;
 impl LanguageExtractor for SolidityExtractor {
     fn visit_node(&self, node: &SyntaxNode, ctx: &mut dyn ExtractorContext) -> bool {
         let t = node.node_type();
+        if t == "import_directive" {
+            if let Some(source) = node.child_for_field_name("source") {
+                let path = get_node_text(source, ctx.source())
+                    .trim_matches(['\'', '"'])
+                    .to_string();
+                if let Some(created) =
+                    ctx.create_node(NodeKind::Import, &path, node, NodeExtra::default())
+                {
+                    add_ref(ctx, created.id, path, ReferenceKind::Imports, node);
+                }
+            }
+            return true;
+        }
         if matches!(
             t,
             "call_expression" | "modifier_invocation" | "new_expression"

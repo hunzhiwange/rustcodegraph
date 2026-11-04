@@ -228,6 +228,9 @@ impl<'db> ReferenceResolver<'db> {
     }
 
     pub fn resolve_one(&mut self, reference: &UnresolvedRef) -> Option<ResolvedRef> {
+        if reference.language == Language::Solidity {
+            return crate::resolution::import_resolver::resolve_solidity_reference(reference, self);
+        }
         if reference.language == Language::Terraform {
             return crate::resolution::import_resolver::resolve_terraform_reference(
                 reference, self,
