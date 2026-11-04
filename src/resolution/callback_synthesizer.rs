@@ -13,6 +13,7 @@ use crate::db::queries::QueryBuilder;
 
 use super::types::ResolutionContext;
 
+mod arkts;
 mod callbacks;
 mod common;
 mod erlang;
@@ -60,6 +61,7 @@ pub fn synthesize_callback_edges(
 
     let mut all = Vec::new();
     // 后续 pass 都是运行时/框架调度的保守桥接，统一批量去重后写入。
+    all.extend(arkts::state_build_edges(queries, ctx));
     all.extend(erlang::behaviour_edges(queries, ctx));
     all.extend(terraform::terraform_remote_state_edges(ctx));
     all.extend(field_channel_edges(queries, ctx));
