@@ -8,6 +8,8 @@
 
 ### New Features
 
+- Search Metal shader declarations and follow static function calls with the existing C++ parser.
+
 - Explore CUDA declarations, static kernel calls, and local header dependencies that stay connected as files change.
 
 - Explore ArkTS declarations, local imports, and ArkUI component rendering links that stay connected as files change.
