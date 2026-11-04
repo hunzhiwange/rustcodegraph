@@ -1,5 +1,5 @@
 //! Sidekiq registration evidence; dispatch is a separate task.
-pub use rustcodegraph::{types, web_tree_sitter};
+pub use rustcodegraph::{resolution, types, web_tree_sitter};
 #[path = "../src/resolution/callback_synthesizer/sidekiq.rs"]
 mod sidekiq;
 use rustcodegraph::CodeGraph;
