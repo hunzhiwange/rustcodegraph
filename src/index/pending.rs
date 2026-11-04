@@ -235,6 +235,7 @@ pub(super) fn should_index_with_native_parser(language: Language, source: &str) 
             | Language::Terraform
             | Language::Solidity
             | Language::Erlang
+            | Language::Vbnet
     )
 }
 

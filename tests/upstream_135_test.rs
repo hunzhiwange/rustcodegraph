@@ -56,11 +56,7 @@ fn case_135_real_file_reaches_sqlite() {
     let result = graph.index_all(Default::default());
     assert!(result.success, "{:?}", result.errors);
     let nodes = graph.get_nodes_in_file("Sample.vb");
-    assert_eq!(
-        nodes.len(),
-        1,
-        "this task only wires the file-level extractor"
-    );
+    assert_eq!(nodes.len(), 2, "the file and its class reach SQLite");
     assert_eq!(language_key(&nodes[0].language), "vbnet");
     graph.close();
     std::fs::remove_dir_all(dir).unwrap();
