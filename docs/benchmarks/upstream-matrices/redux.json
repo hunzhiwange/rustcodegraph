@@ -1,0 +1,55 @@
+{
+  "language_framework": "TypeScript / Redux / RTK Query",
+  "status": "用户取消验收",
+  "user_revision_date": "2026-11-03",
+  "scope": "Source inventory only; real-repository matrix preparation and external acceptance were cancelled. No repository replay, A/B, performance or platform result is claimed.",
+  "source": {
+    "commit": "15483713763f344ff30fb7df92bcf091c7bd9758",
+    "files": [
+      "src/resolution/callback-synthesizer.ts",
+      "__tests__/redux-thunk-synthesizer.test.ts",
+      "__tests__/rtk-query-synthesizer.test.ts",
+      "scripts/agent-eval/offload-eval-ground-truth.json"
+    ]
+  },
+  "prerequisite_implementations": [
+    {
+      "batch": 233,
+      "commit": "fb4a7cde21f3d9f0dee15c7c1fd56d3f1bc8542e",
+      "implementation": [
+        "src/extraction/languages/typescript/rtk.rs",
+        "src/resolution/callback_synthesizer/redux.rs"
+      ],
+      "local_checks": "tests/upstream_233_test.rs",
+      "recorded_validation": "Commit message records 6 passed, 0 failed, 0 ignored and 18 neighboring checks passed; not rerun for this inventory task."
+    },
+    {
+      "batch": 3,
+      "commit": "191751fa44a5a7f665e5a5b50a6afd8560f63081",
+      "implementation": "scripts/agent-eval/run-matrix-case.py",
+      "local_checks": "tests/upstream_matrix_runner_test.rs",
+      "validation_note": "Implementation and two local test definitions inspected; no runner or external experiment executed for this task."
+    }
+  ],
+  "cases": [],
+  "candidate_inventory": [
+    {
+      "source_key": "trezor",
+      "question": "How does sending a crypto transaction flow from the send form's review/sign action through to signing it via @trezor/connect (TrezorConnect.signTransaction)? Trace the call path.",
+      "repository_revision": null,
+      "size_tier": null,
+      "validation_status": "Source question only; target repository and flow not independently checked."
+    },
+    {
+      "source_key": "shapeshift",
+      "question": "How does executing a swap work in ShapeShift — from the code that fetches quotes and selects a swapper down to a specific swapper's execute/trade? Name the swapper interface, the registry, and one concrete swapper, and trace the path.",
+      "repository_revision": null,
+      "size_tier": null,
+      "validation_status": "Source question only; target repository and flow not independently checked."
+    }
+  ],
+  "case_inventory_note": "The fixed upstream source contains a Redux thunk question for trezor and an RTK endpoint/registry question for shapeshift. It does not freeze target revisions or a small/medium/large nine-flow matrix. Neither candidate is promoted to a runnable case; upstream truth text is not local validation evidence.",
+  "runner_compatible": false,
+  "runner_note": "This cancellation inventory is not the nine-case array required by run-matrix-case.py and must not be passed to that runner.",
+  "external_experiments_executed": false
+}
