@@ -14,4 +14,16 @@ fn main() {
         .include(solidity_src)
         .file(format!("{solidity_src}/parser.c"))
         .compile("tree-sitter-solidity");
+    let erlang_src = "vendor/tree-sitter-erlang/src";
+    println!("cargo:rerun-if-changed={erlang_src}");
+    let mut erlang_build = cc::Build::new();
+    if erlang_build.get_compiler().is_like_msvc() {
+        erlang_build.flag("-utf-8");
+    }
+    erlang_build
+        .std("c11")
+        .include(erlang_src)
+        .file(format!("{erlang_src}/parser.c"))
+        .file(format!("{erlang_src}/scanner.c"))
+        .compile("tree-sitter-erlang");
 }

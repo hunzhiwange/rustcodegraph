@@ -108,6 +108,8 @@ impl Language {
             CodeLanguage::Luau
         } else if lower.contains("lua") {
             CodeLanguage::Lua
+        } else if lower == "erlang" || lower.ends_with("/erlang.wasm") {
+            CodeLanguage::Erlang
         } else if lower == "solidity" || lower.ends_with("/solidity.wasm") {
             CodeLanguage::Solidity
         } else if lower == "terraform" || lower.ends_with("/terraform.wasm") {
@@ -331,6 +333,13 @@ fn native_language(language: CodeLanguage) -> Option<tree_sitter::Language> {
         CodeLanguage::Scala => Some(tree_sitter_scala::LANGUAGE.into()),
         CodeLanguage::ObjC => Some(tree_sitter_objc::LANGUAGE.into()),
         CodeLanguage::Nix => Some(tree_sitter_nix::LANGUAGE.into()),
+        CodeLanguage::Erlang => {
+            unsafe extern "C" {
+                fn tree_sitter_erlang() -> *const ();
+            }
+            // SAFETY: the unchanged vendored parser exports a static ABI-14 language.
+            Some(unsafe { tree_sitter_language::LanguageFn::from_raw(tree_sitter_erlang) }.into())
+        }
         CodeLanguage::Solidity => {
             unsafe extern "C" {
                 fn tree_sitter_solidity() -> *const ();

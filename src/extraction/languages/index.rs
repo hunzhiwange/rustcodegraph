@@ -43,6 +43,8 @@ pub mod swift;
 #[path = "typescript.rs"]
 pub mod typescript;
 
+#[path = "erlang.rs"]
+pub mod erlang;
 #[path = "nix.rs"]
 pub mod nix;
 #[path = "solidity.rs"]
@@ -102,6 +104,7 @@ pub const EXTRACTOR_LANGUAGES: &[&str] = &[
     "objc",
     "nix",
     "solidity",
+    "erlang",
     "terraform",
 ];
 
@@ -129,6 +132,7 @@ pub fn extractor_for(language: &str) -> Option<&'static dyn LanguageExtractor> {
         "luau" => Some(luau_extractor()),
         "objc" => Some(objc_extractor()),
         "nix" => Some(nix_extractor()),
+        "erlang" => Some(&erlang::ERLANG_EXTRACTOR),
         "solidity" => Some(&solidity::SOLIDITY_EXTRACTOR),
         "terraform" => Some(&terraform::TERRAFORM_EXTRACTOR),
         _ => None,
