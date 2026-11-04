@@ -906,3 +906,42 @@ class、组件内函数为 method、顶层函数为 function，记录访问可�
 `cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
 或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
 VM/Docker 验证均未执行，不声明外部验收通过。
+
+
+<a id="arkts-static-coverage"></a>
+
+### ArkTS / ArkUI 静态覆盖收口（2026-11-04）
+
+支持 `.ets`，使用原生 AST 抽取 struct、method、function（含 Builder）与 import，
+记录 ArkUI 组件调用、链式属性及直接传入 onX 属性的 this 方法引用。
+相对导入支持显式扩展名、目录 index、命名别名及 namespace；未导入名称仅在
+当前文件解析，缺失或外部导入不回退到其他文件的同名声明。
+对 Component struct 自身响应式字段的直接赋值、增减及受支持数组变更，
+合成方法 → build 调用边，再接已有的 build → 已导入子组件静态边；
+合成边标记 heuristic、synthesizedBy=arkui-state 和 registeredAt。
+增量同步覆盖导入切换、组件与调用方删除重建，并与干净索引比较节点和边。
+
+不承诺完整 ArkTS 类型系统、外部 HarmonyOS API 加载、动态接收者推断或
+完整 ArkUI 运行时语义。字段、局部变量、class、interface、enum 和 type alias
+当前不单独抽取；响应式字段由合成器读取 AST，不因此新增字段节点。
+响应式分析跳过其他接收者、嵌套函数、读取、比较和歧义 build；不追踪
+字段别名、任意深层对象写入或跨组件运行时状态传播。
+
+来源为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758` 的
+`src/extraction/languages/arkts.ts`；原生 grammar 为 0.2.0，固定于
+`56f7fc288715befe92c734d603f9e6bc3c65d2a8`，详见
+[grammar 来源与可行性记录](upstream-grammars/arkts.md)。
+接线、声明、引用、跨文件解析、响应式渲染与增量修复分别见提交
+`7cad7a92`、`e7f0bfc8`、`794d9c0e`、`e201606e`、`47919f99`、`ef705feb`；
+本地回归用例为 `tests/upstream_189_test.rs` 至 `tests/upstream_194_test.rs`。
+增量修复提交记录本地 3 项通过，导入与渲染周边 11 项通过、0 ignored；
+任务 132 保留“已完成，待回归”，其 5 项聚焦测试通过，但框架套件两项 Java
+字段注入测试在移除 ArkTS 接线后仍失败，未宣称全套回归通过。
+本次只核对文档、实现与测试断言的一致性，并执行 `git diff --check`，没有重跑 Cargo。
+
+依赖批次 196–204（任务 135–143）的九项真实仓库流程验收适用用户
+2026-11-03 的取消修订，不再作为支持声明门槛。
+[取消验收清单](../benchmarks/upstream-matrices/arkts.json) 在 `073575bf` 归档，
+`cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
+或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
+VM/Docker 验证均未执行，不声明外部验收通过。
