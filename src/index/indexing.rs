@@ -75,6 +75,19 @@ pub(super) fn index_facade_changed_files(
                 .filter(|path| detect_language(path, None) == Language::Vbnet),
         );
     }
+    // COBOL CALL and COPY depend on the complete program/copybook candidate set.
+    // Requeue consumed references after target replacement and invalidate old
+    // unique matches when another candidate appears; other languages stay incremental.
+    if selected_paths
+        .iter()
+        .any(|path| detect_language(path, None) == Language::Cobol)
+    {
+        selected_paths.extend(
+            existing_source_files(project_root)
+                .into_iter()
+                .filter(|path| detect_language(path, None) == Language::Cobol),
+        );
+    }
     // Replacing a target removes its incoming edges. Resolved references are no
     // longer queued, so re-extract Nix importers before that wiring is deleted.
     // Scope this to static Nix file imports; unrelated languages stay incremental.
