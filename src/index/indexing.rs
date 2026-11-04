@@ -19,6 +19,29 @@ pub(super) fn index_facade_changed_files(
     selected_paths.extend(changes.added.iter().cloned());
     selected_paths.extend(changes.modified.iter().cloned());
     selected_paths.extend(changes.removed.iter().cloned());
+    // CUDA reuses C++ references. Header replacement consumes incoming edges;
+    // requeue the C/C++ sources to restore imports/calls from unchanged callers.
+    let sources = existing_source_files(project_root);
+    let is_cuda = |path: &str| {
+        Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("cu") || e.eq_ignore_ascii_case("cuh"))
+    };
+    if selected_paths
+        .iter()
+        .chain(sources.iter())
+        .any(|path| is_cuda(path))
+        && selected_paths
+            .iter()
+            .any(|path| matches!(detect_language(path, None), Language::C | Language::Cpp))
+    {
+        selected_paths.extend(
+            sources
+                .into_iter()
+                .filter(|path| matches!(detect_language(path, None), Language::C | Language::Cpp)),
+        );
+    }
     // Terraform lookup depends on the whole module directory, local-module sources,
     // provider ancestors and component names. A new/renamed declaration can also
     // invalidate a previously unique match with no incoming edge to follow.

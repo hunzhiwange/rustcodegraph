@@ -190,6 +190,11 @@ fn load_cpp_include_dirs_heuristic(project_root: &Path) -> Vec<String> {
                         .to_string_lossy()
                         .to_ascii_lowercase()
                         .ends_with(".hh")
+                    || file
+                        .file_name()
+                        .to_string_lossy()
+                        .to_ascii_lowercase()
+                        .ends_with(".cuh")
             })
         {
             dirs.push(name);
