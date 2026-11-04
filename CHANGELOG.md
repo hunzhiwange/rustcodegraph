@@ -10,6 +10,8 @@
 
 ### New Features
 
+- Follow inline MediatR request and notification dispatch into statically registered C# handlers and their helper calls.
+
 - Follow literal Sidekiq worker dispatch into registered Ruby job bodies and their static helper calls.
 
 - Follow statically bound Celery task dispatch through `delay` and `apply_async` into registered Python task bodies.

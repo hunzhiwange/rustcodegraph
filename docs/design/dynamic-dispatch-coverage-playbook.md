@@ -245,6 +245,7 @@ rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # tr
 | Solidity | 静态调用 / 导入 / 继承 | 调用方 → 继承 modifier → 基类内部方法；导入别名 → 库函数 | X+R | 静态能力已实现；[覆盖与验收限制](#solidity-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Nix | 静态函数 / 模块加载 | 命名调用；相对 import / callPackage → 模块文件 → 声明 | X+R | 静态能力已实现；[九案例历史证据与验收范围](#nix-static-coverage)。外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | React / 观察者 / EventEmitter / React Router | 状态→渲染；调度→回调；路线→组件 | S+X | ✅ 渲染+调度（excalidraw）； **React Router JSX 路由** `<Route path component={C}/>` (v5) + `element={<C/>}` (v6) → 组件 (react-realworld **0→10, 10/10**)。 + **对象数据路由器** `createBrowserRouter([{path, element/Component}])`（文字形式）； Next.js config/`nextjs-pages` 误报已修复。 🔬 惰性数据路由器（`path: paths.x.path, lazy: () => import()` — 变量路径 + 惰性模块） |
+| C# | MediatR | 调用方 → inline Send/Publish → Handle → helper | X+S | 静态注册派发已实现；[覆盖与验收限制](#mediatr-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Ruby | Sidekiq | 调用方 → literal worker dispatch → perform → helper | X+S | 静态注册派发已实现；[覆盖与验收限制](#sidekiq-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Python | Celery | 调用方 → delay/apply_async 注册任务 → helper | X+S | 静态绑定派发已实现；[覆盖与验收限制](#celery-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | Pinia / Vuex stores | 实例调用 → Options action → helper；literal dispatch → namespaced action → commit → mutation → helper | X+S | 静态注册与派发已实现；[覆盖与验收限制](#vue-store-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
@@ -1202,4 +1203,47 @@ Rails 风格的同一个 `app/` 树共享注册；其他 Ruby 文件按所在目
 归档，`cases=[]`、`external_experiments_executed=false`；上游合成 fixture
 不构成固定版本的小中大九案例真实仓库矩阵。九项均未执行，没有案例 summary
 或原始实验日志；真实仓库回放、重复 A/B、指定模型、性能指标及 VM/Docker
+验证均未执行，不声明外部验收通过。
+
+
+<a id="mediatr-static-coverage"></a>
+### MediatR 静态覆盖收口（2026-11-05）
+
+沿用 C# `.cs` 提取，不新增语言或扩展名。AST 注册要求非开放泛型类直接
+声明泛型 handler 接口（名称以 `I` 开头、以 `Handler` 结尾），接口第一个
+类型参数与直接实例 `Handle` 方法的第一个参数类型拼写完全一致，且方法
+具有方法体；不注册 static、abstract 方法或嵌套类中不属于该声明的方法。
+支持限定接口与请求类型、自定义 handler 接口；不验证接口实际来自 MediatR
+包或 DI 注册，不新增 handler 节点，不进行别名或短名称归一化。
+
+派发只接受方法或函数体内的成员 `Send`/`Publish` 调用，第一个实参必须是
+内联 `new` 构造，类型拼写与注册精确匹配。接收器只能由标识符、this 和
+成员访问组成，文本忽略大小写后须包含 mediator、sender 或 publisher；
+这是名称启发式，不是接收器类型证明。同一作用域内 `Send` 要求唯一目标，
+`Publish` 连接全部匹配目标，不额外区分 request/notification 接口种类。
+已有普通调用边继续连接 handler 的静态 helper。
+
+作用域优先取最近的 `.sln`/`.slnx` 所在目录，无 solution 时取最近的
+`.csproj` 目录，再回退到顶层应用目录；不读取 solution 项目成员关系。
+每文件最多连接 80 个不同来源/目标对，边带 heuristic、`mediatr-dispatch`
+与派发位置 `registeredAt`。不承诺变量实参、参数传递、mapper 返回类型、
+计算接收器、继承注册、开放泛型、DI/pipeline behavior 或运行时执行顺序；
+未注册、跨作用域或 Send 同名歧义保持无合成边。
+
+只读上游 HEAD 已核对为 `15483713763f344ff30fb7df92bcf091c7bd9758`。
+注册与派发提交为 `ba735527`、`8dc34a2a`，当前实现与两份测试相对派发
+提交无差异。复核既有 `/tmp/rcg285-final.log` 中的非零本地测试结果：
+注册、派发各 4 项通过，合计 8 passed、0 failed、0 ignored，
+测试入口为 `target/rust-slot-1/debug/deps/`。
+断言覆盖 `Entry → Handle → Finish` 完整 explore Flow 与接线标注、
+重复索引节点稳定、移除注册后 sync 删除边、Publish 扇出、Send 歧义、
+动态与未注册负例以及 solution 隔离。本次只复核既有日志与源码，运行文档
+清单检查和 `git diff --check`，未运行 Cargo，不声明全套回归通过。
+
+依赖批次 287–295（任务 56–64）的九项外部验收按用户 2026-11-03 修订
+以“用户取消验收”收口，不再作为静态支持说明的完成门槛。
+[取消验收清单](../benchmarks/upstream-matrices/mediatr.json) 由 `f3624b4c`
+归档，`cases=[]`、`external_experiments_executed=false`。上游合成 fixture
+不是固定版本的小中大九案例真实仓库矩阵；九项均未执行，没有案例 summary
+或原始实验日志。真实仓库回放、重复 A/B、指定模型、性能指标及 VM/Docker
 验证均未执行，不声明外部验收通过。
