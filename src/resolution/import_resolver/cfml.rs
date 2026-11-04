@@ -49,6 +49,34 @@ pub fn resolve_cfml_reference(
             }
         }
         ReferenceKind::Calls => {
+            if let Some((component, method)) = raw.split_once("::") {
+                // This marker is emitted only for an AST construction receiver.
+                let mut constructor = reference.clone();
+                constructor.reference_kind = ReferenceKind::Instantiates;
+                constructor.reference_name = component.to_owned();
+                let owner = resolve_cfml_reference(&constructor, context)?;
+                let target = context
+                    .get_nodes_by_kind(NodeKind::Class)
+                    .into_iter()
+                    .find(|n| n.id == owner.target_node_id)?;
+                let methods: Vec<_> = context
+                    .get_nodes_in_file(&target.file_path)
+                    .into_iter()
+                    .filter(|n| {
+                        n.language == Language::Cfml
+                            && n.kind == NodeKind::Method
+                            && n.name.eq_ignore_ascii_case(method)
+                            && n.qualified_name.eq_ignore_ascii_case(&format!(
+                                "{}::{}",
+                                target.qualified_name, method
+                            ))
+                    })
+                    .collect();
+                return match methods.as_slice() {
+                    [method] => Some(resolved(reference, &method.id, 1.0, ResolvedBy::Import)),
+                    _ => None,
+                };
+            }
             let name = if let Some((scope, name)) = raw.split_once('.') {
                 if !scope.eq_ignore_ascii_case("this") && !scope.eq_ignore_ascii_case("variables") {
                     return None;

@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Follow CFML method calls directly chained onto static component construction without confusing same-named methods in other components.
+
 - Resolve CFML static component paths and relative template includes without connecting missing dependencies or unrelated same-named methods.
 
 - Explore CFML component and function declarations in tag syntax, script components, and embedded script blocks.

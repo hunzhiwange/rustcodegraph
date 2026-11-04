@@ -174,7 +174,45 @@ fn walk(node: &SyntaxNode, ctx: &mut dyn ExtractorContext) {
                         add_ref(node, &name, ReferenceKind::Imports, ctx);
                     }
                 } else if matches!(func.node_type(), "identifier" | "member_expression") {
-                    add_ref(node, &func.text, ReferenceKind::Calls, ctx);
+                    let chained = func.child_for_field_name("object").and_then(|object| {
+                        let mut object = object;
+                        while matches!(object.node_type(), "expression" | "primary_expression")
+                            && object.named_children.len() == 1
+                        {
+                            object = &object.named_children[0];
+                        }
+                        let path = match object.node_type() {
+                            "new_expression" => object
+                                .child_for_field_name("constructor")
+                                .map(|n| {
+                                    n.text
+                                        .chars()
+                                        .filter(|c| !c.is_whitespace())
+                                        .collect::<String>()
+                                })
+                                .filter(|n| component_path(n)),
+                            "call_expression"
+                                if object.child_for_field_name("function").is_some_and(|n| {
+                                    n.text.eq_ignore_ascii_case("createObject")
+                                }) =>
+                            {
+                                let args: Vec<_> = object
+                                    .child_for_field_name("arguments")
+                                    .map(|n| n.named_children.iter().collect())
+                                    .unwrap_or_default();
+                                created_component(&args)
+                            }
+                            _ => None,
+                        }?;
+                        let method = func.child_for_field_name("property")?;
+                        Some(format!("{path}::{}", method.text))
+                    });
+                    add_ref(
+                        node,
+                        chained.as_deref().unwrap_or(&func.text),
+                        ReferenceKind::Calls,
+                        ctx,
+                    );
                 }
             }
         }
