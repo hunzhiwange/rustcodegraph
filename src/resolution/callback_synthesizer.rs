@@ -26,6 +26,7 @@ mod mobile;
 mod overrides;
 mod react;
 mod redux;
+mod sidekiq;
 mod templates;
 mod terraform;
 mod vue_store;
