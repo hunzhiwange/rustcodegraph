@@ -114,7 +114,7 @@ fn case_100_no_comment_string_or_local_declarations() {
             .filter(|n| n.kind != NodeKind::File)
             .map(|n| n.name.as_str())
             .collect::<Vec<_>>(),
-        vec!["Real"]
+        vec!["Real", "run"]
     );
     let empty = extract_from_source("empty.sol", "// struct Fake {}", None, None);
     assert_eq!(empty.nodes.len(), 1);
