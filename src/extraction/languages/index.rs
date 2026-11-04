@@ -43,6 +43,8 @@ pub mod swift;
 #[path = "typescript.rs"]
 pub mod typescript;
 
+#[path = "cobol.rs"]
+pub mod cobol;
 #[path = "erlang.rs"]
 pub mod erlang;
 #[path = "nix.rs"]
@@ -108,6 +110,7 @@ pub const EXTRACTOR_LANGUAGES: &[&str] = &[
     "solidity",
     "erlang",
     "vbnet",
+    "cobol",
     "terraform",
 ];
 
@@ -135,6 +138,7 @@ pub fn extractor_for(language: &str) -> Option<&'static dyn LanguageExtractor> {
         "luau" => Some(luau_extractor()),
         "objc" => Some(objc_extractor()),
         "nix" => Some(nix_extractor()),
+        "cobol" => Some(&cobol::COBOL_EXTRACTOR),
         "vbnet" => Some(&vbnet::VBNET_EXTRACTOR),
         "erlang" => Some(&erlang::ERLANG_EXTRACTOR),
         "solidity" => Some(&solidity::SOLIDITY_EXTRACTOR),

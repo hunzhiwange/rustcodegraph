@@ -34,4 +34,12 @@ fn main() {
         .file(format!("{vbnet_src}/parser.c"))
         .file(format!("{vbnet_src}/scanner.c"))
         .compile("tree-sitter-vbnet");
+    let src = "vendor/tree-sitter-cobol/src";
+    println!("cargo:rerun-if-changed={src}");
+    cc::Build::new()
+        .std("c11")
+        .include(src)
+        .file(format!("{src}/parser.c"))
+        .file(format!("{src}/scanner.c"))
+        .compile("tree-sitter-cobol");
 }

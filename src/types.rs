@@ -181,6 +181,8 @@ pub enum Language {
     Erlang,
     #[serde(rename = "vbnet")]
     Vbnet,
+    #[serde(rename = "cobol")]
+    Cobol,
     #[serde(rename = "unknown")]
     Unknown,
 }
@@ -223,6 +225,7 @@ pub const LANGUAGES: &[Language] = &[
     Language::Solidity,
     Language::Erlang,
     Language::Vbnet,
+    Language::Cobol,
     Language::Unknown,
 ];
 

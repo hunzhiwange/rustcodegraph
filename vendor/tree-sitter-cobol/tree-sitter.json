@@ -1,0 +1,1 @@
+{"grammars":[{"name":"COBOL","camelcase":"COBOL","scope":"source.cobol","path":".","file-types":["cbl","cob","cpy"]}],"metadata":{"version":"0.1.1","license":"MIT","description":"COBOL grammar","links":{"repository":"https://github.com/yutaro-sakamoto/tree-sitter-cobol"}}}
