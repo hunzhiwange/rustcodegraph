@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- Keep CFML calls and template dependencies consistent with a full rebuild after files are changed, removed, or restored.
+
 ### New Features
 
 - Follow CFML method calls directly chained onto static component construction without confusing same-named methods in other components.

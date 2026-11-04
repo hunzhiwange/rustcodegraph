@@ -88,6 +88,19 @@ pub(super) fn index_facade_changed_files(
                 .filter(|path| detect_language(path, None) == Language::Cobol),
         );
     }
+    // CFML component paths, chained calls and template includes depend on the
+    // current candidate set. Re-extract callers whose resolved references have
+    // left the queue, also invalidating unique matches when candidates are added.
+    if selected_paths
+        .iter()
+        .any(|path| detect_language(path, None) == Language::Cfml)
+    {
+        selected_paths.extend(
+            existing_source_files(project_root)
+                .into_iter()
+                .filter(|path| detect_language(path, None) == Language::Cfml),
+        );
+    }
     // Replacing a target removes its incoming edges. Resolved references are no
     // longer queued, so re-extract Nix importers before that wiring is deleted.
     // Scope this to static Nix file imports; unrelated languages stay incremental.
