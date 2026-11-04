@@ -138,7 +138,7 @@ If a workspace has no `.rustcodegraph/` index, the MCP server reports itself ina
 
 **Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, Terraform/OpenTofu, Solidity, Erlang, VB.NET, COBOL, CFML, ArkTS, CUDA, and Metal (via C++).
 
-**Metal (`.metal`):** Search shader declarations and follow static calls using the existing C++ parser. Supported trailing attributes are masked while preserving source positions. Full Metal language semantics, GPU runtime behavior, and external SDK resolution are outside this coverage; incremental graph consistency remains unverified. See the [Metal coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#metal-static-coverage) for validation status and limits.
+**Metal (`.metal`):** Search shader declarations and follow static calls using the existing C++ parser. Supported trailing attributes are masked while preserving source positions. Full Metal language semantics, GPU runtime behavior, and external SDK resolution are outside this coverage. Local header references stay connected through incremental sync. See the [Metal coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#metal-static-coverage) for validation status and limits.
 
 **CUDA (`.cu`, `.cuh`):** Search declarations and follow static host-to-kernel and device-function calls using the existing C++ parser. Local header dependencies stay connected through incremental sync. CUDA runtime scheduling, GPU execution, and external SDK resolution are outside this coverage. See the [CUDA coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#cuda-static-coverage) for limits and validation status.
 

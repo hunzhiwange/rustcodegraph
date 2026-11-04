@@ -19,7 +19,10 @@
         "src/index/indexing.rs"
       ],
       "local_checks": "tests/upstream_220_test.rs",
-      "validation_note": "Implementation commit and test source inspected. A previously built test executable failed its incremental/full graph comparison; its correspondence to current source was not established. No current-source pass or external acceptance is claimed; this cancelled inventory does not execute Metal indexing."
+      "validation_note": "Verified task 159 original session 01a1a569-0e02-7332-8b82-a307891eb044 and /tmp/rcg-159-validation.log: before-fix behavior check exited 101; after cargo fmt --all, the command below exited 0 with 7 passed, 0 failed, 0 ignored (Metal incremental 1, Metal extraction 4, CUDA neighboring 2). Relevant implementation and tests are unchanged since 525324d6. This supersedes the uncorrelated old-binary failure; no external acceptance is claimed.",
+      "validation_command": "cargo test -p rustcodegraph --test upstream_220_test --test upstream_219_test --test upstream_207_test -- --nocapture",
+      "validation_target_dir": "/Users/xiangmin/worker/code/rustcodegraph/target/rust-slot-1",
+      "validation_slot": 1
     },
     {
       "batch": 3,

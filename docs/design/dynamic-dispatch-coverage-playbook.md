@@ -993,19 +993,25 @@ kernel/vertex/fragment 函数到 helper 的调用，以及注释、字符串、�
 
 这不是完整 Metal 编译器或 GPU 运行时分析。不承诺完整属性语法、复杂嵌套
 属性参数、GPU 调度、资源绑定的运行语义或外部 SDK 解析；未知外部调用
-不制造目标声明。本地头文件与增量接线已有实现，但增量图与全量重建的一致性
-尚未取得可核对的当前源码通过证据，因此本次不声明增量一致性已验证。
+不制造目标声明。本地头文件引用可连接到索引内目标；本地用例验证头文件
+替换以及逐个删除头文件、Metal 调用方后，增量图与全量重建一致且无悬空边。
+缺失头文件和外部 `metal_stdlib` 不制造目标边。
 
 来源为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758`；Rust 实现为
-`dca1ebba`（抽取）和 `525324d6`（增量接线）。已核对
-`tests/upstream_219_test.rs`、`tests/upstream_220_test.rs` 与实现。
-既有 `/tmp/rcg-metal-green.log` 显示 upstream_219 的 4 项测试全部通过，
-0 failed、0 ignored；该日志没有 upstream_220 的通过结果。
-`/tmp/rcg-metal-near.log` 的 CUDA 周边测试不能替代 Metal 增量验证。
-[前置清单](../benchmarks/upstream-matrices/metal.json) 还记录了一个源码
-对应关系未确认的旧二进制在增量/全量比较中的失败；保留此限制，不将其
-改写为通过。本次仅进行文档、实现与既有日志的一致性核对及
-`git diff --check`，未运行 Cargo，也未宣称全套回归通过。
+`dca1ebba`（抽取）和 `525324d6`（增量接线）。已核对前置任务 159 原会话
+`01a1a569-0e02-7332-8b82-a307891eb044` 的实际命令、退出码与
+`/tmp/rcg-159-validation.log`：修复前行为验证退出 101；修复后先运行
+`cargo fmt --all`，再运行
+`cargo test -p rustcodegraph --test upstream_220_test --test upstream_219_test --test upstream_207_test -- --nocapture`，
+退出 0，Metal 增量 1 项、Metal 抽取 4 项及 CUDA 周边 2 项全部通过，
+合计 7 passed、0 failed、0 ignored。实际槽位为 1，
+`CARGO_TARGET_DIR=/Users/xiangmin/worker/code/rustcodegraph/target/rust-slot-1`，
+原会话已释放锁。上述实现与测试相对 `525324d6` 无后续差异。
+
+[前置清单](../benchmarks/upstream-matrices/metal.json) 已补充此有效通过证据；
+先前源码对应关系未确认的旧二进制失败不能代表修复后的结果。
+本次进行原会话、日志、提交与文档的一致性核对及 `git diff --check`，
+没有重跑 Cargo，也不宣称全套回归通过。
 
 依赖批次 222–230（任务 161–169）的九项外部流程验收已按用户
 2026-11-03 修订取消，不再作为本次文档收口门槛。取消清单提交为 `ba74eb7b`，
