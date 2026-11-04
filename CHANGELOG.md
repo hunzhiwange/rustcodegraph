@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Resolve CFML static component paths and relative template includes without connecting missing dependencies or unrelated same-named methods.
+
 - Explore CFML component and function declarations in tag syntax, script components, and embedded script blocks.
 - Capture CFML static component construction, inheritance, template includes, and calls while excluding dynamic paths and commented examples.
 
