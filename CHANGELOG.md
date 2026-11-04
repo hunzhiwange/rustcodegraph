@@ -5,6 +5,7 @@
 ### New Features
 
 - Explore CFML component and function declarations in tag syntax, script components, and embedded script blocks.
+- Capture CFML static component construction, inheritance, template includes, and calls while excluding dynamic paths and commented examples.
 
 - Explore COBOL programs, sections, paragraphs, static calls, and copybook references that stay consistent as files change.
 

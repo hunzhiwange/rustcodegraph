@@ -1,6 +1,8 @@
 //! CFML declarations from native tag and script ASTs.
-use crate::extraction::tree_sitter_types::{ExtractorContext, LanguageExtractor, NodeExtra};
-use crate::types::NodeKind;
+use crate::extraction::tree_sitter_types::{
+    ExtractorContext, LanguageExtractor, NodeExtra, UnresolvedReferenceInput,
+};
+use crate::types::{NodeKind, ReferenceKind};
 use crate::web_tree_sitter::{SyntaxNode, parse_cfscript};
 pub struct CfmlExtractor;
 pub const CFML_EXTRACTOR: CfmlExtractor = CfmlExtractor;
@@ -119,6 +121,22 @@ fn declaration(
         },
     ) {
         ctx.push_scope(created.id);
+        if kind == NodeKind::Class {
+            for attr in &node.named_children {
+                if attr.node_type() == "component_attribute"
+                    && attr
+                        .named_children
+                        .first()
+                        .is_some_and(|n| n.text.eq_ignore_ascii_case("extends"))
+                {
+                    if let Some(name) = attr.named_children.last().and_then(literal) {
+                        if component_path(&name) {
+                            add_ref(attr, &name, ReferenceKind::Extends, ctx);
+                        }
+                    }
+                }
+            }
+        }
         for child in &node.named_children {
             walk(child, ctx);
         }
@@ -128,7 +146,55 @@ fn declaration(
 
 fn walk(node: &SyntaxNode, ctx: &mut dyn ExtractorContext) {
     match node.node_type() {
-        "comment" | "cf_comment" | "ERROR" => return,
+        "comment" | "cf_comment" | "ERROR" | "string" | "quoted_cf_attribute_value" => return,
+        "new_expression" => {
+            if let Some(ctor) = node.child_for_field_name("constructor") {
+                let name: String = ctor.text.chars().filter(|c| !c.is_whitespace()).collect();
+                if component_path(&name) {
+                    add_ref(node, &name, ReferenceKind::Instantiates, ctx);
+                }
+            }
+        }
+        "call_expression" => {
+            if let Some(func) = node.child_for_field_name("function") {
+                let args: Vec<_> = node
+                    .child_for_field_name("arguments")
+                    .map(|n| n.named_children.iter().collect())
+                    .unwrap_or_default();
+                if func.text.eq_ignore_ascii_case("createObject") {
+                    if let Some(name) = created_component(&args) {
+                        add_ref(node, &name, ReferenceKind::Instantiates, ctx);
+                    }
+                } else if func.text.eq_ignore_ascii_case("cfinclude") {
+                    if let Some(name) = args
+                        .iter()
+                        .find_map(|n| named_literal(n, "template"))
+                        .or_else(|| args.first().and_then(|n| literal(n)))
+                    {
+                        add_ref(node, &name, ReferenceKind::Imports, ctx);
+                    }
+                } else if matches!(func.node_type(), "identifier" | "member_expression") {
+                    add_ref(node, &func.text, ReferenceKind::Calls, ctx);
+                }
+            }
+        }
+        "include_statement" => {
+            if let Some(name) = node.named_children.first().and_then(literal) {
+                add_ref(node, &name, ReferenceKind::Imports, ctx);
+            }
+        }
+        "cf_selfclose_tag" => {
+            if node
+                .text
+                .split(|c: char| c.is_whitespace() || c == '>')
+                .next()
+                .is_some_and(|n| n.eq_ignore_ascii_case("<cfinclude"))
+            {
+                if let Some(name) = attribute(node, "template") {
+                    add_ref(node, &name, ReferenceKind::Imports, ctx);
+                }
+            }
+        }
         "component" => {
             let name = component_name(ctx);
             declaration(node, ctx, NodeKind::Class, &name, true);
@@ -208,6 +274,11 @@ fn walk(node: &SyntaxNode, ctx: &mut dyn ExtractorContext) {
                 },
             ) {
                 ctx.push_scope(created.id);
+                if let Some(name) = attribute(child, "extends") {
+                    if component_path(&name) {
+                        add_ref(child, &name, ReferenceKind::Extends, ctx);
+                    }
+                }
                 for member in &children[i + 1..=end] {
                     walk(member, ctx);
                 }
@@ -242,4 +313,80 @@ fn is_bare_script(source: &str) -> bool {
         }
     }
     !rest.is_empty() && !rest.starts_with('<')
+}
+
+// Only syntax-backed literal paths can become stable unresolved references.
+fn literal(node: &SyntaxNode) -> Option<String> {
+    if matches!(
+        node.node_type(),
+        "expression" | "primary_expression" | "argument"
+    ) && node.named_children.len() == 1
+    {
+        return literal(&node.named_children[0]);
+    }
+    if node.node_type() != "string" || node.text.contains('#') {
+        return None;
+    }
+    let value = node.text.trim_matches(['\'', '"']).trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+fn component_path(name: &str) -> bool {
+    name.split('.').all(|part| {
+        let mut chars = part.chars();
+        chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '$' | '-'))
+    })
+}
+fn created_component(args: &[&SyntaxNode]) -> Option<String> {
+    let name = if args.iter().any(|n| named_value(n, "component").is_some()) {
+        if let Some(value) = args.iter().find_map(|n| named_value(n, "type")) {
+            if !literal(value).is_some_and(|v| v.eq_ignore_ascii_case("component")) {
+                return None;
+            }
+        }
+        args.iter().find_map(|n| named_literal(n, "component"))
+    } else if args.len() == 1 {
+        literal(args[0])
+    } else if args.len() >= 2
+        && literal(args[0]).is_some_and(|v| v.eq_ignore_ascii_case("component"))
+    {
+        literal(args[1])
+    } else {
+        None
+    }?;
+    component_path(&name).then_some(name)
+}
+fn add_ref(at: &SyntaxNode, name: &str, kind: ReferenceKind, ctx: &mut dyn ExtractorContext) {
+    if !name.is_empty()
+        && let Some(owner) = ctx.node_stack().last().cloned()
+    {
+        ctx.add_unresolved_reference(UnresolvedReferenceInput {
+            from_node_id: owner,
+            reference_name: name.to_owned(),
+            reference_kind: kind,
+            line: Some(at.start_position.row + 1),
+            column: Some(at.start_position.column),
+            file_path: None,
+        });
+    }
+}
+
+fn named_value<'a>(node: &'a SyntaxNode, key: &str) -> Option<&'a SyntaxNode> {
+    let mut node = node;
+    while matches!(node.node_type(), "expression" | "argument") && node.named_children.len() == 1 {
+        node = &node.named_children[0];
+    }
+    if node.node_type() != "assignment_expression" {
+        return None;
+    }
+    let left = node.child_for_field_name("left")?;
+    if !left.text.eq_ignore_ascii_case(key) {
+        return None;
+    }
+    node.child_for_field_name("right")
+}
+fn named_literal(node: &SyntaxNode, key: &str) -> Option<String> {
+    named_value(node, key).and_then(literal)
 }
