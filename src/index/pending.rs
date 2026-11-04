@@ -232,6 +232,7 @@ pub(super) fn should_index_with_native_parser(language: Language, source: &str) 
             | Language::Liquid
             | Language::Xml
             | Language::Nix
+            | Language::Terraform
     )
 }
 

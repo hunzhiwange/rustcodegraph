@@ -161,7 +161,9 @@ impl TreeSitterExtractor {
         let extra_is_exported = extra.is_exported;
         let extra_docstring = extra.docstring;
         let id = generate_node_id(&self.file_path, kind, name, node.start_position.row + 1);
-        let qualified_name = self.build_qualified_name(name);
+        let qualified_name = extra
+            .qualified_name
+            .unwrap_or_else(|| self.build_qualified_name(name));
         let docstring = extra_docstring.or_else(|| get_preceding_docstring(node, &self.source));
         let _generated = is_generated_file(&self.file_path);
         let signature = extra_signature.or_else(|| {

@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Search Terraform and OpenTofu resources, data sources, modules, variables, outputs, and local values as indexed code symbols.
+
 - Explore Nix code with searchable declarations, static calls, and project-relative module imports that stay connected as files change.
 
 - Index large repositories faster by avoiding repeated full-project searches when resolving symbol and member calls.

@@ -39,6 +39,8 @@ pub struct VariableInfo {
 /// Rust stand-in for TS `Partial<Node>` extras passed to `createNode`.
 #[derive(Debug, Clone, Default)]
 pub struct NodeExtra {
+    /// Language-defined address when lexical scope does not describe the symbol.
+    pub qualified_name: Option<String>,
     pub docstring: Option<String>,
     pub signature: Option<String>,
     pub visibility: Option<Visibility>,
