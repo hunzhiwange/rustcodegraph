@@ -24,6 +24,7 @@ mod java_xml;
 mod mobile;
 mod overrides;
 mod react;
+mod redux;
 mod templates;
 mod terraform;
 
@@ -67,6 +68,7 @@ pub fn synthesize_callback_edges(
     all.extend(field_channel_edges(queries, ctx));
     all.extend(closure_collection_edges(queries, ctx));
     all.extend(event_emitter_edges(ctx));
+    all.extend(redux::redux_thunk_edges(ctx));
     all.extend(react_render_edges(queries, ctx));
     all.extend(react_jsx_child_edges(ctx));
     all.extend(vue_template_edges(ctx));
