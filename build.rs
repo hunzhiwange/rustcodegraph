@@ -1,68 +1,48 @@
+use std::path::Path;
+
 fn main() {
-    let src = "vendor/tree-sitter-terraform/src";
-    println!("cargo:rerun-if-changed={src}");
-    cc::Build::new()
-        .std("c11")
-        .include(src)
-        .file(format!("{src}/parser.c"))
-        .file(format!("{src}/scanner.c"))
-        .compile("tree-sitter-terraform");
-    let solidity_src = "vendor/tree-sitter-solidity/src";
-    println!("cargo:rerun-if-changed={solidity_src}");
-    cc::Build::new()
-        .std("c11")
-        .include(solidity_src)
-        .file(format!("{solidity_src}/parser.c"))
-        .compile("tree-sitter-solidity");
-    let erlang_src = "vendor/tree-sitter-erlang/src";
-    println!("cargo:rerun-if-changed={erlang_src}");
-    let mut erlang_build = cc::Build::new();
-    if erlang_build.get_compiler().is_like_msvc() {
-        erlang_build.flag("-utf-8");
+    // Upstream repositories stay unmodified; patched grammars are prepared separately.
+    let grammars = [
+        ("terraform", ".grammar-build/terraform", true),
+        ("solidity", ".grammar-build/solidity", false),
+        ("erlang", ".grammar-build/erlang", true),
+        ("vbnet", ".grammar-build/vbnet", true),
+        ("cobol", ".grammar-build/cobol", true),
+        ("cfml", ".grammar-build/cfml/cfml", true),
+        ("cfscript", ".grammar-build/cfml/cfscript", true),
+        ("arkts", ".grammar-build/arkts", true),
+    ];
+    // Fail clearly before compiling when a clone or grammar preparation is incomplete.
+    for (_, dir, scanner) in grammars {
+        for file in ["src/parser.c", "src/tree_sitter/parser.h"]
+            .into_iter()
+            .chain(scanner.then_some("src/scanner.c"))
+        {
+            assert!(
+                Path::new(dir).join(file).is_file(),
+                "Missing grammar source {dir}/{file}. Run `git submodule update --init --recursive` \
+                 and `npm run prepare:grammars` before building from source."
+            );
+        }
     }
-    erlang_build
-        .std("c11")
-        .include(erlang_src)
-        .file(format!("{erlang_src}/parser.c"))
-        .file(format!("{erlang_src}/scanner.c"))
-        .compile("tree-sitter-erlang");
-    let vbnet_src = "vendor/tree-sitter-vbnet/src";
-    println!("cargo:rerun-if-changed={vbnet_src}");
-    cc::Build::new()
-        .std("c11")
-        .include(vbnet_src)
-        .file(format!("{vbnet_src}/parser.c"))
-        .file(format!("{vbnet_src}/scanner.c"))
-        .compile("tree-sitter-vbnet");
-    let src = "vendor/tree-sitter-cobol/src";
-    println!("cargo:rerun-if-changed={src}");
-    cc::Build::new()
-        .std("c11")
-        .include(src)
-        .file(format!("{src}/parser.c"))
-        .file(format!("{src}/scanner.c"))
-        .compile("tree-sitter-cobol");
-    let src = "vendor/tree-sitter-cfml/cfml/src";
-    println!("cargo:rerun-if-changed=vendor/tree-sitter-cfml");
-    cc::Build::new()
-        .std("c11")
-        .include(src)
-        .file(format!("{src}/parser.c"))
-        .file(format!("{src}/scanner.c"))
-        .compile("tree-sitter-cfml");
-    let src = "vendor/tree-sitter-cfml/cfscript/src";
-    cc::Build::new()
-        .std("c11")
-        .include(src)
-        .file(format!("{src}/parser.c"))
-        .file(format!("{src}/scanner.c"))
-        .compile("tree-sitter-cfscript");
-    let src = "vendor/tree-sitter-arkts/src";
-    println!("cargo:rerun-if-changed=vendor/tree-sitter-arkts");
-    cc::Build::new()
-        .std("c11")
-        .include(src)
-        .file(format!("{src}/parser.c"))
-        .file(format!("{src}/scanner.c"))
-        .compile("tree-sitter-arkts");
+    for (name, dir, scanner) in grammars {
+        println!("cargo:rerun-if-changed={dir}/src");
+        if Path::new(dir).join("common").is_dir() {
+            println!("cargo:rerun-if-changed={dir}/common");
+        }
+        let src = format!("{dir}/src");
+        let mut build = cc::Build::new();
+        build
+            .std("c11")
+            .include(&src)
+            .file(format!("{src}/parser.c"));
+        if scanner {
+            build.file(format!("{src}/scanner.c"));
+        }
+        if name == "erlang" && build.get_compiler().is_like_msvc() {
+            build.flag("-utf-8");
+        }
+        build.compile(&format!("tree-sitter-{name}"));
+    }
+    println!("cargo:rerun-if-changed=.grammar-build/cfml/common");
 }

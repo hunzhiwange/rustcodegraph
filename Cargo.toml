@@ -9,6 +9,13 @@ homepage = "https://github.com/hunzhiwange/rustcodegraph"
 readme = "README.md"
 default-run = "rustcodegraph"
 autobins = false
+# Explicitly include prepared native sources in source packages, even when ignored
+# locally. The parent Git repository tracks only submodule references and patches.
+include = [
+    "/src/**", "/build.rs", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE",
+    "/.grammar-build/**",
+    "/grammars/**", "/tests/**", "/scripts/**", "/install.sh", "/install.ps1",
+]
 
 [package.metadata.dist]
 dist = true

@@ -27,6 +27,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - uses: ./.github/actions/prepare-grammars
       - name: Install dist
         shell: bash
         run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.30.1/cargo-dist-installer.sh | sh
@@ -70,6 +71,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - uses: ./.github/actions/prepare-grammars
       - name: Install Rust non-interactively if not already installed
         if: ${{ matrix.container }}
         run: |
@@ -121,6 +123,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - uses: ./.github/actions/prepare-grammars
       - name: Install cached dist
         uses: actions/download-artifact@v7
         with:
@@ -166,6 +169,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - uses: ./.github/actions/prepare-grammars
       - name: Install cached dist
         uses: actions/download-artifact@v7
         with:

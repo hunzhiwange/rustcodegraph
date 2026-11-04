@@ -10,6 +10,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "prepare:grammars": "node scripts/prepare-grammars.mjs",
     "build": "cargo build --release",
     "dev": "cargo check",
     "cli": "cargo run --bin rustcodegraph --",

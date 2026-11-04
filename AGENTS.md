@@ -10,6 +10,13 @@ RustCodeGraph 是一个本地优先的代码智能库 + CLI + MCP 服务器。�
 
 ## 构建、测试、运行
 
+首次从源码构建及拉取解析器更新后，先执行：
+
+```bash
+git submodule update --init --recursive
+npm run prepare:grammars
+```
+
 ```bash
 npm run build           # cargo build --release
 npm run dev             # cargo check
@@ -154,6 +161,15 @@ RustCodeGraph 能影响代理的通道只有低显著性的两类：MCP `initial
 | + explore-first 引导 | **51–74s** | **0–2** | 0–4 | **3–4** |
 
 同一问题、每阶段 n=4 次不加 hook 的运行。把流程问题优先引导到 `rustcodegraph_explore` 后：**最佳一轮是 0 Read / 0 Grep / 3 rustcodegraph / 51s**；**4 次里有 2 次完全干净**（0 Read、0 Grep）。这个引导消除了过度下钻导致的方差，调用次数从 3–10 收紧到 3–4，同时 `search`+`callers` 式路径拼装带来的失败探索也降到了 0。运行间波动仍然存在，所以报告时永远给区间，不要只给单个数。**剩余的 read/grep 都来自一次性局部数据流**（`canvasNonce`，它只是一个本地 prop，没有图边）；这是 def-use/data-flow 的前沿区域，因此刻意不覆盖，避免跟踪每个局部变量把图规模炸掉。验证结果是：`rustcodegraph_explore(mutateElement, renderStaticScene)` 能跨越三个边界，以 **6 跳** 连通（`mutateElement → triggerUpdate → [callback] triggerRender → [react-render] render → [jsx] StaticCanvas → renderStaticScene`），每一跳都展示了内联源码和 wiring 位置；节点数稳定在 9,289；合成边包括 1 条 callback、46 条 react-render、280 条 jsx-render，没有爆炸，且已做精度检查。
+
+## 第三方语言解析器依赖（后续语言及已有计划必须遵守）
+
+- 不得把第三方解析器的 C/C++、头文件、生成的 parser/grammar/node-types JSON 或整份 grammar 源码复制提交到主仓库；`vendor/tree-sitter-*` 只能是固定 commit 的 Git submodule（Git mode 160000）。
+- 优先兼容的 Cargo crate，其次固定 rev 的上游 Cargo Git 依赖；上游不提供可用 Rust 包时直接使用 submodule，由本项目 build.rs 编译，无须强迫上游增加 Cargo 支持。
+- 需要补丁时，只提交可审阅的增量补丁、来源及许可证；在忽略的 `.grammar-build/` 目录应用补丁并用固定版本生成器生成，不修改子模块工作树、不提交生成文件、不在 Cargo 构建脚本中联网下载。
+- 克隆及 CI 使用递归子模块；源码构建先运行 `git submodule update --init --recursive` 和 `npm run prepare:grammars`。更新语言时同时检查 CI、Cargo 源码包所需文件及许可证，验证源码包包含构建输入、子模块保持 clean。
+- 这些要求覆盖已有计划中尚未执行的后续任务及复制到新聊天的提示；遇到旧的 vendoring/复制源码要求，以本节及 `grammars/README.md` 为准。已完成的历史可行性报告不作为继续复制源码的授权。
+- 具体来源、固定提交、生成与升级步骤见 `grammars/README.md`。本地生成与子模块下载仍会占用工作目录空间，但源码内容不属于主仓库 Git blobs。
 
 ## 测试
 

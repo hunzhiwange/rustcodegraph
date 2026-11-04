@@ -182,6 +182,23 @@ Agents start the server themselves. Check `rustcodegraph status`, then re-run `r
 **Migrating from the TypeScript CodeGraph version**
 Install `rustcodegraph` and make sure your MCP configuration points at the Rust binary. Existing TypeScript-era CodeGraph configuration is not reused automatically.
 
+## Building from Source
+
+Clone with submodules and prepare the two patched grammars before using Cargo:
+
+```bash
+git clone --recurse-submodules https://github.com/hunzhiwange/rustcodegraph.git
+cd rustcodegraph
+npm run prepare:grammars
+cargo build --release
+```
+
+After pulling updates, run `git submodule update --init --recursive` and prepare
+again. Preparation uses Git, Node.js 18+, npm, and a pinned tree-sitter generator;
+installed binaries do not require them. See [grammar dependencies](grammars/README.md)
+for source-package builds, licenses, and adding languages without copying parser
+sources into this repository.
+
 ## More
 
 - [User documentation](docs/user/README.md)

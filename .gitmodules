@@ -1,0 +1,21 @@
+[submodule "vendor/tree-sitter-terraform"]
+	path = vendor/tree-sitter-terraform
+	url = https://github.com/tree-sitter-grammars/tree-sitter-hcl.git
+[submodule "vendor/tree-sitter-solidity"]
+	path = vendor/tree-sitter-solidity
+	url = https://github.com/JoranHonig/tree-sitter-solidity.git
+[submodule "vendor/tree-sitter-erlang"]
+	path = vendor/tree-sitter-erlang
+	url = https://github.com/WhatsApp/tree-sitter-erlang.git
+[submodule "vendor/tree-sitter-vbnet"]
+	path = vendor/tree-sitter-vbnet
+	url = https://github.com/govindbanura/tree-sitter-vbnet.git
+[submodule "vendor/tree-sitter-cobol"]
+	path = vendor/tree-sitter-cobol
+	url = https://github.com/yutaro-sakamoto/tree-sitter-cobol.git
+[submodule "vendor/tree-sitter-cfml"]
+	path = vendor/tree-sitter-cfml
+	url = https://github.com/cfmleditor/tree-sitter-cfml.git
+[submodule "vendor/tree-sitter-arkts"]
+	path = vendor/tree-sitter-arkts
+	url = https://github.com/harmony-contrib/tree-sitter-arkts.git

@@ -7,6 +7,8 @@ members = ["cargo:."]
 cargo-dist-version = "0.30.1"
 # CI backends to support
 ci = "github"
+# Preserve grammar preparation when cargo-dist regenerates the release workflow.
+github-build-setup = "../build-setup.yml"
 # Skip checking whether the specified configuration files are up to date
 allow-dirty = ["ci"]
 # Whether to consider the binaries in a package for distribution (defaults true)

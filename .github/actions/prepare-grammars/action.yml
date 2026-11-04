@@ -1,0 +1,10 @@
+name: Prepare native grammars
+description: Prepare patched grammars from pinned, already checked-out submodules
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - run: npm run prepare:grammars
+      shell: bash

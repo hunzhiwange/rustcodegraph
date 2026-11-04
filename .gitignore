@@ -69,3 +69,6 @@ assets/generate-waitlist.py
 target/
 target-dir/
 .codex-tmp/
+
+# Locally generated third-party parsers (never commit C sources).
+/.grammar-build/

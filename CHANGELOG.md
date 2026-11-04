@@ -10,6 +10,8 @@
 
 - Explore ArkTS declarations, local imports, and ArkUI component rendering links that stay connected as files change.
 
+- Source checkouts now reference pinned upstream grammar repositories instead of storing generated parser sources, keeping language dependency updates easier to review.
+
 - Explore CFML tag and script declarations with static component calls and template dependencies that stay connected as files change.
 
 - Explore COBOL programs, sections, paragraphs, static calls, and copybook references that stay consistent as files change.

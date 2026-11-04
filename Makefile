@@ -34,6 +34,10 @@ help: ## Show available commands.
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make <target> [ARGS=... VERSION=1.2.3]\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-22s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # 基础开发命令。
+.PHONY: prepare-grammars
+prepare-grammars: ## Prepare patched grammars after initializing submodules.
+	$(NPM) run prepare:grammars
+
 fetch: ## Fetch Rust dependencies.
 	$(CARGO) fetch
 

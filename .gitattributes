@@ -1,0 +1,2 @@
+# Preserve upstream patch bytes, including context-space lines and LF endings.
+grammars/patches/*.patch -text -whitespace
