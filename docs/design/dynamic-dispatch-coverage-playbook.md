@@ -245,6 +245,7 @@ rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # tr
 | Solidity | 静态调用 / 导入 / 继承 | 调用方 → 继承 modifier → 基类内部方法；导入别名 → 库函数 | X+R | 静态能力已实现；[覆盖与验收限制](#solidity-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Nix | 静态函数 / 模块加载 | 命名调用；相对 import / callPackage → 模块文件 → 声明 | X+R | 静态能力已实现；[九案例历史证据与验收范围](#nix-static-coverage)。外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | React / 观察者 / EventEmitter / React Router | 状态→渲染；调度→回调；路线→组件 | S+X | ✅ 渲染+调度（excalidraw）； **React Router JSX 路由** `<Route path component={C}/>` (v5) + `element={<C/>}` (v6) → 组件 (react-realworld **0→10, 10/10**)。 + **对象数据路由器** `createBrowserRouter([{path, element/Component}])`（文字形式）； Next.js config/`nextjs-pages` 误报已修复。 🔬 惰性数据路由器（`path: paths.x.path, lazy: () => import()` — 变量路径 + 惰性模块） |
+| Python | Celery | 调用方 → delay/apply_async 注册任务 → helper | X+S | 静态绑定派发已实现；[覆盖与验收限制](#celery-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | Pinia / Vuex stores | 实例调用 → Options action → helper；literal dispatch → namespaced action → commit → mutation → helper | X+S | 静态注册与派发已实现；[覆盖与验收限制](#vue-store-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | Vue/Nuxt | 模板事件（@click→处理程序）；成分组成；反应→渲染 | S+X | ✅ 事件+组合（vitepress S / vben M / element-plus L）； 🔬 反应式 → 渲染（vue-core 代理运行时 — 前沿，延迟） |
 | TypeScript/JS | Svelte / SvelteKit | 模板调用/组合； SvelteKit 操作→api；存储→DOM | X | ✅ 已经很强大（现实世界S/骨架M/shadcn L）：模板`{fn()}`调用，`<Pascal/>`组合，`import * as api`命名空间，`load`→api所有开箱即用。 + 导出常量函数对象提取 (SvelteKit `actions`)。 🔬 `$lib`-来自操作的命名空间 + 存储/反应边界 |
@@ -1120,5 +1121,43 @@ Vuex root-option 跨命名空间派发或 Vue Proxy 状态到渲染链。
 [取消验收清单](../benchmarks/upstream-matrices/vue-store.json) 由 `8fae8c94`
 归档，`cases=[]`、`external_experiments_executed=false`。
 清单仅列上游合成 fixture，不构成固定版本的小中大九案例真实仓库矩阵。
+九项均未执行，没有案例 summary 或原始实验日志；真实仓库回放、重复 A/B、
+指定模型、性能指标及 VM/Docker 验证均未执行，不声明外部验收通过。
+
+
+<a id="celery-static-coverage"></a>
+### Celery 静态覆盖收口（2026-11-05）
+
+沿用 Python `.py` 提取，不新增语言或扩展名。注册通过 AST 识别
+`@task`、`@shared_task` 及以 `.task` / `.shared_task` 结尾的点分装饰器，
+支持带参数装饰器；这属于语法识别，不验证装饰器来自真实 Celery app。
+仅将唯一的模块级注册函数作为派发目标，不新增任务节点。
+
+派发将函数体内的 `task.delay()` / `task.apply_async()` 连接到同文件注册，
+或顶层显式 import 指向的注册任务；支持任务别名、模块别名及相对导入。
+既有普通调用边继续连接任务体内 helper。本地 explore 断言覆盖
+`Entry → work → finish`，并检查 heuristic、`celery-dispatch` 与
+`registeredAt` 接线标注。每文件最多连接 80 个不同来源/目标对。
+
+不承诺字符串任务名、`send_task`、canvas group/chain/chord、动态属性、
+运行时任务注册、任意 re-export、broker 投递或 worker 调度。
+未加别名的多段模块 import、嵌套 import、绑定遮蔽、检测到的重赋值、
+冲突定义及多个候选保持无合成边；不按全项目同名任务猜测目标。
+
+来源固定为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758`，
+本次已核对上游 HEAD。Rust 注册与派发提交分别为 `ebb3a61b`、`22097c15`，
+当前实现与注册/派发测试相对派发提交无差异。
+复核既有 `/tmp/rcg259-final.log`：注册 3 项、派发 4 项及 function-reference
+回归 18 项通过，合计 25 passed、0 failed、0 ignored；日志使用
+`target/rust-slot-1`。断言包括导入别名和同名任务隔离、相对多行导入、
+遮蔽/动态调用负例、重复索引节点稳定性，以及移除装饰器后 sync 删除接线。
+本次只核对既有日志、源码与断言，执行文档清单检查和 `git diff --check`，
+没有运行 Cargo，不声明全套回归通过。
+
+依赖批次 261–269（任务 30–38）的九项外部验收按用户 2026-11-03
+修订以“用户取消验收”收口，不再作为支持范围文档的完成门槛。
+[取消验收清单](../benchmarks/upstream-matrices/celery.json) 已由 `3a92a175`
+归档，`cases=[]`、`external_experiments_executed=false`。
+上游合成 fixture 不构成固定版本的小中大九案例真实仓库矩阵。
 九项均未执行，没有案例 summary 或原始实验日志；真实仓库回放、重复 A/B、
 指定模型、性能指标及 VM/Docker 验证均未执行，不声明外部验收通过。

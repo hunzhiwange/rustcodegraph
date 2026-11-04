@@ -170,6 +170,8 @@ Language support is selected automatically from file extensions. RustCodeGraph s
 
 **Pinia and Vuex stores (TypeScript/TSX and JavaScript/JSX):** Follow import-backed Pinia Options store instances into registered actions, and Vuex literal `dispatch`/`commit` calls through statically registered root stores and namespaced modules into actions and mutations. Pinia setup stores, dynamic registration or keys, mapping helpers, and reactive state-to-render execution are outside this coverage. See the [Vue store coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#vue-store-static-coverage) for local validation and limits.
 
+**Celery (Python `.py`):** Follow `delay` and `apply_async` calls on local or explicitly imported registered tasks into task bodies and their static helper calls. Dynamic task names, canvas workflows, broker delivery, and worker scheduling are outside this coverage. See the [Celery coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#celery-static-coverage) for registration rules, local validation, and limits.
+
 **Frontend routes and components:** React, React Router, Next.js, Svelte/SvelteKit, Vue/Vue Router/Nuxt, and Astro.
 
 **Native, mobile, and cross-language flows:** SwiftUI, UIKit, Swift/Objective-C bridging, React Native legacy bridge, React Native TurboModules, React Native native events, Expo Modules, and Fabric/Paper native views.

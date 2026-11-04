@@ -10,6 +10,8 @@
 
 ### New Features
 
+- Follow statically bound Celery task dispatch through `delay` and `apply_async` into registered Python task bodies.
+
 - Follow registered Pinia Options store actions and literal Vuex dispatch and commit chains into their declared handlers.
 
 - Follow registered Redux Toolkit thunk chains and RTK Query React hooks into their statically declared endpoint callbacks.
