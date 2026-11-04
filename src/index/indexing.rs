@@ -33,6 +33,20 @@ pub(super) fn index_facade_changed_files(
                 .filter(|path| detect_language(path, None) == Language::Terraform),
         );
     }
+    // Solidity imports and inherited members can resolve through multiple files.
+    // Replacing a declaration removes incoming edges whose references have already
+    // left the pending queue. Re-extract the Solidity source set so those references
+    // are restored, including previously unresolved/ambiguous matches.
+    if selected_paths
+        .iter()
+        .any(|path| detect_language(path, None) == Language::Solidity)
+    {
+        selected_paths.extend(
+            existing_source_files(project_root)
+                .into_iter()
+                .filter(|path| detect_language(path, None) == Language::Solidity),
+        );
+    }
     // Replacing a target removes its incoming edges. Resolved references are no
     // longer queued, so re-extract Nix importers before that wiring is deleted.
     // Scope this to static Nix file imports; unrelated languages stay incremental.
