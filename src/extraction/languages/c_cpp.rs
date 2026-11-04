@@ -287,6 +287,14 @@ impl LanguageExtractor for CExtractor {
 }
 
 impl LanguageExtractor for CppExtractor {
+    fn pre_parse_for_file(&self, source: &str, file_path: &str) -> Option<String> {
+        if file_path.to_ascii_lowercase().ends_with(".metal") {
+            blank_metal_attributes(source)
+        } else {
+            self.pre_parse(source)
+        }
+    }
+
     fn pre_parse(&self, source: &str) -> Option<String> {
         blank_cuda_constructs(source)
     }
@@ -400,6 +408,68 @@ impl LanguageExtractor for CppExtractor {
     fn extract_import(&self, node: &SyntaxNode, source: &str) -> Option<ImportInfo> {
         extract_c_include(node, source)
     }
+}
+
+// MSL trailing attributes are incompatible with the C++ grammar. Blank only
+// attribute-shaped spans, preserving UTF-8 byte offsets and line endings.
+fn blank_metal_attributes(source: &str) -> Option<String> {
+    static ATTRIBUTE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^\[\[\s*[A-Za-z_]\w*(?:\s*\([^()\n]*\))?(?:\s*,\s*[A-Za-z_]\w*(?:\s*\([^()\n]*\))?)*\s*\]\]").unwrap()
+    });
+    let bytes = source.as_bytes();
+    let mut out = bytes.to_vec();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(b"//") {
+            i += 2;
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+        } else if bytes[i..].starts_with(b"/*") {
+            i += 2;
+            while i < bytes.len() && !bytes[i..].starts_with(b"*/") {
+                i += 1;
+            }
+            i = (i + 2).min(bytes.len());
+        } else if bytes[i..].starts_with(b"R\"") {
+            // C++ raw strings can contain quotes, CUDA tokens and newlines.
+            if let Some(open) = bytes[i + 2..].iter().take(17).position(|b| *b == b'(') {
+                let delimiter = &source[i + 2..i + 2 + open];
+                let close = format!("){delimiter}\"");
+                let start = i + 3 + open;
+                i = source[start..]
+                    .find(&close)
+                    .map_or(bytes.len(), |p| start + p + close.len());
+            } else {
+                i += 1;
+            }
+        } else if matches!(bytes[i], b'"' | b'\'') {
+            let quote = bytes[i];
+            i += 1;
+            while i < bytes.len() {
+                if bytes[i] == b'\\' {
+                    i = (i + 2).min(bytes.len());
+                } else if bytes[i] == quote {
+                    i += 1;
+                    break;
+                } else {
+                    i += 1;
+                }
+            }
+        } else if bytes[i..].starts_with(b"[[") {
+            if let Some(matched) = ATTRIBUTE.find(&source[i..]) {
+                let end = i + matched.end();
+                blank_cuda_span(&mut out[i..end]);
+                i = end;
+            } else {
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    (out != bytes)
+        .then(|| String::from_utf8(out).expect("only complete attribute spans are blanked"))
 }
 
 /// Adapt CUDA to the existing C++ parser without moving any byte or line.

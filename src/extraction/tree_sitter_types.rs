@@ -107,6 +107,11 @@ pub trait LanguageExtractor: Send + Sync {
         None
     }
 
+    /// File-aware compatibility hook; existing adapters keep their source-only behavior.
+    fn pre_parse_for_file(&self, source: &str, _file_path: &str) -> Option<String> {
+        self.pre_parse(source)
+    }
+
     fn function_types(&self) -> &[&'static str];
     fn class_types(&self) -> &[&'static str];
     fn method_types(&self) -> &[&'static str];

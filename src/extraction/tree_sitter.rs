@@ -390,7 +390,7 @@ impl TreeSitterExtractor {
 
         // 某些 grammar 需要在解析前做轻量修正；语言适配器必须保持行号稳定。
         if let Some(extractor) = self.extractor
-            && let Some(transformed) = extractor.pre_parse(&self.source)
+            && let Some(transformed) = extractor.pre_parse_for_file(&self.source, &self.file_path)
         {
             self.source = transformed;
         }

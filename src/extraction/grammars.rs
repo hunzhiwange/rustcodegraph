@@ -82,6 +82,7 @@ pub const EXTENSION_MAP: &[(&str, &str)] = &[
     (".h", "c"),
     (".cpp", "cpp"),
     (".cu", "cpp"),
+    (".metal", "cpp"),
     (".cuh", "cpp"),
     (".cc", "cpp"),
     (".cxx", "cpp"),
