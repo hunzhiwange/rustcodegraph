@@ -6,6 +6,7 @@
 
 mod common;
 mod cpp;
+mod erlang;
 mod exports;
 mod go;
 mod jvm;
@@ -22,6 +23,7 @@ mod terraform;
 mod via;
 
 pub use cpp::{clear_cpp_include_dir_cache, load_cpp_include_dirs};
+pub use erlang::resolve_erlang_reference;
 pub use jvm::resolve_jvm_import;
 pub use mappings::{clear_import_mapping_cache, extract_import_mappings};
 pub use nix::resolve_nix_import;
