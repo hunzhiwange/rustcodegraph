@@ -46,9 +46,19 @@ impl TreeSitterExtractor {
         let Some(caller_id) = self.node_stack.last().cloned() else {
             return;
         };
+        if self.language == Language::Arkts && self.extract_arkts_call(node, &caller_id) {
+            for child in &node.named_children {
+                self.visit_node(child);
+            }
+            return;
+        }
         let callee = if matches!(
             self.language,
-            Language::TypeScript | Language::JavaScript | Language::Tsx | Language::Jsx
+            Language::TypeScript
+                | Language::JavaScript
+                | Language::Tsx
+                | Language::Jsx
+                | Language::Arkts
         ) {
             self.ts_js_call_callee_name(node)
         } else if self.language == Language::Vbnet {
@@ -86,6 +96,126 @@ impl TreeSitterExtractor {
         }
         for child in &node.named_children {
             self.visit_node(child);
+        }
+    }
+
+    // ArkUI stores repeated attribute/argument pairs on the component node.
+    // Iterate children rather than field lookup, which retains only one pair.
+    fn extract_arkts_call(&mut self, node: &SyntaxNode, caller: &str) -> bool {
+        if node.node_type() == "arkui_component_expression" {
+            if let Some(component) = get_child_by_field(node, "function") {
+                self.push_unresolved_reference(
+                    caller,
+                    component.text.clone(),
+                    ReferenceKind::Calls,
+                    node,
+                );
+            }
+            for (index, child) in node.named_children.iter().enumerate() {
+                if child.node_type() == "property_identifier" {
+                    let args = node
+                        .named_children
+                        .get(index + 1)
+                        .filter(|n| n.node_type() == "arguments");
+                    self.extract_arkts_attribute(child, args, caller);
+                }
+            }
+            return true;
+        }
+        if node.node_type() == "leading_dot_expression" {
+            if let Some(name) = node
+                .named_child(0)
+                .filter(|n| n.node_type() == "identifier")
+            {
+                let next = node.parent().and_then(|p| p.next_named_sibling());
+                let args = next
+                    .as_ref()
+                    .and_then(|n| n.named_child(0))
+                    .filter(|n| n.node_type() == "parenthesized_expression");
+                self.extract_arkts_attribute(name, args, caller);
+            }
+            return true;
+        }
+        if let Some(function) = get_child_by_field(node, "function") {
+            if matches!(
+                function.node_type(),
+                "member_expression" | "arkui_dsl_decorator_member_expression"
+            ) {
+                let object = get_child_by_field(function, "object");
+                if function.node_type() == "arkui_dsl_decorator_member_expression"
+                    || object.is_some_and(|n| {
+                        matches!(
+                            n.node_type(),
+                            "call_expression" | "arkui_component_expression"
+                        )
+                    })
+                {
+                    if let Some(property) = get_child_by_field(function, "property") {
+                        self.extract_arkts_attribute(
+                            property,
+                            get_child_by_field(node, "arguments"),
+                            caller,
+                        );
+                    }
+                    return true;
+                }
+            }
+            if function.node_type() == "identifier" {
+                let mut parent = node.parent();
+                while parent.as_ref().is_some_and(|p| {
+                    matches!(p.node_type(), "member_expression" | "call_expression")
+                }) {
+                    parent = parent.and_then(|p| p.parent());
+                }
+                if parent.is_some_and(|p| p.node_type() == "leading_dot_expression") {
+                    self.extract_arkts_attribute(
+                        function,
+                        get_child_by_field(node, "arguments"),
+                        caller,
+                    );
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn extract_arkts_attribute(
+        &mut self,
+        name: &SyntaxNode,
+        args: Option<&SyntaxNode>,
+        caller: &str,
+    ) {
+        self.push_unresolved_reference(
+            caller,
+            format!(".{}", name.text),
+            ReferenceKind::Calls,
+            name,
+        );
+        if name.text.starts_with("on")
+            && name
+                .text
+                .chars()
+                .nth(2)
+                .is_some_and(|c| c.is_ascii_uppercase())
+        {
+            if let Some(args) = args {
+                for arg in &args.named_children {
+                    if arg.node_type() == "member_expression"
+                        && get_child_by_field(arg, "object")
+                            .is_some_and(|n| n.node_type() == "this")
+                    {
+                        if let Some(property) = get_child_by_field(arg, "property") {
+                            self.push_unresolved_reference(
+                                caller,
+                                property.text.clone(),
+                                ReferenceKind::Calls,
+                                arg,
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 

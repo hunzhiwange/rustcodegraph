@@ -1,5 +1,5 @@
-//! ArkTS declaration shapes from upstream codegraph 15483713.
-//! ArkUI calls and reactive semantics are handled separately.
+//! ArkTS declaration and call shapes from upstream codegraph 15483713.
+//! Reactive edge synthesis is handled separately.
 use crate::extraction::tree_sitter_types::LanguageExtractor;
 pub struct ArktsExtractor;
 pub const ARKTS_EXTRACTOR: ArktsExtractor = ArktsExtractor;
@@ -29,7 +29,11 @@ impl LanguageExtractor for ArktsExtractor {
         &[]
     }
     fn call_types(&self) -> &[&'static str] {
-        &[]
+        &[
+            "call_expression",
+            "arkui_component_expression",
+            "leading_dot_expression",
+        ]
     }
     fn variable_types(&self) -> &[&'static str] {
         &[]
