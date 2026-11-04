@@ -62,6 +62,19 @@ pub(super) fn index_facade_changed_files(
                 .filter(|path| detect_language(path, None) == Language::Erlang),
         );
     }
+    // VB.NET imports, aliases and case-insensitive member lookup depend on the
+    // current declaration set. Restore consumed references when a target changes
+    // or reappears, including matches that were previously missing or ambiguous.
+    if selected_paths
+        .iter()
+        .any(|path| detect_language(path, None) == Language::Vbnet)
+    {
+        selected_paths.extend(
+            existing_source_files(project_root)
+                .into_iter()
+                .filter(|path| detect_language(path, None) == Language::Vbnet),
+        );
+    }
     // Replacing a target removes its incoming edges. Resolved references are no
     // longer queued, so re-extract Nix importers before that wiring is deleted.
     // Scope this to static Nix file imports; unrelated languages stay incremental.
