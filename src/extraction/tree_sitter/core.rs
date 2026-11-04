@@ -160,7 +160,13 @@ impl TreeSitterExtractor {
         let extra_visibility = extra.visibility;
         let extra_is_exported = extra.is_exported;
         let extra_docstring = extra.docstring;
-        let id = generate_node_id(&self.file_path, kind, name, node.start_position.row + 1);
+        // Erlang overloads can share both the bare name and source line.
+        let identity = if self.language == Language::Erlang && kind == NodeKind::Function {
+            extra.qualified_name.as_deref().unwrap_or(name)
+        } else {
+            name
+        };
+        let id = generate_node_id(&self.file_path, kind, identity, node.start_position.row + 1);
         let qualified_name = extra
             .qualified_name
             .unwrap_or_else(|| self.build_qualified_name(name));

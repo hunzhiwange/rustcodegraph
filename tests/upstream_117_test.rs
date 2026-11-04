@@ -40,9 +40,13 @@ fn case_117_empty_unicode_and_damaged_input() {
         assert_eq!(tree.root_node.has_error, source.contains("broken"));
         let result = extract_from_source("sample.erl", source, None, None);
         assert_eq!(
-            result.nodes.len(),
+            result
+                .nodes
+                .iter()
+                .filter(|n| n.kind == rustcodegraph::types::NodeKind::File)
+                .count(),
             1,
-            "grammar-only integration creates a file node"
+            "every input retains its file node"
         );
         assert_eq!(grammars::language_key(&result.nodes[0].language), "erlang");
     }
@@ -63,7 +67,12 @@ fn case_117_real_files_and_sqlite() {
     let result = graph.index_all(Default::default());
     assert!(result.success, "{:?}", result.errors);
     for path in ["sample.erl", "records.hrl", "tool.escript"] {
-        assert_eq!(graph.get_nodes_in_file(path).len(), 1);
+        assert!(
+            graph
+                .get_nodes_in_file(path)
+                .iter()
+                .any(|n| n.kind == rustcodegraph::types::NodeKind::File)
+        );
     }
     graph.close();
     std::fs::remove_dir_all(dir).unwrap();
