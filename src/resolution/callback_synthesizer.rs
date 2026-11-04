@@ -15,6 +15,9 @@ use super::types::ResolutionContext;
 
 mod arkts;
 mod callbacks;
+// Consumed by the separate Celery dispatch step.
+#[allow(dead_code)]
+mod celery;
 mod common;
 mod erlang;
 mod gin;
