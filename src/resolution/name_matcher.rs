@@ -35,6 +35,9 @@ pub fn match_reference(
     reference: &UnresolvedRef,
     context: &mut dyn ResolutionContext,
 ) -> Option<ResolvedRef> {
+    if reference.language == Language::Cobol {
+        return crate::resolution::import_resolver::resolve_cobol_reference(reference, context);
+    }
     if reference.language == Language::Vbnet {
         return crate::resolution::import_resolver::resolve_vbnet_reference(reference, context);
     }

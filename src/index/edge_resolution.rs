@@ -79,12 +79,12 @@ pub(super) fn resolve_facade_pending_target<'a>(
     by_qualified: &HashMap<&str, Vec<&'a Node>>,
     by_relaxed: &HashMap<String, Vec<&'a Node>>,
 ) -> Option<&'a Node> {
-    // Terraform, Solidity and VB.NET require strict module/namespace boundaries. The
+    // These languages require strict module/program/namespace boundaries. The
     // authoritative resolver handles these after persistence; global scoring
     // here would leave incorrect edges even when that resolver rejects them.
     if matches!(
         source.language,
-        Language::Terraform | Language::Solidity | Language::Vbnet
+        Language::Terraform | Language::Solidity | Language::Vbnet | Language::Cobol
     ) {
         return None;
     }

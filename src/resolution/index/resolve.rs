@@ -228,6 +228,9 @@ impl<'db> ReferenceResolver<'db> {
     }
 
     pub fn resolve_one(&mut self, reference: &UnresolvedRef) -> Option<ResolvedRef> {
+        if reference.language == Language::Cobol {
+            return crate::resolution::import_resolver::resolve_cobol_reference(reference, self);
+        }
         if reference.language == Language::Vbnet {
             return crate::resolution::import_resolver::resolve_vbnet_reference(reference, self);
         }
