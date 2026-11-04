@@ -45,6 +45,8 @@ pub mod typescript;
 
 #[path = "nix.rs"]
 pub mod nix;
+#[path = "terraform.rs"]
+pub mod terraform;
 pub use nix::{NIX_EXTRACTOR, nix_extractor};
 
 use crate::extraction::tree_sitter_types::LanguageExtractor;
@@ -97,6 +99,7 @@ pub const EXTRACTOR_LANGUAGES: &[&str] = &[
     "luau",
     "objc",
     "nix",
+    "terraform",
 ];
 
 pub fn extractor_for(language: &str) -> Option<&'static dyn LanguageExtractor> {
@@ -123,6 +126,7 @@ pub fn extractor_for(language: &str) -> Option<&'static dyn LanguageExtractor> {
         "luau" => Some(luau_extractor()),
         "objc" => Some(objc_extractor()),
         "nix" => Some(nix_extractor()),
+        "terraform" => Some(&terraform::TERRAFORM_EXTRACTOR),
         _ => None,
     }
 }

@@ -108,6 +108,8 @@ impl Language {
             CodeLanguage::Luau
         } else if lower.contains("lua") {
             CodeLanguage::Lua
+        } else if lower == "terraform" || lower.ends_with("/terraform.wasm") {
+            CodeLanguage::Terraform
         } else if lower == "nix" || lower.ends_with("/nix.wasm") {
             CodeLanguage::Nix
         } else if lower.contains("java") {
@@ -327,6 +329,15 @@ fn native_language(language: CodeLanguage) -> Option<tree_sitter::Language> {
         CodeLanguage::Scala => Some(tree_sitter_scala::LANGUAGE.into()),
         CodeLanguage::ObjC => Some(tree_sitter_objc::LANGUAGE.into()),
         CodeLanguage::Nix => Some(tree_sitter_nix::LANGUAGE.into()),
+        CodeLanguage::Terraform => {
+            unsafe extern "C" {
+                fn tree_sitter_terraform() -> *const ();
+            }
+            // SAFETY: the vendored generated parser exports this static language entry.
+            Some(
+                unsafe { tree_sitter_language::LanguageFn::from_raw(tree_sitter_terraform) }.into(),
+            )
+        }
         CodeLanguage::R => Some(tree_sitter_r::LANGUAGE.into()),
         _ => None,
     }

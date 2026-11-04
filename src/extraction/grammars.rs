@@ -51,6 +51,7 @@ pub const NATIVE_GRAMMAR_REGISTRY: &[(&str, &str)] = &[
     ("luau", "luau"),
     ("objc", "objc"),
     ("nix", "nix"),
+    ("terraform", "terraform"),
 ];
 
 pub const EXTENSION_MAP: &[(&str, &str)] = &[
@@ -113,6 +114,9 @@ pub const EXTENSION_MAP: &[(&str, &str)] = &[
     (".m", "objc"),
     (".mm", "objc"),
     (".nix", "nix"),
+    (".tf", "terraform"),
+    (".tfvars", "terraform"),
+    (".tofu", "terraform"),
     (".xml", "xml"),
     (".properties", "properties"),
 ];
@@ -397,6 +401,7 @@ pub fn get_language_display_name(language: Language) -> &'static str {
         Language::Xml => "XML",
         Language::Properties => "Java properties",
         Language::Nix => "Nix",
+        Language::Terraform => "Terraform",
         Language::Unknown => "Unknown",
     }
 }
@@ -447,6 +452,7 @@ pub fn language_key(language: &Language) -> String {
         Language::Xml => "xml",
         Language::Properties => "properties",
         Language::Nix => "nix",
+        Language::Terraform => "terraform",
         Language::Unknown => "unknown",
     }
     .to_owned()
@@ -486,6 +492,7 @@ fn language_from_key(language: &str) -> Language {
         "xml" => Language::Xml,
         "properties" => Language::Properties,
         "nix" => Language::Nix,
+        "terraform" => Language::Terraform,
         _ => Language::Unknown,
     }
 }
