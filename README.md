@@ -136,7 +136,9 @@ If a workspace has no `.rustcodegraph/` index, the MCP server reports itself ina
 
 ## Supported Languages
 
-**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, and Terraform/OpenTofu.
+**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, Terraform/OpenTofu, and Solidity.
+
+**Solidity (`.sol`):** Search contracts, interfaces, libraries, structs, events, modifiers, and functions; follow unambiguous static calls, indexed imports, and inherited bare member calls. Incremental sync preserves cross-file references. Runtime dispatch, ambiguous overloads, package remapping configuration, and full Solidity compiler semantics are outside this coverage. See the [Solidity coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#solidity-static-coverage) for validation limits.
 
 **Terraform/OpenTofu (`.tf`, `.tofu`):** Search declarations and follow static references, local module inputs and outputs, provider aliases, and unambiguous Cloud Posse component remote-state outputs. Dynamic module sources, remote module loading, and Terraform evaluation are outside this coverage. See the [Terraform coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#terraform-static-coverage) for validation limits.
 

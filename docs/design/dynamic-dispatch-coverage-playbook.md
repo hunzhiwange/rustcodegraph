@@ -239,6 +239,7 @@ rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # tr
 
 | 语言 | 框架 | 测试的规范流程 | 机制 | 地位 |
 |---|---|---|---|---|
+| Solidity | 静态调用 / 导入 / 继承 | 调用方 → 继承 modifier → 基类内部方法；导入别名 → 库函数 | X+R | 静态能力已实现；[覆盖与验收限制](#solidity-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Nix | 静态函数 / 模块加载 | 命名调用；相对 import / callPackage → 模块文件 → 声明 | X+R | 静态能力已实现；[九案例历史证据与验收范围](#nix-static-coverage)。外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | React / 观察者 / EventEmitter / React Router | 状态→渲染；调度→回调；路线→组件 | S+X | ✅ 渲染+调度（excalidraw）； **React Router JSX 路由** `<Route path component={C}/>` (v5) + `element={<C/>}` (v6) → 组件 (react-realworld **0→10, 10/10**)。 + **对象数据路由器** `createBrowserRouter([{path, element/Component}])`（文字形式）； Next.js config/`nextjs-pages` 误报已修复。 🔬 惰性数据路由器（`path: paths.x.path, lazy: () => import()` — 变量路径 + 惰性模块） |
 | TypeScript/JS | Vue/Nuxt | 模板事件（@click→处理程序）；成分组成；反应→渲染 | S+X | ✅ 事件+组合（vitepress S / vben M / element-plus L）； 🔬 反应式 → 渲染（vue-core 代理运行时 — 前沿，延迟） |
@@ -728,3 +729,36 @@ setState 风格的门）； Akka actor 消息调度（无类型）；纯匿名�
 不再作为支持声明门槛。[取消验收清单](../benchmarks/upstream-matrices/terraform.json)
 在 `96133f22` 归档，案例数组为空，并非九案例通过报告。
 真实仓库回放、重复 A/B、性能与 VM/Docker 验证均未执行；不声明这些外部验证通过。
+
+
+<a id="solidity-static-coverage"></a>
+
+### Solidity 静态覆盖收口（2026-11-04）
+
+支持 `.sol` 中的 contract、interface、library、struct、event、modifier、
+函数、构造函数以及 fallback/receive 声明抽取；记录调用、modifier 调用、
+构造与继承引用。仅在目标唯一且位于已索引文件内时解析静态引用，支持普通、
+命名别名与 namespace 导入，以及沿显式基类解析裸成员调用。
+局部成员优先；歧义继承与不可访问的 private/external 基类函数不接边。
+增量同步在文件修改、新增和删除后保留跨文件引用，与干净重建对齐。
+
+此声明不包含完整 Solidity 编译器语义：不解析运行时接收者派发、歧义重载、
+完整多继承线性化或项目 remapping 配置，不下载外部包；不承诺枚举、状态变量、
+自定义 error、emit/revert、using-for 扩展或 modifier 占位符的执行顺序覆盖。
+抽取到成员调用文本并不意味着能够解析其运行时目标。
+
+来源为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758` 的
+`src/extraction/languages/solidity.ts`；本地原生 grammar 固定于
+`b239a95f94cfcc6e7b3e961bc73a28d55e214f02`，详见
+[grammar 来源与可行性记录](upstream-grammars/solidity.md)。
+接线、声明、调用、导入解析、继承解析与增量修复分别见提交
+`085bc498`、`4599d2ae`、`95733643`、`48dc15d7`、`4cb58989`、`06e2e2d9`；
+本地回归用例位于 `tests/upstream_099_test.rs` 至 `tests/upstream_104_test.rs`。
+本次只核对文档与实现、测试断言的一致性，并执行 `git diff --check`，没有重跑 Cargo。
+
+依赖批次 106–114（任务 45–53）的九项真实仓库流程验收适用用户
+2026-11-03 的取消修订，不再作为支持声明门槛。
+[取消验收清单](../benchmarks/upstream-matrices/solidity.json) 在 `c033556e` 归档，
+`cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
+或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
+VM/Docker 验证均未执行，不声明外部验收通过。

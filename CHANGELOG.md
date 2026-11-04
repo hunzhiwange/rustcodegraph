@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Explore Solidity declarations, indexed imports, and unambiguous static calls that stay connected as files change.
+
 - Explore Terraform and OpenTofu declarations and static dependencies across local modules with documented coverage limits.
 
 - Follow Terraform and OpenTofu provider aliases through parent scopes and Cloud Posse remote-state references to unambiguous component outputs.
