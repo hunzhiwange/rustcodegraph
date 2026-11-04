@@ -239,6 +239,7 @@ rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # tr
 
 | 语言 | 框架 | 测试的规范流程 | 机制 | 地位 |
 |---|---|---|---|---|
+| Nix | 静态函数 / 模块加载 | 命名调用；相对 import / callPackage → 模块文件 → 声明 | X+R | 静态能力已实现；[九案例历史证据与验收范围](#nix-static-coverage)。外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | React / 观察者 / EventEmitter / React Router | 状态→渲染；调度→回调；路线→组件 | S+X | ✅ 渲染+调度（excalidraw）； **React Router JSX 路由** `<Route path component={C}/>` (v5) + `element={<C/>}` (v6) → 组件 (react-realworld **0→10, 10/10**)。 + **对象数据路由器** `createBrowserRouter([{path, element/Component}])`（文字形式）； Next.js config/`nextjs-pages` 误报已修复。 🔬 惰性数据路由器（`path: paths.x.path, lazy: () => import()` — 变量路径 + 惰性模块） |
 | TypeScript/JS | Vue/Nuxt | 模板事件（@click→处理程序）；成分组成；反应→渲染 | S+X | ✅ 事件+组合（vitepress S / vben M / element-plus L）； 🔬 反应式 → 渲染（vue-core 代理运行时 — 前沿，延迟） |
 | TypeScript/JS | Svelte / SvelteKit | 模板调用/组合； SvelteKit 操作→api；存储→DOM | X | ✅ 已经很强大（现实世界S/骨架M/shadcn L）：模板`{fn()}`调用，`<Pascal/>`组合，`import * as api`命名空间，`load`→api所有开箱即用。 + 导出常量函数对象提取 (SvelteKit `actions`)。 🔬 `$lib`-来自操作的命名空间 + 存储/反应边界 |
@@ -677,3 +678,33 @@ setState 风格的门）； Akka actor 消息调度（无类型）；纯匿名�
 本次是既有机制的大文件回归修复，不新增语言或框架。控制仓库为 Excalidraw 8bcdca4526867433f99fdfcb55a063668db0c9dc（738 文件，中型），不能与历史 643 文件样本混算。旧索引因体积阈值退回文本扫描，App.tsx 出现 if/return 伪成员，triggerRender 被误标 property。恢复原生 AST 与多行字段分类后，Scene.mutateElement → triggerUpdate → [callback] App.triggerRender → [react-render] App.render → [jsx-render] StaticCanvas → renderStaticScene 在同一次 explore 第一条 Flow 中完整展示，三个边界均带接线位置；返回源码包含 triggerRender 函数体。两次完整新索引节点均为 11553，无节点增长。
 
 维护者明确允许此任务改用当前 Codex 模型，实测两分支均为 gpt-6.1-sol/high、各 n=2，MCP 预热且实际使用。基线耗时 141–179s、总工具 32–37；新版本 115–123s、总工具 25–30；非 MCP 仓库源码 Read/Grep 均为 0。仍未达到 3–5 次工具目标，不能将此条标成所有规模矩阵完成。详细原始摘要、测试与两项已在基线复现的 Java 失败见 [大文件 Flow 报告](../benchmarks/large-file-flow-2026-11-02.md)。
+
+
+<a id="nix-static-coverage"></a>
+
+### Nix 静态覆盖收口（2026-11-04）
+
+支持 `.nix` 的命名绑定、柯里化函数、属性集与继承属性抽取、静态调用，
+以及项目内相对 `import` / `builtins.import` / `callPackage` / `callPackages`
+路径解析（目录使用 `default.nix`）。增量同步保留受影响导入者的接线，
+删除目标或导入者后的结果与重建保持一致。动态路径、动态属性、部分应用、
+内建函数求值与运行时模块组合不在流程覆盖承诺内；不为这些边界猜测合成边。
+
+来源固定为上游 `15483713763f344ff30fb7df92bcf091c7bd9758`。
+本地实现与测试见提交 `105781b9`、`18844f52`、`5827a36b`、`10182c55`、
+`b9371b0d`、`7b1580e4`；这些提交记录原生 grammar、抽取、解析和增量同步的
+聚焦验证，包含真实 parser 与 SQLite 检查。此文档任务未重新运行 Cargo。
+
+[九案例矩阵](../benchmarks/upstream-matrices/nix.md)、
+[固定输入](../benchmarks/upstream-matrices/nix.json)与
+[历史静态 Flow 证据](../benchmarks/upstream-matrices/nix-evidence.json)
+在 `e65171a3` 中归档，覆盖 flake-utils、Home Manager、Nixpkgs 各三个问题。
+证据的实现版本为 `51057670b77b35cb25a9cef587deff82e3828315`；
+各案例保留有序 Flow、节点、相邻边、源码位置及哈希。
+这些记录只支持所选静态路径，不证明完整 Nix 求值或代理性能。
+
+按用户 2026-11-03 修订，批次 70–78 的九项外部验收均按“用户取消验收”收尾：
+未执行对应的真实仓库回放、重复 Agent A/B、指定模型或平台实验，
+不声明 Read/Grep、延迟、工具调用预算或控制仓库回归验收通过。
+上述历史静态记录不替代已取消实验的结果；矩阵说明中的外部运行步骤仅为历史复现信息。
+本次仅核对文档与实现、固定来源及九案例记录的一致性，并执行 `git diff --check`。

@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Explore Nix code with searchable declarations, static calls, and project-relative module imports that stay connected as files change.
+
 - Index large repositories faster by avoiding repeated full-project searches when resolving symbol and member calls.
 
 - Pi reinstall preserves custom launch settings and user switches, while uninstall preserves other servers and configuration comments.
