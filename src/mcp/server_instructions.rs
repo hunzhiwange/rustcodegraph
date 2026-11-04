@@ -21,6 +21,7 @@ round-trips than reading files yourself.
 Flow prioritizes paths connecting the most queried symbols; heuristic links include their mechanism and wiring location.
 Vue store flows use registered Pinia action bindings and literal Vuex dispatch/commit keys with explicit store/module registration; dynamic keys and ambiguous bindings are omitted.
 
+Spring event flows connect literal publishEvent constructions to annotated listeners using package/import types within an application; dynamic arguments and unresolved wildcard imports are omitted.
 MediatR flows connect literal Send/Publish requests to registered Handle methods within the same solution/project; ambiguous Send requests and dynamic arguments are omitted.
 Sidekiq flows connect literal perform_async/perform_in/perform_at receivers to registered instance perform methods in the same app tree; ambiguous and dynamic receivers are omitted.
 Celery flows connect statically bound delay/apply_async calls to decorated task functions; missing registrations and ambiguous or dynamic receivers are omitted.

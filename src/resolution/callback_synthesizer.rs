@@ -28,8 +28,6 @@ mod overrides;
 mod react;
 mod redux;
 mod sidekiq;
-// Registration is consumed by the separate Spring dispatch pass.
-#[allow(dead_code)]
 mod spring_event;
 mod templates;
 mod terraform;
@@ -81,6 +79,7 @@ pub fn synthesize_callback_edges(
     all.extend(celery::dispatch_edges(ctx));
     all.extend(sidekiq::dispatch_edges(ctx));
     all.extend(mediatr::dispatch_edges(ctx));
+    all.extend(spring_event::dispatch_edges(ctx));
     all.extend(react_render_edges(queries, ctx));
     all.extend(react_jsx_child_edges(ctx));
     all.extend(vue_template_edges(ctx));
