@@ -17,6 +17,7 @@ mod python;
 mod re_exports;
 mod rust;
 mod script_requires;
+mod terraform;
 mod via;
 
 pub use cpp::{clear_cpp_include_dir_cache, load_cpp_include_dirs};
@@ -26,4 +27,5 @@ pub use nix::resolve_nix_import;
 pub use path::resolve_import_path;
 pub use php::is_php_include_path_ref;
 pub use re_exports::extract_re_exports;
+pub use terraform::resolve_terraform_reference;
 pub use via::resolve_via_import;

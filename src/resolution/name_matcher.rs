@@ -35,6 +35,9 @@ pub fn match_reference(
     reference: &UnresolvedRef,
     context: &mut dyn ResolutionContext,
 ) -> Option<ResolvedRef> {
+    if reference.language == Language::Terraform {
+        return crate::resolution::import_resolver::resolve_terraform_reference(reference, context);
+    }
     // A missing Nix import must stay unresolved, even if another module has
     // the same basename or a similarly named symbol.
     if reference.language == Language::Nix && reference.reference_kind == ReferenceKind::Imports {

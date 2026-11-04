@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Follow local Terraform and OpenTofu module inputs and outputs across files without mixing same-named declarations from unrelated modules.
+
 - Capture Terraform and OpenTofu dependencies on module outputs, provider aliases, and remote state for reference resolution.
 
 - Search Terraform and OpenTofu resources, data sources, modules, variables, outputs, and local values as indexed code symbols.

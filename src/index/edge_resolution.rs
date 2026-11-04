@@ -79,6 +79,12 @@ pub(super) fn resolve_facade_pending_target<'a>(
     by_qualified: &HashMap<&str, Vec<&'a Node>>,
     by_relaxed: &HashMap<String, Vec<&'a Node>>,
 ) -> Option<&'a Node> {
+    // Terraform addresses require directory/module source boundaries. The
+    // authoritative resolver handles these after persistence; global scoring
+    // here would leave incorrect edges even when that resolver rejects them.
+    if source.language == Language::Terraform {
+        return None;
+    }
     // 解析优先级：完整 qualified name -> 同名候选评分 -> 调用/配置特殊形态 ->
     // `Class.member` 拆分。越靠前越确定，越靠后越保守。
     if let Some(target) = facade_qualified_pending_target(pending, source, by_qualified) {

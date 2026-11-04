@@ -197,6 +197,52 @@ fn emit(
                     .find(|n| n.node_type() == "identifier")
                     .map(|n| get_node_text(n, ctx.source()))
                     .unwrap_or_default();
+                if kind == NodeKind::Module && attr.node_type() == "attribute" {
+                    let reference = if key == "source" {
+                        // Only a direct literal source is a statically known module boundary.
+                        attr.named_children
+                            .iter()
+                            .find(|n| n.node_type() == "expression")
+                            .filter(|n| n.named_children.len() == 1)
+                            .and_then(|n| n.named_children.first())
+                            .filter(|n| {
+                                n.node_type() == "literal_value" && n.named_children.len() == 1
+                            })
+                            .and_then(|n| n.named_children.first())
+                            .filter(|n| n.node_type() == "string_lit")
+                            .map(|n| get_node_text(n, ctx.source()).trim_matches('"').to_owned())
+                            .filter(|s| {
+                                (s.starts_with("./") || s.starts_with("../"))
+                                    && !s.contains("${")
+                                    && !s.contains("%{")
+                            })
+                            .map(|s| {
+                                (
+                                    format!("{}:file:{s}", created.qualified_name),
+                                    ReferenceKind::Imports,
+                                )
+                            })
+                    } else if !["version", "count", "for_each", "providers", "depends_on"]
+                        .contains(&key.as_str())
+                    {
+                        Some((
+                            format!("{}:var.{key}", created.qualified_name),
+                            ReferenceKind::References,
+                        ))
+                    } else {
+                        None
+                    };
+                    if let Some((reference_name, reference_kind)) = reference {
+                        ctx.add_unresolved_reference(UnresolvedReferenceInput {
+                            from_node_id: created.id.clone(),
+                            reference_name,
+                            reference_kind,
+                            line: Some(attr.start_position.row + 1),
+                            column: Some(attr.start_position.column),
+                            file_path: None,
+                        });
+                    }
+                }
                 let provider = kind == NodeKind::Class && key == "provider";
                 let providers = kind == NodeKind::Module && key == "providers";
                 if attr.node_type() == "attribute" && (provider || providers) {

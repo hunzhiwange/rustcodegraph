@@ -228,6 +228,11 @@ impl<'db> ReferenceResolver<'db> {
     }
 
     pub fn resolve_one(&mut self, reference: &UnresolvedRef) -> Option<ResolvedRef> {
+        if reference.language == Language::Terraform {
+            return crate::resolution::import_resolver::resolve_terraform_reference(
+                reference, self,
+            );
+        }
         if self.js_local_binding_blocks(reference) {
             return None;
         }
