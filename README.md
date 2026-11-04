@@ -136,7 +136,9 @@ If a workspace has no `.rustcodegraph/` index, the MCP server reports itself ina
 
 ## Supported Languages
 
-**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, Terraform/OpenTofu, Solidity, and Erlang.
+**Source languages:** TypeScript/TSX, JavaScript/JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Swift, Kotlin, Dart, Pascal/Delphi, Scala, Lua, Luau, Objective-C, R, Nix, Terraform/OpenTofu, Solidity, Erlang, and VB.NET.
+
+**VB.NET (`.vb`):** Search namespaces, classes, modules, methods, properties, and events; follow unambiguous static calls and indexed namespace imports, including aliases and case-insensitive names. Incremental sync preserves cross-file references. Full compiler semantics, runtime event dispatch, and ambiguous overload resolution are outside this coverage. See the [VB.NET coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#vbnet-static-coverage) for grammar and validation limits.
 
 **Erlang (`.erl`, `.hrl`, `.escript`):** Search modules, functions distinguished by arity, and macros; follow static calls, indexed module imports, and local header references. Behaviour callback dispatch has a heuristic bridge when the indexed contract is unambiguous. Incremental sync preserves cross-file references. Full preprocessing, OTP runtime dispatch, and dynamic call evaluation are outside this coverage. See the [Erlang coverage record](docs/design/dynamic-dispatch-coverage-playbook.md#erlang-static-coverage) for validation limits.
 

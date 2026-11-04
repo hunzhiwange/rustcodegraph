@@ -239,6 +239,7 @@ rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # tr
 
 | 语言 | 框架 | 测试的规范流程 | 机制 | 地位 |
 |---|---|---|---|---|
+| VB.NET | 静态调用 / namespace Imports / 属性访问器体 | 属性 Get/Set → 跨文件方法 → 本地方法 | X+R | 静态能力已实现；[覆盖与验收限制](#vbnet-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Erlang | 静态调用 / 导入 / behaviour callback | 静态调用 → 模块函数；变量模块调用 → behaviour 实现 → 本地调用 | X+R+S | 静态能力与启发式桥接已实现；[覆盖与验收限制](#erlang-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Solidity | 静态调用 / 导入 / 继承 | 调用方 → 继承 modifier → 基类内部方法；导入别名 → 库函数 | X+R | 静态能力已实现；[覆盖与验收限制](#solidity-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Nix | 静态函数 / 模块加载 | 命名调用；相对 import / callPackage → 模块文件 → 声明 | X+R | 静态能力已实现；[九案例历史证据与验收范围](#nix-static-coverage)。外部验收已由用户取消，未作为通过项。 |
@@ -796,6 +797,39 @@ VM/Docker 验证均未执行，不声明外部验收通过。
 依赖批次 124–132（任务 63–71）的九项真实仓库流程验收适用用户
 2026-11-03 的取消修订，不再作为支持声明门槛。
 [取消验收清单](../benchmarks/upstream-matrices/erlang.json) 在 `c642ff07` 归档，
+`cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
+或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
+VM/Docker 验证均未执行，不声明外部验收通过。
+
+<a id="vbnet-static-coverage"></a>
+
+### VB.NET 静态覆盖收口（2026-11-04）
+
+支持 `.vb`，抽取 namespace、class、module、Function/Sub 方法、property 与 event
+声明；event 作为 field 保存，property 的 Get/Set 体内普通调用归属于该 property。
+记录 Imports、Inherits、Implements 与静态调用；跨文件按大小写不敏感的完整名称、
+namespace Imports、Imports 别名、Global 名称和当前作用域匹配唯一索引目标，
+不把 namespace 当文件路径，也不以模糊同名匹配补边。
+增量同步覆盖声明变化、目标删除重建、Imports 变化、调用方删除和无变化同步，
+并与干净索引比较节点和边。
+
+不承诺完整 VB 编译器语义、外部程序集加载、泛型/重载类型推断、动态接收者或
+运行时事件派发；Get/Set 普通调用不是事件合成边。当前不单独抽取 interface、
+structure、enum 和局部变量声明。grammar 有列首 Return/label 与 XML literal
+方面的已知限制，末尾缺换行会在解析前补齐，原有源码偏移保持不变。
+
+来源为只读上游 `15483713763f344ff30fb7df92bcf091c7bd9758` 的
+`src/extraction/languages/vbnet.ts`；原生 grammar 固定于
+`538b7087bf80e86004531b392fe1186379c0a2b5`，附该上游版本的 grammar patch，
+详见 [grammar 来源与可行性记录](upstream-grammars/vbnet.md)。
+接线、声明、引用、跨文件解析、访问器静态流程与增量修复分别见提交
+`b8a80314`、`3bafb477`、`97b8b699`、`8ff6599a`、`9f3c4a22`、`95ec511c`；
+本地回归用例为 `tests/upstream_135_test.rs` 至 `tests/upstream_140_test.rs`。
+本次只核对文档、实现与测试断言的一致性，并执行 `git diff --check`，没有重跑 Cargo。
+
+依赖批次 142–150（任务 81–89）的九项真实仓库流程验收适用用户
+2026-11-03 的取消修订，不再作为支持声明门槛。
+[取消验收清单](../benchmarks/upstream-matrices/vbnet.json) 在 `e240ddd0` 归档，
 `cases` 为空，`external_experiments_executed` 为 false；没有九案例 summary
 或原始运行日志，也不将其视作通过报告。真实仓库回放、重复 A/B、性能与
 VM/Docker 验证均未执行，不声明外部验收通过。

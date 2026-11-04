@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Explore VB.NET declarations, indexed namespace imports, and unambiguous static calls that stay connected as files change.
+
 - Explore Erlang modules, arity-aware functions, static references, and heuristic behaviour callback links that stay consistent as files change.
 
 - Explore Solidity declarations, indexed imports, and unambiguous static calls that stay connected as files change.
