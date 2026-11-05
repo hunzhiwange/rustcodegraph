@@ -1369,3 +1369,48 @@ explore Flow 和删除路由后的 sync。本次是文档静态审查，未运�
 cases=[]、external_experiments_executed=false；上游合成 fixture 不替代真实仓库矩阵。
 九项均未执行，无案例 summary 或原始实验日志；真实仓库回放、重复 A/B、
 指定模型、性能指标与 VM/Docker 验证均未执行，不声明外部验收通过。
+
+
+<a id="queue-tier-static-coverage"></a>
+### 队列跨层静态覆盖收口（2026-11-05）
+
+沿用 TypeScript `.ts`/`.tsx` 和 JavaScript `.js`/`.jsx`/`.mjs`/`.cjs`
+提取，不新增扩展名。AST 要求模块级 `new Queue` 的非空、无转义字符串队列名，
+构造器须显式导入 Bull 默认或命名 Queue，或 BullMQ 命名 Queue。
+队列绑定须唯一且未重绑定；跨文件只跟随直接命名导入及显式导出的声明，允许导入别名。
+消费者为 `queue.process(handler)`、`queue.process('job', handler)` 或
+显式导入 BullMQ Worker 的 `new Worker('queue', handler)`；handler 须为
+唯一模块级命名函数声明或绑定到函数表达式/箭头函数的变量，可本地定义或直接命名导入。
+
+函数体中的 `queue.add('job', ...)` 按精确队列名和 job 字面量匹配，
+命名 job 消费者优先于默认消费者，候选不唯一则无边。
+应用范围取最近 `package.json` 所在目录，无标记时使用项目级空范围；
+队列、handler 导入及消费者匹配均受此范围约束，不读取 package 依赖关系。
+合成 calls 边带 heuristic、`queue-job`、channel、queue、event 及消费者注册位置
+`registeredAt`，复用现有函数节点，普通静态调用继续连接 helper；sync 重算接线。
+这是源码语法证据，不验证依赖安装、Redis 连接、部署或队列实际消费情况。
+
+不承诺 Nest `@InjectQueue`/`@Processor`/`@Process`、WorkerHost、匿名回调、
+process concurrency 重载、成员字段接收器、CommonJS require、namespace/default
+队列导入、导出列表或 re-export 链、动态及 template 队列/job 名、跨 package
+派发或 broker 运行时投递；不按队列形状名称或全局同名 handler 猜测目标。
+
+只读上游 HEAD 核对为 `15483713763f344ff30fb7df92bcf091c7bd9758`。
+注册与派发提交分别为 `b09e7224`、`2d76143b`，实现及两份聚焦测试相对后者无差异。
+复核既有 `/tmp/rcg337-final.log`：队列注册 5 项、派发 5 项、HTTP 注册与派发
+各 1 项、框架 18 项、explore 预算 18 项，合计 48 passed、0 failed、0 ignored，
+测试入口为 `target/rust-slot-1/build/debug/deps/`。
+断言覆盖完整 `entry → publish → receive → finish` explore Flow 与接线标注、
+重复索引节点稳定、注册绑定变更和删除后的 sync、直接导入、package 隔离，
+以及动态名称、缺失注册、假 import、遮蔽、重绑定与歧义消费者负例。
+本次只复核既有日志、源码与测试断言，执行文档清单检查和 `git diff --check`，
+未运行 Cargo，不声明新一轮行为测试或全套回归通过。
+
+依赖批次 339–347（任务 108–116）的九项外部验收按用户 2026-11-03 修订
+以“用户取消验收”收口，不再作为静态支持说明的完成门槛。
+[取消验收清单](../benchmarks/upstream-matrices/queue-tier.json) 由 `edf6eb8a`
+归档，`cases=[]`、`external_experiments_executed=false`。
+上游合成 fixture 的 Nest 装饰器和匿名 Worker 回调不代表本地 Rust 支持，
+也不替代小中大九案例真实仓库矩阵。九项均未执行，无案例 summary 或原始实验日志；
+真实仓库回放、重复 A/B、指定模型、性能指标及 VM/Docker 验证均未执行，
+不声明外部验收通过。

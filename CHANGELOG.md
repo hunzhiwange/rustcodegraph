@@ -10,6 +10,8 @@
 
 ### New Features
 
+- Follow literal Bull and BullMQ queue jobs into unambiguous registered handlers and their static helper calls within the same package.
+
 - Follow literal HTTP client requests into unambiguous Express routes and their static handler calls within the same package.
 
 - Follow inline Laravel event publication into statically registered PHP listeners and their helper calls.
