@@ -41,9 +41,6 @@ npm-debug.log*
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
-# Parallels Windows VM SSH/connection config (local machine, see CLAUDE.md)
-.parallels
-
 # RustCodeGraph data directories (in test projects)
 .rustcodegraph/
 

@@ -169,11 +169,11 @@ Tests create temp dirs with `fs.mkdtempSync` and clean up in `afterEach`. They w
 
 ### Windows-gated tests
 
-Behavior that differs by platform (path resolution, drive letters, `SENSITIVE_PATHS`, `%APPDATA%` config dirs, CRLF) must be gated, not assumed. Use `it.runIf(process.platform === 'win32')(...)` for Windows-only assertions and `it.runIf(process.platform !== 'win32')(...)` for POSIX-only ones — e.g. `/etc` is sensitive on POSIX but resolves to `C:\etc` (non-existent) on Windows, so an ungated `/etc` assertion fails on Windows. Validate the Windows side for real (see below); don't merge a Windows-gated test you haven't seen run.
+Behavior that differs by platform (path resolution, drive letters, `SENSITIVE_PATHS`, `%APPDATA%` config dirs, CRLF) must be gated, not assumed. Use `it.runIf(process.platform === 'win32')(...)` for Windows-only assertions and `it.runIf(process.platform !== 'win32')(...)` for POSIX-only ones — e.g. `/etc` is sensitive on POSIX but resolves to `C:\etc` (non-existent) on Windows, so an ungated `/etc` assertion fails on Windows. Validate the Windows side through GitHub Actions `windows-latest` CI.
 
 ## Cross-platform validation
 
-The dev machine — and the default `npm test` target — is **macOS**, so local runs cover the macOS path. The other two platforms aren't here; when a change is platform-sensitive (file watching, sockets / named pipes, path & symlink handling, process lifecycle, inotify budget) validate them for real rather than guessing.
+The dev machine — and the default `npm test` target — is **macOS**, so local runs cover the macOS path. For platform-sensitive changes (file watching, sockets / named pipes, path & symlink handling, process lifecycle, inotify budget), validate Linux with Docker as described below and Windows through GitHub Actions `windows-latest` CI.
 
 ### Linux (Docker)
 
@@ -183,21 +183,13 @@ When asked to test or validate on Linux, use **Docker** — there's no Linux box
 - Run with **`docker run --rm --init`**. The `--init` is load-bearing for any process-lifecycle test (daemon reaping, the #277 PPID watchdog, idle-timeout): without a zombie-reaping PID 1, a SIGKILL'd/exited process lingers as a zombie and `process.kill(pid, 0)` still reports it *alive*, so exit-detection assertions false-fail even though the process did exit.
 - Linux is where the inotify watch budget actually bites: count a process's watches via `/proc/<pid>/fdinfo/*` (sum `^inotify ` lines on the fd whose `readlink` is `anon_inode:inotify`).
 
-### Windows (Parallels VM + SSH)
+### Windows (GitHub Actions CI)
 
-For any Windows-specific PR, bug, or implementation, validate it on the real Windows VM rather than guessing. Connection details live in the gitignored **`.parallels`** file at the repo root (VM name, guest IP, SSH user/key). `prlctl exec` needs Parallels Pro and is unavailable, so SSH is the bridge.
+Windows is a supported platform. Validate its builds and tests through the `Test windows-latest` job in `.github/workflows/test.yml`, which runs `cargo test --workspace --all-features`.
 
-- Connect / run from the Mac host: `ssh <user>@<guest_ip> "..."`. For multi-line work, pipe PowerShell over stdin and **refresh PATH from the registry** first (sshd's session has a stale PATH after winget installs):
-  ```
-  ssh colby@10.211.55.3 "powershell -NoProfile -ExecutionPolicy Bypass -Command -" <<'PS'
-  $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
-  Set-Location C:\dev\rustcodegraph
-  PS
-  ```
-- Clone fresh into a **Windows-local** path (`C:\dev\rustcodegraph`) and `npm ci` there — never run npm against the shared Mac repo, since `esbuild`/`rollup` ship platform-specific binaries.
-- Guest toolchain (winget): Rust stable, Node LTS, Git, and the MSVC build tools/redistributable needed by native Rust dependencies.
-- Fetch a contributor PR head straight from their fork to dodge `pull/<n>/head` lag: `git fetch <fork-url> <branch>` then `git checkout -f FETCH_HEAD`.
-- Known pre-existing Windows failures (they reproduce on `main`, unrelated to your change — confirm against `origin/main` before blaming your PR, and don't let them mask new regressions): `security_test.rs > Session marker symlink resistance > does not follow a pre-planted symlink` (symlink creation needs privileges on Windows); and the `mcp_initialize_test.rs` / `mcp_roots_test.rs` suites, which fail in `afterEach` with `EPERM` removing the temp dir because a spawned `serve --mcp` child still holds the cwd / SQLite file open — a Windows file-locking quirk, not a logic bug.
+- Keep tests for Windows-specific changes and platform differences, and use Windows CI results to determine whether they pass.
+- No local Windows VM, Parallels, or SSH connection details are required; local Windows validation is not a delivery prerequisite.
+- Passing local macOS tests does not mean Windows CI has passed; report the validation status accurately when CI has not run.
 
 ## Releases
 

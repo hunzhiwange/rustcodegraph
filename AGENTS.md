@@ -184,11 +184,11 @@ RustCodeGraph 能影响代理的通道只有低显著性的两类：MCP `initial
 
 ### Windows 条件测试
 
-凡是有平台差异的行为，比如路径解析、盘符、`SENSITIVE_PATHS`、`%APPDATA%` 配置目录、CRLF，都必须显式加平台门控，不能靠想当然。Windows 专用断言使用 `it.runIf(process.platform === 'win32')(...)`，POSIX 专用断言使用 `it.runIf(process.platform !== 'win32')(...)`。例如 `/etc` 在 POSIX 上是敏感路径，但在 Windows 上会解析成不存在的 `C:\etc`，如果不门控，这个 `/etc` 断言在 Windows 上一定失败。Windows 侧必须做真实验证（见下文）；不要合并一个你没亲眼跑过的 Windows-gated 测试。
+凡是有平台差异的行为，比如路径解析、盘符、`SENSITIVE_PATHS`、`%APPDATA%` 配置目录、CRLF，都必须显式加平台门控，不能靠想当然。Windows 专用断言使用 `it.runIf(process.platform === 'win32')(...)`，POSIX 专用断言使用 `it.runIf(process.platform !== 'win32')(...)`。例如 `/etc` 在 POSIX 上是敏感路径，但在 Windows 上会解析成不存在的 `C:\etc`，如果不门控，这个 `/etc` 断言在 Windows 上一定失败。Windows 侧通过 GitHub Actions 的 `windows-latest` CI 验证。
 
 ## 跨平台验证
 
-开发机，以及默认的 `npm test` 目标平台，是 **macOS**，因此本地运行只覆盖 macOS 路径。另两个平台并不在本机上；如果改动涉及平台敏感行为（文件监听、socket/命名管道、路径和符号链接处理、进程生命周期、inotify 配额），必须做真实验证，不能靠猜。
+开发机，以及默认的 `npm test` 目标平台，是 **macOS**，因此本地运行只覆盖 macOS 路径。如果改动涉及平台敏感行为（文件监听、socket/命名管道、路径和符号链接处理、进程生命周期、inotify 配额），Linux 按下文使用 Docker 验证，Windows 通过 GitHub Actions 的 `windows-latest` CI 验证。
 
 ### Linux（Docker）
 
@@ -198,21 +198,13 @@ RustCodeGraph 能影响代理的通道只有低显著性的两类：MCP `initial
 - 运行时使用 **`docker run --rm --init`**。这里的 `--init` 不是可有可无的：凡是测试进程生命周期（daemon 回收、#277 的 PPID watchdog、idle-timeout）都依赖它。没有一个能回收僵尸的 PID 1 时，被 SIGKILL 或自然退出的进程会以 zombie 形式残留，而 `process.kill(pid, 0)` 仍会报告它“活着”，从而让退出检测断言假失败，尽管进程实际上已经退出。
 - Linux 也是 inotify watch budget 真正会触顶的平台。统计某个进程的 watch 数，可以查看 `/proc/<pid>/fdinfo/*`，对那个 `readlink` 为 `anon_inode:inotify` 的 fd，把其中以 `^inotify ` 开头的行数累加起来。
 
-### Windows（Parallels VM + SSH）
+### Windows（GitHub Actions CI）
 
-凡是 Windows 专属的 PR、bug 或实现，都要在真实 Windows VM 上验证，不能靠猜。连接信息存放在仓库根目录里被 gitignore 忽略的 **`.parallels`** 文件中（VM 名称、guest IP、SSH 用户/密钥）。`prlctl exec` 需要 Parallels Pro，这里不可用，所以桥接方式是 SSH。
+Windows 是受支持的平台，相关构建和测试通过 `.github/workflows/test.yml` 的 `Test windows-latest` job 验证，执行 `cargo test --workspace --all-features`。
 
-- 从 Mac 主机连接/执行：`ssh <user>@<guest_ip> "..."`。如果要做多行操作，把 PowerShell 脚本通过 stdin 管道传进去，并且**先从注册表刷新 PATH**，因为 sshd 会话在 winget 安装后拿到的是过期 PATH：
-  ```
-  ssh colby@10.211.55.3 "powershell -NoProfile -ExecutionPolicy Bypass -Command -" <<'PS'
-  $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
-  Set-Location C:\dev\rustcodegraph
-  PS
-  ```
-- 仓库要重新 clone 到 **Windows 本地路径**（`C:\dev\rustcodegraph`）并在那边执行 `npm ci`。不要在共享的 Mac 仓库上直接跑 npm，因为 `esbuild`/`rollup` 带有平台专属二进制。
-- 来宾系统工具链建议通过 winget 安装：Rust stable、Node LTS、Git，以及原生 Rust 依赖所需的 MSVC build tools/redistributable。
-- 如果要取贡献者 fork 上的 PR head，直接从对方 fork 拉，避开 `pull/<n>/head` 的延迟：`git fetch <fork-url> <branch>`，然后 `git checkout -f FETCH_HEAD`。
-- 已知的、与当前改动无关的 Windows 既有失败，需要先确认它们在 `main` 上也能复现，再避免被它们掩盖新的回归：`security_test.rs > Session marker symlink resistance > does not follow a pre-planted symlink`（Windows 上创建 symlink 需要权限）；以及 `mcp_initialize_test.rs` / `mcp_roots_test.rs` 两组测试，它们会在 `afterEach` 删除临时目录时因为一个 `serve --mcp` 子进程仍然占着 cwd / SQLite 文件而报 `EPERM`。这是 Windows 的文件锁怪癖，不是逻辑 bug。
+- Windows 专属改动和平台差异必须保留对应测试，并以 Windows CI 结果判断是否通过。
+- 无需本地 Windows VM、Parallels 或 SSH 连接信息，不把本地 Windows 验证作为交付前提。
+- 本地 macOS 测试通过不代表 Windows CI 已通过；尚未运行 CI 时，如实说明验证状态。
 
 ## 发布
 
