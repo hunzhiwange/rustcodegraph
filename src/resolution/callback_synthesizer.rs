@@ -22,6 +22,7 @@ mod gin;
 mod go;
 mod go_grpc;
 mod java_xml;
+mod laravel_event;
 mod mediatr;
 mod mobile;
 mod overrides;
