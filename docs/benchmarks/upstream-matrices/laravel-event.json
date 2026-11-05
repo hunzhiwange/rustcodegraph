@@ -1,0 +1,67 @@
+{
+  "language_framework": "PHP / Laravel events",
+  "status": "用户取消验收",
+  "user_revision_date": "2026-11-03",
+  "scope": "Source inventory only; real-repository replay, A/B, performance and external platform acceptance were cancelled. No passing external result is claimed.",
+  "source": {
+    "commit": "15483713763f344ff30fb7df92bcf091c7bd9758",
+    "files": [
+      "src/resolution/callback-synthesizer.ts",
+      "__tests__/laravel-event-synthesizer.test.ts"
+    ]
+  },
+  "prerequisite_implementations": [
+    {
+      "batch": 311,
+      "commit": "095f69cf8363c4a3287ef41352f341ac58ebaa47",
+      "implementation": "src/resolution/callback_synthesizer/laravel_event.rs",
+      "local_checks": "tests/upstream_311_test.rs",
+      "validation_note": "Implementation commit and four test definitions inspected: end-to-end explore, stable reindex and incremental removal; provider mapping, application scope and namespace isolation; dynamic/missing/unrelated calls; bracketed namespaces, union types and ambiguous mappings. Tests were not rerun for this documentation task; inspection is not a new passing result."
+    },
+    {
+      "batch": 3,
+      "commit": "191751fa44a5a7f665e5a5b50a6afd8560f63081",
+      "implementation": "scripts/agent-eval/run-matrix-case.py",
+      "local_checks": "tests/upstream_matrix_runner_test.rs",
+      "validation_note": "Runner entry point, test file and prerequisite commit inspected. Runner and external experiments not executed for this task."
+    }
+  ],
+  "cases": [],
+  "source_fixture_inventory": [
+    {
+      "source_file": "__tests__/laravel-event-synthesizer.test.ts",
+      "fixture_kind": "synthetic",
+      "flows": [
+        [
+          "SongService.like",
+          "LoveTrack.handle"
+        ],
+        [
+          "SongService.deleteSongs",
+          "PruneLibrary.handle"
+        ],
+        [
+          "SongService.scan",
+          "WriteScanLog.handle"
+        ],
+        [
+          "SongService.scan",
+          "DeleteStale.handle"
+        ],
+        [
+          "SongService.ownerTest",
+          "SendsTestNotification.handle"
+        ],
+        [
+          "SongService.userTest",
+          "SendsTestNotification.handle"
+        ]
+      ],
+      "note": "Upstream assertions cover typed handles, an untyped handle registered by a provider $listen map, union types and fan-out. Queued job dispatch and a PHP project without Laravel events are negative controls. Source inspection only; these are not real-repository cases, and upstream assertions do not establish identical local Rust coverage."
+    }
+  ],
+  "case_inventory_note": "No pinned small/medium/large real-repository nine-flow matrix was identified in the inspected source test. Repository revisions and size tiers are not invented; synthetic fixtures are not promoted to runnable real-repository cases.",
+  "runner_compatible": false,
+  "runner_note": "This cancellation inventory is not the nine-case array required by run-matrix-case.py and must not be passed to that runner.",
+  "external_experiments_executed": false
+}
