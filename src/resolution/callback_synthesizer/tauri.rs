@@ -42,6 +42,9 @@ fn declared_command(f: &SyntaxNode) -> bool {
 // Reject any shadow/reassignment of the imported name. This deliberately errs
 // on the side of silence even when the conflicting binding is in another scope.
 fn rebound(root: &SyntaxNode, name: &str) -> bool {
+    rebound_except(root, name, None)
+}
+fn rebound_except(root: &SyntaxNode, name: &str, declaration: Option<usize>) -> bool {
     root.descendants_of_type(&[
         "variable_declarator",
         "function_declaration",
@@ -57,6 +60,9 @@ fn rebound(root: &SyntaxNode, name: &str) -> bool {
     ])
     .iter()
     .any(|n| {
+        if n.node_type() == "function_declaration" && Some(n.start_index) == declaration {
+            return false;
+        }
         let target = n
             .child_for_field_name("name")
             .or_else(|| n.child_for_field_name("pattern"))
@@ -316,6 +322,333 @@ pub(super) fn command_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
                     ("command", json!(command)),
                     ("registeredAt", json!(r.at)),
                     ("tier", json!("client→server")),
+                ],
+            ));
+        }
+    }
+    out
+}
+
+// Global literal events only: targeted/window events require additional label
+// evidence and are deliberately excluded rather than joined by name alone.
+struct EventSite {
+    scope: String,
+    event: String,
+    node: Node,
+    line: u64,
+    file: String,
+    rust: bool,
+}
+fn event_literal(n: &SyntaxNode, rust: bool) -> Option<String> {
+    if n.has_error || n.node_type() != if rust { "string_literal" } else { "string" } {
+        return None;
+    }
+    let text = n.text();
+    let value = text.get(1..text.len().checked_sub(1)?)?;
+    (!value.is_empty() && !value.contains('\\') && !value.starts_with("tauri://"))
+        .then(|| value.to_owned())
+}
+fn event_handler(
+    root: &SyntaxNode,
+    nodes: &[Node],
+    cb: &SyntaxNode,
+    rust: bool,
+    line: u64,
+) -> Option<Node> {
+    if matches!(
+        cb.node_type(),
+        "arrow_function" | "function_expression" | "closure_expression"
+    ) {
+        return enclosing_fn(nodes, line);
+    }
+    if cb.node_type() != "identifier" {
+        return None;
+    }
+    let name = cb.text();
+    // Resolve only a unique file-level declaration, never a global namesake.
+    let declarations: Vec<_> = root
+        .descendants_of_type(&[if rust {
+            "function_item"
+        } else {
+            "function_declaration"
+        }])
+        .into_iter()
+        .filter(|f| field(f, "name").as_deref() == Some(&name))
+        .collect();
+    if declarations.len() != 1 {
+        return None;
+    }
+    let declaration = declarations[0];
+    if !declaration.parent().is_some_and(|p| {
+        matches!(
+            p.node_type(),
+            "program" | "source_file" | "export_statement"
+        )
+    }) {
+        return None;
+    }
+    if !rust {
+        if rebound_except(root, &name, Some(declaration.start_index)) {
+            return None;
+        }
+    }
+    let candidates: Vec<_> = nodes
+        .iter()
+        .filter(|n| {
+            n.kind == NodeKind::Function
+                && n.name == name
+                && n.start_line <= declaration.start_position.row as u64 + 1
+                && n.end_line >= declaration.end_position.row as u64 + 1
+        })
+        .collect();
+    (candidates.len() == 1).then(|| candidates[0].clone())
+}
+fn tauri_receiver_type(root: &SyntaxNode, ty: &str) -> bool {
+    let ty = ty.trim_start_matches('&').trim();
+    if matches!(ty, "tauri::AppHandle" | "tauri::App") {
+        return true;
+    }
+    if !matches!(ty, "AppHandle" | "App") {
+        return false;
+    }
+    // Only direct, unaliased imports. Local definitions and aliases stay silent.
+    if root
+        .descendants_of_type(&["struct_item", "enum_item", "type_item", "use_as_clause"])
+        .iter()
+        .any(|n| field(n, "name").or_else(|| field(n, "alias")).as_deref() == Some(ty))
+    {
+        return false;
+    }
+    let imports = root.descendants_of_type(&["use_declaration"]);
+    let direct = format!("usetauri::{ty};");
+    imports
+        .iter()
+        .filter(|n| {
+            let text: String = n.text().chars().filter(|c| !c.is_whitespace()).collect();
+            text == direct
+                || text
+                    .strip_prefix("usetauri::{")
+                    .and_then(|s| s.strip_suffix("};"))
+                    .is_some_and(|items| items.split(',').any(|item| item == ty))
+        })
+        .count()
+        == 1
+}
+pub(super) fn event_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
+    let files = ctx.get_all_files();
+    let apps: HashSet<_> = files
+        .iter()
+        .filter(|f| f.ends_with(".rs"))
+        .filter_map(|f| app(f))
+        .collect();
+    let mut emits = Vec::new();
+    let mut listens = Vec::new();
+    for file in &files {
+        let rust = file.ends_with(".rs");
+        let lang = if rust {
+            Language::Rust
+        } else if file.ends_with(".ts") || file.ends_with(".tsx") {
+            Language::TypeScript
+        } else if [".js", ".jsx", ".mjs", ".cjs"]
+            .iter()
+            .any(|s| file.ends_with(s))
+        {
+            Language::JavaScript
+        } else {
+            continue;
+        };
+        let scope = if rust {
+            app(file)
+        } else {
+            apps.iter()
+                .filter(|a| within(file, a))
+                .max_by_key(|a| a.len())
+                .cloned()
+        };
+        let Some(scope) = scope else {
+            continue;
+        };
+        let Some(source) = ctx.read_file(file) else {
+            continue;
+        };
+        let Some(root) = parse(&source, lang) else {
+            continue;
+        };
+        let nodes = ctx.get_nodes_in_file(file);
+        let imports = ctx.get_import_mappings(file, lang);
+        let mut bindings = BTreeMap::new();
+        if !rust {
+            for i in &imports {
+                if i.source != "@tauri-apps/api/event"
+                    || i.is_default
+                    || rebound(&root, &i.local_name)
+                    || imports
+                        .iter()
+                        .filter(|j| j.local_name == i.local_name)
+                        .count()
+                        != 1
+                {
+                    continue;
+                }
+                for method in ["emit", "listen", "once"] {
+                    if i.is_namespace {
+                        bindings.insert(format!("{}.{method}", i.local_name), method);
+                    } else if i.exported_name == method {
+                        bindings.insert(i.local_name.clone(), method);
+                    }
+                }
+            }
+        }
+        for call in root.descendants_of_type(&["call_expression"]) {
+            if call.has_error {
+                continue;
+            }
+            let Some(function) = call.child_for_field_name("function") else {
+                continue;
+            };
+            let method = if rust {
+                if function.node_type() != "field_expression" {
+                    continue;
+                }
+                let Some(receiver) = field(function, "value") else {
+                    continue;
+                };
+                let Some(method) = field(function, "field") else {
+                    continue;
+                };
+                if !matches!(method.as_str(), "emit" | "listen" | "once") {
+                    continue;
+                }
+                // Require an explicitly typed Tauri receiver in this function.
+                let functions: Vec<_> = root
+                    .descendants_of_type(&["function_item"])
+                    .into_iter()
+                    .filter(|f| f.start_index <= call.start_index && f.end_index >= call.end_index)
+                    .collect();
+                let Some(owner) = functions
+                    .into_iter()
+                    .min_by_key(|f| f.end_index - f.start_index)
+                else {
+                    continue;
+                };
+                let proven = owner
+                    .child_for_field_name("parameters")
+                    .is_some_and(|params| {
+                        params.named_children.iter().any(|p| {
+                            field(p, "pattern").as_deref() == Some(&receiver)
+                                && p.child_for_field_name("type")
+                                    .is_some_and(|t| tauri_receiver_type(&root, &t.text()))
+                        })
+                    });
+                let shadowed_closure = owner
+                    .descendants_of_type(&["closure_expression"])
+                    .iter()
+                    .any(|c| {
+                        c.child_for_field_name("parameters").is_some_and(|p| {
+                            p.descendants_of_type(&["identifier"])
+                                .iter()
+                                .any(|n| n.text() == receiver)
+                        })
+                    });
+                if !proven
+                    || shadowed_closure
+                    || owner
+                        .descendants_of_type(&["let_declaration", "assignment_expression"])
+                        .iter()
+                        .any(|n| {
+                            field(n, "pattern").or_else(|| field(n, "left")).as_deref()
+                                == Some(&receiver)
+                        })
+                {
+                    continue;
+                }
+                method
+            } else {
+                let Some(method) = bindings.get(&function.text()) else {
+                    continue;
+                };
+                method.to_string()
+            };
+            let Some(args) = call.child_for_field_name("arguments") else {
+                continue;
+            };
+            let args: Vec<_> = args
+                .named_children
+                .iter()
+                .filter(|n| !matches!(n.node_type(), "comment" | "line_comment" | "block_comment"))
+                .collect();
+            let Some(event) = args.first().and_then(|n| event_literal(n, rust)) else {
+                continue;
+            };
+            let line = call.start_position.row as u64 + 1;
+            let node = if method == "emit" {
+                enclosing_fn(&nodes, line)
+            } else {
+                args.get(1)
+                    .and_then(|cb| event_handler(&root, &nodes, cb, rust, line))
+            };
+            let Some(node) = node else {
+                continue;
+            };
+            let site = EventSite {
+                scope: scope.clone(),
+                event,
+                node,
+                line,
+                file: file.clone(),
+                rust,
+            };
+            if method == "emit" {
+                emits.push(site);
+            } else {
+                listens.push(site);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for e in &emits {
+        let targets: Vec<_> = listens
+            .iter()
+            .filter(|l| l.scope == e.scope && l.event == e.event)
+            .collect();
+        let sources: HashSet<_> = emits
+            .iter()
+            .filter(|s| s.scope == e.scope && s.event == e.event)
+            .map(|s| &s.node.id)
+            .collect();
+        if targets
+            .iter()
+            .map(|l| &l.node.id)
+            .collect::<HashSet<_>>()
+            .len()
+            > super::common::EVENT_FANOUT_CAP
+            || sources.len() > super::common::EVENT_FANOUT_CAP
+        {
+            continue;
+        }
+        for l in targets {
+            if e.node.id == l.node.id || !seen.insert((e.node.id.clone(), l.node.id.clone())) {
+                continue;
+            }
+            out.push(edge(
+                &e.node.id,
+                &l.node.id,
+                EdgeKind::Calls,
+                Some(e.line),
+                "tauri-event",
+                [
+                    ("channel", json!("event")),
+                    ("event", json!(e.event)),
+                    ("registeredAt", json!(format!("{}:{}", l.file, l.line))),
+                    (
+                        "tier",
+                        json!(match (e.rust, l.rust) {
+                            (true, false) => "server→client",
+                            (false, true) => "client→server",
+                            _ => "same-side",
+                        }),
+                    ),
                 ],
             ));
         }

@@ -97,8 +97,9 @@ pub fn synthesize_callback_edges(
     all.extend(queue_tier::dispatch_edges(ctx));
     let _ = queries.delete_socket_dispatch_edges();
     all.extend(socket_tier::dispatch_edges(ctx));
-    let _ = queries.delete_tauri_command_edges();
+    let _ = queries.delete_tauri_dispatch_edges();
     all.extend(tauri::command_edges(ctx));
+    all.extend(tauri::event_edges(ctx));
     all.extend(react_render_edges(queries, ctx));
     all.extend(react_jsx_child_edges(ctx));
     all.extend(vue_template_edges(ctx));

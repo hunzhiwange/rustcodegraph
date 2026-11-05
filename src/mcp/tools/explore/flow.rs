@@ -376,6 +376,12 @@ fn format_flow_path(path: &[FlowStep]) -> String {
                             .and_then(|v| v.as_str())
                             .map(|tier| format!("; socket {tier}"))
                             .unwrap_or_default()
+                    } else if mechanism.starts_with("tauri-") {
+                        metadata
+                            .get("tier")
+                            .and_then(|v| v.as_str())
+                            .map(|tier| format!("; {tier}"))
+                            .unwrap_or_default()
                     } else {
                         String::new()
                     };
