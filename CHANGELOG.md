@@ -6,6 +6,8 @@
 
 - Restore clean Clippy checks for source builds, including installer code and regression tests.
 
+- Fix building from source on Windows with MSVC when compiling the COBOL parser.
+
 - Preserve main flow source evidence before related code and caller summaries in `rustcodegraph_explore`, while respecting file and response limits.
 
 - Keep key calls and wiring statements visible when `rustcodegraph_explore` shows excerpts from long methods, with original line numbers and explicit notices for omitted evidence.

@@ -303,7 +303,7 @@ index 6d48b47..e700a18 100644
      _NOT_GREATER: $ => /([nN][oO][tT][ \t]+(>|[gG][rR][eE][aA][tT][eE][rR]))/,
  
 diff --git a/src/scanner.c b/src/scanner.c
-index 6c1ae90..3382988 100644
+index 6c1ae90f..959d3d68 100644
 --- a/src/scanner.c
 +++ b/src/scanner.c
 @@ -1,4 +1,5 @@
@@ -312,7 +312,7 @@ index 6c1ae90..3382988 100644
  #include <wctype.h>
  
  enum TokenType {
-@@ -8,10 +9,21 @@ enum TokenType {
+@@ -8,17 +9,27 @@ enum TokenType {
      LINE_COMMENT,
      COMMENT_ENTRY,
      multiline_string,
@@ -335,16 +335,33 @@ index 6c1ae90..3382988 100644
  }
  
  static bool is_white_space(int c) {
-@@ -31,7 +43,7 @@ char* any_content_keyword[] = {
+     return iswspace(c) || c == ';' || c == ',';
+ }
+ 
+-const int number_of_comment_entry_keywords = 9;
+ char* any_content_keyword[] = {
+     "author",
+     "installlation",
+@@ -31,7 +42,10 @@ char* any_content_keyword[] = {
      "procedure division",
  };
  
 -static bool start_with_word( TSLexer *lexer, char *words[], int number_of_words) {
-+static bool start_with_word( TSLexer *lexer, char *words[], int number_of_words, int width) {
++static bool start_with_word(TSLexer *lexer, int width) {
++    // MSVC does not support variable-length arrays; derive a C constant
++    // expression from the only keyword table used by this scanner.
++    enum { number_of_words = sizeof(any_content_keyword) / sizeof(any_content_keyword[0]) };
      while(lexer->lookahead == ' ' || lexer->lookahead == '\t') {
          lexer->advance(lexer, true);
      }
-@@ -45,7 +57,7 @@ static bool start_with_word( TSLexer *lexer, char *words[], int number_of_words)
+@@ -39,13 +53,13 @@ static bool start_with_word( TSLexer *lexer, char *words[], int number_of_words)
+     char *keyword_pointer[number_of_words];
+     bool continue_check[number_of_words];
+     for(int i=0; i<number_of_words; ++i) {
+-        keyword_pointer[i] = words[i];
++        keyword_pointer[i] = any_content_keyword[i];
+         continue_check[i] = true;
+     }
  
      while(true) {
          // At the end of the line
@@ -353,7 +370,7 @@ index 6c1ae90..3382988 100644
              return false;
          }
  
-@@ -58,7 +70,7 @@ static bool start_with_word( TSLexer *lexer, char *words[], int number_of_words)
+@@ -58,7 +72,7 @@ static bool start_with_word( TSLexer *lexer, char *words[], int number_of_words)
          }
  
          if(all_match_failed) {
@@ -362,7 +379,7 @@ index 6c1ae90..3382988 100644
              lexer->advance(lexer, true)) {
              }
              return false;
-@@ -94,6 +106,9 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
+@@ -94,6 +108,9 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
          return false;
      }
  
@@ -372,7 +389,7 @@ index 6c1ae90..3382988 100644
      if(valid_symbols[WHITE_SPACES]) {
          if(is_white_space(lexer->lookahead)) {
              while(is_white_space(lexer->lookahead)) {
-@@ -106,9 +121,23 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
+@@ -106,9 +123,23 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
      }
  
      if(valid_symbols[LINE_PREFIX_COMMENT] && lexer->get_column(lexer) <= 5) {
@@ -397,7 +414,7 @@ index 6c1ae90..3382988 100644
          lexer->result_symbol = LINE_PREFIX_COMMENT;
          lexer->mark_end(lexer);
          return true;
-@@ -132,7 +161,7 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
+@@ -132,7 +163,7 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
      }
  
      if(valid_symbols[LINE_SUFFIX_COMMENT]) {
@@ -406,16 +423,16 @@ index 6c1ae90..3382988 100644
              while(lexer->lookahead != '\n' && lexer->lookahead != 0) {
                  lexer->advance(lexer, true);
              }
-@@ -143,7 +172,7 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
+@@ -143,7 +174,7 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
      }
  
      if(valid_symbols[COMMENT_ENTRY]) {
 -        if(!start_with_word(lexer, any_content_keyword, number_of_comment_entry_keywords)) {
-+        if(!start_with_word(lexer, any_content_keyword, number_of_comment_entry_keywords, width)) {
++        if(!start_with_word(lexer, width)) {
              lexer->mark_end(lexer);
              lexer->result_symbol = COMMENT_ENTRY;
              return true;
-@@ -152,18 +181,66 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
+@@ -152,18 +183,66 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
          }
      }
  
@@ -486,7 +503,7 @@ index 6c1ae90..3382988 100644
                  lexer->mark_end(lexer);
                  return true;
              }
-@@ -187,7 +264,7 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
+@@ -187,7 +266,7 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
              }
  
              lexer->advance(lexer, true);
@@ -495,7 +512,7 @@ index 6c1ae90..3382988 100644
                  lexer->advance(lexer, true);
              }
          }
-@@ -197,11 +274,19 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
+@@ -197,11 +276,19 @@ bool tree_sitter_COBOL_external_scanner_scan(void *payload, TSLexer *lexer,
  }
  
  unsigned tree_sitter_COBOL_external_scanner_serialize(void *payload, char *buffer) {

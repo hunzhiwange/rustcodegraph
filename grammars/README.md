@@ -41,11 +41,13 @@ CI uses `actions/checkout` with `submodules: true` for this reason.
 | CFML | [cfmleditor/tree-sitter-cfml](https://github.com/cfmleditor/tree-sitter-cfml) | `24051c091c9c1a69b36914533aee7aa3286d5526` | `cfml/src`, `cfscript/src` |
 | ArkTS | [harmony-contrib/tree-sitter-arkts](https://github.com/harmony-contrib/tree-sitter-arkts) | `56f7fc288715befe92c734d603f9e6bc3c65d2a8` | `src` |
 
-VB.NET and COBOL need the existing CodeGraph patches from commit
-`15483713763f344ff30fb7df92bcf091c7bd9758`. Their SHA-256 values are:
+VB.NET and COBOL use CodeGraph patches originating from commit
+`15483713763f344ff30fb7df92bcf091c7bd9758`. The COBOL patch additionally
+replaces variable-length scanner arrays with compile-time sizes derived from its
+keyword table so it compiles with Windows MSVC. The current SHA-256 values are:
 
 - VB.NET: `89124753d87a89a54f3f915bfdbec61cff81d3c6106fbd243633440233fbb8fa`
-- COBOL: `1ac407155e29e0b90e34b662f07f0d63ce3a0af310afdd40b4ed5b674b672a1d`
+- COBOL: `331b7a1114c130cc053563e57553c3728ebf833028ad359729eb56da8d8d9a7f`
 
 The patches and generation configurations are kept here; all prepared C sources live
 only in ignored `.grammar-build/`. Unpatched grammars are staged there unchanged
