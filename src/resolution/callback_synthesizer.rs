@@ -27,6 +27,7 @@ mod laravel_event;
 mod mediatr;
 mod mobile;
 mod overrides;
+mod queue_tier;
 mod react;
 mod redux;
 mod sidekiq;
@@ -90,6 +91,7 @@ pub fn synthesize_callback_edges(
     all.extend(laravel_event::dispatch_edges(ctx));
     let _ = queries.delete_http_dispatch_edges();
     all.extend(http_tier::dispatch_edges(ctx));
+    all.extend(queue_tier::dispatch_edges(ctx));
     all.extend(react_render_edges(queries, ctx));
     all.extend(react_jsx_child_edges(ctx));
     all.extend(vue_template_edges(ctx));
