@@ -150,10 +150,196 @@ struct FlowStep {
     edge: Option<Edge>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) enum AnchorKind {
+    Definition,
+    Call,
+    Wiring,
+    Mechanism,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct SourceAnchor {
+    pub file_path: String,
+    pub line: u64,
+    pub owner_id: Option<String>,
+    pub kind: AnchorKind,
+}
+
+pub(super) struct FlowPlan {
+    paths: Vec<Vec<FlowStep>>,
+    pub anchors: Vec<SourceAnchor>,
+    pub gaps: Vec<String>,
+}
+
+impl FlowPlan {
+    // Validate against indexed ranges only. No filesystem reads or path rewriting:
+    // source rendering continues to own the existing project path safety boundary.
+    fn add_location(
+        &mut self,
+        cg: &mut crate::CodeGraph,
+        at: &str,
+        owner_id: Option<String>,
+        kind: AnchorKind,
+    ) -> bool {
+        let location = at.rsplit_once(':').and_then(|(file, line)| {
+            let line = line.parse::<u64>().ok().filter(|line| *line > 0)?;
+            cg.get_file(file)?;
+            let nodes = cg.get_nodes_in_file(file);
+            let last = nodes.iter().map(|n| n.end_line).max().unwrap_or(0);
+            if line > last {
+                return None;
+            }
+            let owner_id = owner_id.or_else(|| {
+                nodes
+                    .iter()
+                    .filter(|n| is_callable(n) && n.start_line <= line && line <= n.end_line)
+                    .min_by_key(|n| (n.end_line - n.start_line, &n.id))
+                    .map(|n| n.id.clone())
+            });
+            Some(SourceAnchor {
+                file_path: file.to_string(),
+                line,
+                owner_id,
+                kind,
+            })
+        });
+        if let Some(anchor) = location {
+            if !self.anchors.contains(&anchor) {
+                self.anchors.push(anchor);
+            }
+            true
+        } else {
+            self.gaps
+                .push(format!("Unverified source evidence location: {at}"));
+            false
+        }
+    }
+
+    pub fn build(cg: &mut crate::CodeGraph, named: &[Node]) -> Self {
+        let mut plan = Self {
+            paths: named_flow_paths(cg, named),
+            anchors: Vec::new(),
+            gaps: Vec::new(),
+        };
+        // Collect from the selected paths, never run another graph search.
+        for path in plan.paths.clone() {
+            for (index, step) in path.iter().enumerate() {
+                plan.add_location(
+                    cg,
+                    &format!("{}:{}", step.node.file_path, step.node.start_line),
+                    Some(step.node.id.clone()),
+                    AnchorKind::Definition,
+                );
+                let Some(edge) = &step.edge else {
+                    continue;
+                };
+                let dispatcher = &path[index - 1].node;
+                if let Some(line) = edge.line {
+                    plan.add_location(
+                        cg,
+                        &format!("{}:{line}", dispatcher.file_path),
+                        Some(dispatcher.id.clone()),
+                        AnchorKind::Call,
+                    );
+                }
+                let Some(metadata) = &edge.metadata else {
+                    continue;
+                };
+                if let Some(at) = metadata.get("registeredAt").and_then(|v| v.as_str()) {
+                    plan.add_location(cg, at, None, AnchorKind::Wiring);
+                } else if metadata.contains_key("synthesizedBy") {
+                    plan.gaps.push(format!(
+                        "Missing wiring location: {} -> {}",
+                        dispatcher.id, step.node.id
+                    ));
+                }
+                if metadata.get("synthesizedBy").and_then(|v| v.as_str()) != Some("callback") {
+                    continue;
+                }
+                let Some(via) = metadata.get("via").and_then(|v| v.as_str()) else {
+                    plan.gaps
+                        .push(format!("Missing callback registrar: {}", dispatcher.id));
+                    continue;
+                };
+                let file_nodes = cg.get_nodes_in_file(&dispatcher.file_path);
+                if let Some(registrar) = unique_registrar(dispatcher, via, &file_nodes) {
+                    plan.add_location(
+                        cg,
+                        &format!("{}:{}", registrar.file_path, registrar.start_line),
+                        Some(registrar.id.clone()),
+                        AnchorKind::Mechanism,
+                    );
+                } else {
+                    plan.gaps.push(format!(
+                        "Callback registrar is missing or ambiguous: {} via {via}",
+                        dispatcher.id
+                    ));
+                }
+            }
+        }
+        plan.gaps.sort();
+        plan.gaps.dedup();
+        plan
+    }
+
+    pub fn protected_nodes(&self) -> Vec<Node> {
+        let mut nodes = self
+            .paths
+            .iter()
+            .flatten()
+            .map(|s| s.node.clone())
+            .collect();
+        dedupe_nodes(&mut nodes);
+        nodes
+    }
+}
+
+fn is_callable(node: &Node) -> bool {
+    matches!(
+        node.kind,
+        NodeKind::Function | NodeKind::Method | NodeKind::Component
+    )
+}
+
+fn unique_registrar<'a>(dispatcher: &Node, via: &str, nodes: &'a [Node]) -> Option<&'a Node> {
+    let scope = owning_type(dispatcher, nodes);
+    let mut candidates = nodes.iter().filter(|n| {
+        n.file_path == dispatcher.file_path
+            && n.name == via
+            && is_callable(n)
+            && scope.is_none_or(|scope| owning_type(n, nodes) == Some(scope))
+    });
+    let first = candidates.next()?;
+    candidates.next().is_none().then_some(first)
+}
+
+fn owning_type<'a>(node: &Node, nodes: &'a [Node]) -> Option<&'a str> {
+    nodes
+        .iter()
+        .filter(|parent| {
+            parent.id != node.id
+                && parent.file_path == node.file_path
+                && (parent.start_line, parent.start_column) <= (node.start_line, node.start_column)
+                && (parent.end_line, parent.end_column) >= (node.end_line, node.end_column)
+                && matches!(
+                    parent.kind,
+                    NodeKind::Class
+                        | NodeKind::Struct
+                        | NodeKind::Interface
+                        | NodeKind::Trait
+                        | NodeKind::Protocol
+                )
+        })
+        .min_by_key(|n| (n.end_line - n.start_line, &n.id))
+        .map(|n| n.id.as_str())
+}
+
 pub(super) fn format_flow_section(
     cg: &mut crate::CodeGraph,
     named_nodes: &[Node],
     query_tokens: &HashSet<String>,
+    plan: &FlowPlan,
 ) -> Vec<String> {
     let mut lines = vec!["## Flow (call path among the symbols you queried)".to_string()];
     if named_nodes.len() < 2 {
@@ -161,15 +347,13 @@ pub(super) fn format_flow_section(
         return lines;
     }
 
-    let paths = named_flow_paths(cg, named_nodes);
-
-    if paths.is_empty() {
+    if plan.paths.is_empty() {
         lines.push("- No static call path found among the queried symbols; source context is included below.".to_string());
         return lines;
     }
 
-    for path in paths {
-        lines.push(format!("- {}", format_flow_path(&path)));
+    for path in &plan.paths {
+        lines.push(format!("- {}", format_flow_path(path)));
     }
     lines
 }
@@ -308,24 +492,6 @@ fn named_flow_paths(cg: &mut crate::CodeGraph, named_nodes: &[Node]) -> Vec<Vec<
     selected
 }
 
-pub(super) fn protected_flow_nodes(cg: &mut crate::CodeGraph, named_nodes: &[Node]) -> Vec<Node> {
-    // Protect only the same bounded paths shown in Flow, with at most one
-    // unnamed bridge. This is source allocation, not a broader graph search.
-    let mut nodes = named_flow_paths(cg, named_nodes)
-        .into_iter()
-        .filter(|path| {
-            path.iter()
-                .filter(|step| !named_nodes.iter().any(|n| n.id == step.node.id))
-                .count()
-                <= 1
-        })
-        .flatten()
-        .map(|step| step.node)
-        .collect::<Vec<_>>();
-    dedupe_nodes(&mut nodes);
-    nodes
-}
-
 fn is_flow_edge(kind: EdgeKind) -> bool {
     // 除 calls 外纳入 references/instantiates/decorates/overrides，是为了覆盖
     // 框架和合成边带来的“可执行流”。
@@ -424,5 +590,200 @@ fn flow_hint_for_query(cg: &mut crate::CodeGraph, query_tokens: &HashSet<String>
         "named symbols gathered into the file context below".to_string()
     } else {
         callables.join(" -> ")
+    }
+}
+
+#[cfg(test)]
+mod evidence_tests {
+    use super::*;
+    use crate::{CodeGraph, IndexOptions};
+
+    struct TempProject(std::path::PathBuf);
+    impl TempProject {
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+    impl Drop for TempProject {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    fn fixture() -> (TempProject, CodeGraph, Vec<Node>) {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let root = TempProject(std::env::temp_dir().join(format!(
+            "rcg-evidence-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        )));
+        std::fs::create_dir_all(root.path()).unwrap();
+        std::fs::write(
+            root.path().join("App.tsx"),
+            r#"class Scene {
+ callbacks = new Set<() => void>();
+ triggerUpdate() { for (const callback of this.callbacks) { callback(); } }
+ onUpdate(cb: () => void) { this.callbacks.add(cb); }
+ mutateElement() { this.triggerUpdate(); }
+}
+function renderStaticScene() { return 1; }
+function StaticCanvas() { renderStaticScene(); return null; }
+class Other { onUpdate(cb: unknown) {} }
+class App {
+ scene: Scene = new Scene();
+ componentDidMount() { this.scene.onUpdate(this.triggerRender); }
+ triggerRender = () => { this.setState({}); };
+ setState(value: unknown) {}
+ render() {
+  return (
+   <StaticCanvas />
+  );
+ }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("Other.ts"),
+            "export function onUpdate() {}\n",
+        )
+        .unwrap();
+        let mut cg = CodeGraph::init_sync(root.path()).unwrap();
+        assert!(cg.index_all(IndexOptions::default()).success);
+        let nodes = [
+            "mutateElement",
+            "triggerUpdate",
+            "triggerRender",
+            "render",
+            "StaticCanvas",
+            "renderStaticScene",
+        ]
+        .iter()
+        .flat_map(|name| cg.get_nodes_by_name(name))
+        .collect();
+        (root, cg, nodes)
+    }
+
+    #[test]
+    fn flow_source_evidence_mechanisms() {
+        let (_root, mut cg, nodes) = fixture();
+        let before = cg
+            .get_files()
+            .iter()
+            .flat_map(|f| cg.get_nodes_in_file(&f.path))
+            .collect::<Vec<_>>();
+        let edges: usize = before
+            .iter()
+            .map(|n| cg.get_outgoing_edges(&n.id).len())
+            .sum::<usize>();
+        let plan = FlowPlan::build(&mut cg, &nodes);
+        for (kind, line) in [
+            (AnchorKind::Wiring, 12),
+            (AnchorKind::Wiring, 15),
+            (AnchorKind::Wiring, 17),
+            (AnchorKind::Call, 15),
+        ] {
+            assert!(
+                plan.anchors
+                    .iter()
+                    .any(|a| a.kind == kind && a.line == line),
+                "missing {kind:?}:{line}: {:?}",
+                plan.anchors
+            );
+        }
+        assert!(
+            plan.anchors
+                .iter()
+                .any(|a| a.kind == AnchorKind::Mechanism && a.line == 4)
+        );
+        let after = cg
+            .get_files()
+            .iter()
+            .flat_map(|f| cg.get_nodes_in_file(&f.path))
+            .collect::<Vec<_>>();
+        assert_eq!(before.len(), after.len());
+        eprintln!(
+            "evidence collection: nodes {} -> {}, edges {} -> {}",
+            before.len(),
+            after.len(),
+            edges,
+            after
+                .iter()
+                .map(|n| cg.get_outgoing_edges(&n.id).len())
+                .sum::<usize>()
+        );
+        let protected = plan.protected_nodes();
+        let tokens = nodes.iter().map(|n| n.name.clone()).collect();
+        let rendered = format_flow_section(&mut cg, &nodes, &tokens, &plan).join("\n");
+        for node in protected {
+            assert!(rendered.contains(&format_flow_node(&node)));
+            assert!(plan.anchors.iter().any(
+                |a| a.owner_id.as_deref() == Some(&node.id) && a.kind == AnchorKind::Definition
+            ));
+        }
+        assert_eq!(
+            edges,
+            before
+                .iter()
+                .map(|n| cg.get_outgoing_edges(&n.id).len())
+                .sum::<usize>()
+        );
+    }
+
+    #[test]
+    fn flow_source_evidence_static_without_metadata() {
+        let (_root, mut cg, _) = fixture();
+        let nodes = ["mutateElement", "triggerUpdate"]
+            .iter()
+            .flat_map(|n| cg.get_nodes_by_name(n))
+            .collect::<Vec<_>>();
+        let plan = FlowPlan::build(&mut cg, &nodes);
+        assert!(
+            plan.anchors
+                .iter()
+                .any(|a| a.kind == AnchorKind::Call && a.line == 5)
+        );
+    }
+
+    #[test]
+    fn flow_source_evidence_invalid_wiring() {
+        let (_root, mut cg, nodes) = fixture();
+        let mut plan = FlowPlan::build(&mut cg, &nodes);
+        for at in ["App.tsx:0", "App.tsx:999999", "missing.ts:1", "App.tsx:no"] {
+            assert!(!plan.add_location(&mut cg, at, None, AnchorKind::Wiring));
+        }
+        assert_eq!(plan.gaps.len(), 4);
+    }
+
+    #[test]
+    fn flow_source_evidence_registrar_scope() {
+        let (_root, mut cg, nodes) = fixture();
+        let plan = FlowPlan::build(&mut cg, &nodes);
+        let support = plan
+            .anchors
+            .iter()
+            .filter(|a| a.kind == AnchorKind::Mechanism)
+            .collect::<Vec<_>>();
+        assert_eq!(support.len(), 1);
+        assert_eq!(support[0].line, 4);
+        assert_eq!(support[0].file_path, "App.tsx");
+    }
+    #[test]
+    fn flow_source_evidence_ambiguous_registrar_is_not_guessed() {
+        let (_root, mut cg, _) = fixture();
+        let nodes = cg.get_nodes_in_file("App.tsx");
+        let dispatcher = nodes
+            .iter()
+            .find(|n| n.name == "renderStaticScene")
+            .unwrap();
+        // Untyped dispatcher falls back to the same file; both class registrars
+        // are plausible, so neither definition may be claimed as evidence.
+        assert!(unique_registrar(dispatcher, "onUpdate", &nodes).is_none());
+        let dispatcher = nodes.iter().find(|n| n.name == "triggerUpdate").unwrap();
+        assert_eq!(
+            unique_registrar(dispatcher, "onUpdate", &nodes)
+                .unwrap()
+                .start_line,
+            4
+        );
     }
 }

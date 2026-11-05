@@ -110,7 +110,8 @@ pub(super) fn format_explore_file_result(
 
     let query_tokens = render::explore_query_tokens(query);
     let named_nodes = flow::exact_named_query_nodes(&nodes, &query_tokens);
-    let protected = flow::protected_flow_nodes(cg, &named_nodes);
+    let flow_plan = flow::FlowPlan::build(cg, &named_nodes);
+    let protected = flow_plan.protected_nodes();
     let protected_files: HashSet<_> = protected.iter().map(|n| n.file_path.clone()).collect();
     nodes.extend(
         protected
@@ -195,8 +196,12 @@ pub(super) fn format_explore_file_result(
         format!("## Explore Results ({})", nodes.len()),
         String::new(),
     ];
-    let named_nodes = flow::exact_named_query_nodes(&nodes, &query_tokens);
-    lines.extend(flow::format_flow_section(cg, &named_nodes, &query_tokens));
+    lines.extend(flow::format_flow_section(
+        cg,
+        &named_nodes,
+        &query_tokens,
+        &flow_plan,
+    ));
     let dynamic_links = dynamic::format_dynamic_dispatch_links(cg, project_root, &named_nodes);
     let has_dynamic_links = !dynamic_links.is_empty();
     if has_dynamic_links {
