@@ -1,5 +1,7 @@
 //! Spring event registration evidence; dispatch is a separate task.
 pub use rustcodegraph::{resolution, types, web_tree_sitter};
+// This registration-only fixture intentionally leaves production dispatch unused.
+#[allow(dead_code)]
 #[path = "../src/resolution/callback_synthesizer/spring_event.rs"]
 mod spring_event;
 use rustcodegraph::CodeGraph;

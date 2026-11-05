@@ -186,6 +186,8 @@ impl Drop for LineCacheScope {
     }
 }
 #[cfg(test)]
+// Used by the path-based cache reuse integration test, not the library tests.
+#[allow(dead_code)]
 pub(super) fn cache_builds() -> usize {
     LINES.with(|cache| cache.borrow().builds)
 }
