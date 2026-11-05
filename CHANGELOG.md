@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+
+## [2.0.0] - 2026-11-06
+
 ### Fixes
 
 - Keep Windows workspace paths valid in VS Code MCP configuration so installation, reinstallation, and removal work correctly.
@@ -151,7 +154,6 @@
 
 - MCP sessions now keep sensitive default project folders inactive instead of exposing their indexed contents.
 
-
 ## [1.2.11] - 2026-11-01
 
 ### New Features
@@ -266,3 +268,4 @@
 [1.2.6]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.6
 [1.2.10]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.10
 [1.2.11]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v1.2.11
+[2.0.0]: https://github.com/hunzhiwange/rustcodegraph/releases/tag/v2.0.0

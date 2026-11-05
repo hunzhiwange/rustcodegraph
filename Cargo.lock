@@ -369,7 +369,7 @@ dependencies = [
 
 [[package]]
 name = "rustcodegraph"
-version = "1.2.11"
+version = "2.0.0"
 dependencies = [
  "cc",
  "jsonc-parser",
