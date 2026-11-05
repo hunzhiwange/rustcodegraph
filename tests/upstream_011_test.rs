@@ -96,7 +96,13 @@ fn case_011_native_nested_and_inherited_declarations() {
     std::fs::write(dir.join("Example.java"), "class Base {\n Writer sink;\n}\nclass Child extends Base {\n class Inner {\n Reader sink;\n }\n}\n").unwrap();
     let mut graph = CodeGraph::init_sync(&dir).unwrap();
     assert!(graph.index_all(Default::default()).success);
-    let classes = graph.get_nodes_by_kind(NodeKind::Class);
+    // The facade also emits fallback class identities; this cache test uses
+    // native declarations with their full nested qualified names.
+    let classes: Vec<_> = graph
+        .get_nodes_by_kind(NodeKind::Class)
+        .into_iter()
+        .filter(|node| node.id.starts_with("class:"))
+        .collect();
     let base = classes.iter().find(|n| n.name == "Base").unwrap();
     let child = classes.iter().find(|n| n.name == "Child").unwrap();
     let inner = classes.iter().find(|n| n.name == "Inner").unwrap();
@@ -109,11 +115,21 @@ fn case_011_native_nested_and_inherited_declarations() {
     for node in classes.iter().chain(fields.iter()) {
         resolver.queries.insert_node(node).unwrap();
     }
-    // The native Java extractor currently omits field signatures. Preserve
-    // this conservative miss rather than inventing a receiver type.
-    assert!(fields.iter().all(|field| field.signature.is_none()));
-    assert_eq!(resolver.get_member_receiver_type(base, "sink"), None);
-    assert_eq!(resolver.get_member_receiver_type(inner, "sink"), None);
+    // Native Java declarations retain field types. Resolve each own field,
+    // including after cache refresh, without leaking the nested declaration.
+    assert!(fields.iter().all(|field| field.signature.is_some()));
+    for _ in 0..2 {
+        assert_eq!(
+            resolver.get_member_receiver_type(base, "sink").as_deref(),
+            Some("Writer")
+        );
+        assert_eq!(
+            resolver.get_member_receiver_type(inner, "sink").as_deref(),
+            Some("Reader")
+        );
+        assert_eq!(resolver.get_member_receiver_type(base, "missing"), None);
+        resolver.clear_caches();
+    }
     // Own-declaration caching must neither copy a base declaration nor leak a nested one.
     assert_eq!(resolver.get_member_receiver_type(child, "sink"), None);
     drop(resolver);
