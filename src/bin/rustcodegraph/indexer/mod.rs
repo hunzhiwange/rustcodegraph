@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use rustcodegraph::ui::glyphs::{Glyphs, get_glyphs};
-use rustcodegraph::ui::shimmer_worker::{format_number, render_bar};
+use rustcodegraph::ui::shimmer_worker::render_bar;
 
 #[derive(Debug, Clone)]
 pub(crate) struct IndexSummary {
@@ -37,30 +37,6 @@ impl IndexProgressRenderer {
                 .unwrap_or_else(Instant::now),
             frame: 0,
         }
-    }
-
-    fn count(&mut self, phase: &str, current: usize) {
-        if !self.enabled {
-            return;
-        }
-        let suffix = if current > 0 {
-            format!("{} found", format_number(current))
-        } else {
-            String::new()
-        };
-        self.render(phase, None, suffix, false);
-    }
-
-    fn percent(&mut self, phase: &str, current: usize, total: usize) {
-        if !self.enabled {
-            return;
-        }
-        let percent = if total > 0 {
-            ((current as f64 / total as f64) * 100.0).round() as i32
-        } else {
-            0
-        };
-        self.render(phase, Some(percent), String::new(), false);
     }
 
     fn message(&mut self, phase: &str, message: impl Into<String>) {

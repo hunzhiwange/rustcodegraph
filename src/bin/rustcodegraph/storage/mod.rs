@@ -1,6 +1,6 @@
 //! CLI command 模块使用的 SQLite storage facade。
 //!
-//! 子模块负责 JSON 转换、查询、源码读取、写库和统计；这里集中 re-export 让
+//! 子模块负责 JSON 转换、查询、源码读取、初始化和统计；这里集中 re-export 让
 //! CLI/MCP handler 不需要知道表结构细节。
 
 mod json_helpers;
@@ -22,7 +22,6 @@ pub(crate) use source::{
 };
 pub(crate) use sqlite::{
     database_path, initialize_sqlite_database, is_sqlite_initialized, open_sqlite_database,
-    write_sqlite_index,
 };
 pub(crate) use stats::{
     format_mcp_status, read_last_indexed_at, read_sqlite_stats, unix_ms_to_iso,

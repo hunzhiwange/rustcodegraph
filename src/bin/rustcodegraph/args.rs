@@ -4,10 +4,8 @@
 //! 所以只集中维护 rustcodegraph 子命令实际用到的选项形状。
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rustcodegraph::directory::unsafe_index_root_reason;
-use rustcodegraph::types::TimestampMs;
 
 use super::indexer::IndexSummary;
 use super::storage::is_sqlite_initialized;
@@ -176,15 +174,4 @@ pub(crate) fn absolutize(path: impl AsRef<Path>) -> PathBuf {
             .unwrap_or_else(|_| PathBuf::from("."))
             .join(path)
     }
-}
-
-pub(crate) fn now_ms() -> TimestampMs {
-    system_time_ms(SystemTime::now())
-}
-
-pub(crate) fn system_time_ms(time: SystemTime) -> TimestampMs {
-    time.duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as TimestampMs)
-        // 系统时钟早于 epoch 时只用于状态时间戳，降级为 0 比传播错误更稳定。
-        .unwrap_or(0)
 }

@@ -1,12 +1,11 @@
 //! CLI storage 层的小型 SQLite/JSON 转换辅助。
 //!
-//! SQLite 表里保存的是字符串、整数和 JSON 文本；这些 helper 把库层强类型枚举/
-//! 可选结构转换成稳定的列值，并在读取时给出带字段名的错误。
+//! SQLite 表里保存的是字符串、整数和 JSON 文本；这些 helper 将库层强类型枚举/
+//! 可选结构在读取时还原，并给出带字段名的错误。
 
 use std::collections::BTreeMap;
 
 use rusqlite::Connection;
-use serde::Serialize;
 
 pub(crate) fn scalar_count(conn: &Connection, sql: &str) -> Result<u64, String> {
     // 调用方只传内部固定 SQL；把 SQL 放进错误里可以快速定位是哪一个计数失败。
@@ -38,29 +37,13 @@ pub(crate) fn grouped_counts(
     Ok(out)
 }
 
-pub(crate) fn enum_string<T: Serialize>(value: &T, field: &str) -> Result<String, String> {
-    // types.rs 里的枚举用 serde rename 作为 DB 字符串；这里防止未来枚举改成对象形态。
-    match serde_json::to_value(value).map_err(|err| err.to_string())? {
-        serde_json::Value::String(value) => Ok(value),
-        other => Err(format!("serialized {field} enum was not a string: {other}")),
-    }
-}
-
 pub(crate) fn parse_enum<T>(raw: &str, field: &str) -> Result<T, String>
 where
     T: serde::de::DeserializeOwned,
 {
-    // 与 enum_string 对称：从 DB 字符串走 serde，保持 Rust/JSON/SQLite 三端命名一致。
+    // 从 DB 字符串走 serde，保持 Rust/JSON/SQLite 三端命名一致。
     serde_json::from_value(serde_json::Value::String(raw.to_owned()))
         .map_err(|err| format!("invalid {field} value `{raw}`: {err}"))
-}
-
-pub(crate) fn json_option<T: Serialize>(value: Option<&T>) -> Result<Option<String>, String> {
-    // None 写成 SQL NULL，不写成 "null"，这样旧查询可以继续用 IS NULL 判断。
-    value
-        .map(serde_json::to_string)
-        .transpose()
-        .map_err(|err| err.to_string())
 }
 
 pub(crate) fn parse_json_optional<T>(raw: Option<String>, field: &str) -> Result<Option<T>, String>
@@ -71,9 +54,4 @@ where
         serde_json::from_str(&value).map_err(|err| format!("failed to parse {field}: {err}"))
     })
     .transpose()
-}
-
-pub(crate) fn bool_int(value: Option<bool>) -> i64 {
-    // schema 使用 INTEGER 存布尔；缺失值按 false 处理以兼容轻量索引器的保守默认。
-    if value.unwrap_or(false) { 1 } else { 0 }
 }
