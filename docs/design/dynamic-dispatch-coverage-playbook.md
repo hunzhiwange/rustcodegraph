@@ -1247,3 +1247,49 @@ Rails 风格的同一个 `app/` 树共享注册；其他 Ruby 文件按所在目
 不是固定版本的小中大九案例真实仓库矩阵；九项均未执行，没有案例 summary
 或原始实验日志。真实仓库回放、重复 A/B、指定模型、性能指标及 VM/Docker
 验证均未执行，不声明外部验收通过。
+
+
+<a id="spring-event-static-coverage"></a>
+### Spring 事件静态覆盖收口（2026-11-05）
+
+沿用 Java `.java` 提取，不新增语言或扩展名。AST 注册要求带方法体的
+`@EventListener` 或 `@TransactionalEventListener` 方法，注解可用 Spring
+完整限定名；方法必须恰有一个普通事件参数，其类型为简单或限定名称。
+不接受数组、可变参数、泛型或基本类型；注解内的 classes/value 不用于推断
+事件类型，无参数注解监听器及 `ApplicationListener` 接口不在本次覆盖内。
+短注解名是语法识别，不验证实际 Spring 导入、bean 注册或静态方法合法性。
+注册复用已有方法节点，不新增监听器节点。
+
+派发要求方法或函数体内显式接收器的 `publishEvent` 调用，唯一实参为内联
+`new Event(...)`，不接受匿名类。接收器只由标识符、this 和字段访问组成，
+不证明其实际为 Spring publisher。事件类型按完整限定名、唯一显式导入或
+当前 package 解析；无显式匹配且存在 wildcard 导入时保持无边，冲突导入
+也不连边。同一事件连接作用域内全部匹配监听器，已有普通调用边连接静态 helper。
+
+应用作用域取最近的 `pom.xml`、`build.gradle`、`build.gradle.kts`、
+`settings.gradle` 或 `settings.gradle.kts` 所在目录，无标记时回退到顶层目录；
+不读取构建文件成员关系。每文件最多连接 80 个不同来源/目标对，合成边带
+heuristic、`spring-event`、事件类型 `via` 和派发位置 `registeredAt`。
+不承诺变量实参、计算接收器、继承事件类型匹配、跨模块接线、Kotlin 监听器、
+条件表达式求值、异步投递或事务执行顺序；事务注解仅作为静态注册证据。
+
+只读上游 HEAD 已核对为 `15483713763f344ff30fb7df92bcf091c7bd9758`。
+注册与派发提交分别为 `d3544a77`、`7ee591d1`，当前实现及两份测试相对
+派发提交无差异。复核既有 `/tmp/rcg298-green.log` 的派发 5 项通过，以及
+`/tmp/rcg298-regression.log` 的注册 4 项、MediatR 回归 4 项和 explore
+预算回归 28 项通过：合计 41 passed、0 failed、0 ignored，测试入口为
+`target/rust-slot-1/build/debug/deps/`。断言包括完整
+`Entry → Receive → Finish` explore Flow 与接线标注、重复索引节点稳定、
+移除注解后 sync 删除边、扇出、包名与显式导入、Maven/Gradle 应用隔离，
+以及动态、未注册、注释/字符串、wildcard 和冲突导入负例。
+本次仅复核既有日志、实现和测试断言，执行文档清单检查及 `git diff --check`，
+未运行 Cargo，不声明全套回归通过。
+
+依赖批次 300–308（任务 69–77）的九项外部验收按用户 2026-11-03 修订
+以“用户取消验收”收口，不再作为静态支持说明的完成门槛。
+[取消验收清单](../benchmarks/upstream-matrices/spring-event.json) 已由
+`0a8f9288` 归档，`cases=[]`、`external_experiments_executed=false`。
+上游合成 fixture 不是固定版本的小中大九案例真实仓库矩阵，且其接口监听器
+等断言不代表本地 Rust 支持。九项均未执行，没有案例 summary 或原始实验日志；
+真实仓库回放、重复 A/B、指定模型、性能指标及 VM/Docker 验证均未执行，
+不声明外部验收通过。

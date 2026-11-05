@@ -10,6 +10,8 @@
 
 ### New Features
 
+- Follow inline Spring event publication into statically registered Java listener methods and their helper calls.
+
 - Follow inline MediatR request and notification dispatch into statically registered C# handlers and their helper calls.
 
 - Follow literal Sidekiq worker dispatch into registered Ruby job bodies and their static helper calls.
