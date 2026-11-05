@@ -32,7 +32,10 @@ fn main() {
         }
         let src = format!("{dir}/src");
         let mut build = cc::Build::new();
+        // Keep upstream parser/scanner warnings local to these third-party units.
+        // Compilation errors and diagnostics from our Rust code remain enabled.
         build
+            .warnings(false)
             .std("c11")
             .include(&src)
             .file(format!("{src}/parser.c"));

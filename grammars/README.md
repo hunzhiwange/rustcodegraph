@@ -21,6 +21,10 @@ unchanged prepared grammars. Normal installed binaries need none of these tools.
 `node scripts/prepare-grammars.mjs --check` checks preparation without generation
 or downloads. Cargo itself never fetches or patches grammar sources.
 
+The native build disables compiler warnings only for these third-party parser and
+scanner compilation units. Compilation errors and Rust diagnostics remain enabled;
+upstream warning cleanup does not require local source patches.
+
 Only direct submodules are needed. Avoid `--recursive`/`--recurse-submodules`:
 ArkTS has an unrelated nested test-fixture repository that is not a build input.
 CI uses `actions/checkout` with `submodules: true` for this reason.
