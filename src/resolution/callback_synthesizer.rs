@@ -31,6 +31,7 @@ mod queue_tier;
 mod react;
 mod redux;
 mod sidekiq;
+mod socket_tier;
 mod spring_event;
 mod templates;
 mod terraform;
@@ -93,6 +94,7 @@ pub fn synthesize_callback_edges(
     all.extend(http_tier::dispatch_edges(ctx));
     let _ = queries.delete_queue_dispatch_edges();
     all.extend(queue_tier::dispatch_edges(ctx));
+    all.extend(socket_tier::dispatch_edges(ctx));
     all.extend(react_render_edges(queries, ctx));
     all.extend(react_jsx_child_edges(ctx));
     all.extend(vue_template_edges(ctx));
