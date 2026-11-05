@@ -369,7 +369,17 @@ fn format_flow_path(path: &[FlowStep]) -> String {
                     .and_then(|v| v.as_str())
                     .map(|at| format!("; registeredAt: {at}"))
                     .unwrap_or_default();
-                Some(format!(" [{mechanism}{wiring}]"))
+                let transport =
+                    if metadata.get("channel").and_then(|v| v.as_str()) == Some("socket") {
+                        metadata
+                            .get("tier")
+                            .and_then(|v| v.as_str())
+                            .map(|tier| format!("; socket {tier}"))
+                            .unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+                Some(format!(" [{mechanism}{transport}{wiring}]"))
             })
             .unwrap_or_default();
         rendered.push(format!(

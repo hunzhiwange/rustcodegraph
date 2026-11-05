@@ -698,7 +698,13 @@ pub(super) fn index_facade_database_inner(
     }
 
     crate::utils::debug_rss("inner:after tx.commit, before resolve queue");
-    let post_resolution_edges = if files_indexed > 0 {
+    // A removal-only sync can invalidate registration edges between unchanged
+    // senders and handlers; it still needs the post-index synthesis pass.
+    let post_resolution_edges = if files_indexed > 0
+        || selected_paths
+            .as_ref()
+            .is_some_and(|paths| !paths.is_empty())
+    {
         emit_index_progress(&mut progress, "Synthesizing graph", 0, 0, None);
         // resolver 和动态边合成在事务提交后运行，因为它们需要查询刚写入的完整索引。
         // full_rebuild 时全量 load 节点；增量同步走按需 DB 查询，避免单文件改动吃满内存。

@@ -103,6 +103,8 @@ struct File {
     nodes: Vec<Node>,
     receivers: HashMap<String, (Side, usize, usize)>,
     scope: String,
+    imports: Vec<(String, String, String)>,
+    exports: HashSet<String>,
 }
 struct Site {
     file: String,
@@ -191,16 +193,71 @@ fn handler(data: &File, callback: &SyntaxNode, line: u64) -> Option<Node> {
     }
     None
 }
+// Resolve only explicit named exports through one unambiguous direct import.
+// Never fall back to a global function name (monorepos commonly repeat them).
+fn registered_handler(
+    files: &HashMap<String, File>,
+    file: &str,
+    callback: &SyntaxNode,
+    line: u64,
+) -> Option<Node> {
+    let data = files.get(file)?;
+    if let Some(node) = handler(data, callback, line) {
+        return Some(node);
+    }
+    if callback.node_type() != "identifier" || binding_count(&data.root, &callback.text()) != 0 {
+        return None;
+    }
+    let imports: Vec<_> = data
+        .imports
+        .iter()
+        .filter(|(local, _, _)| local == &callback.text())
+        .collect();
+    if imports.len() != 1 {
+        return None;
+    }
+    let (_, name, path) = imports[0];
+    let target = files.get(path)?;
+    if target.scope != data.scope || !target.exports.contains(name) {
+        return None;
+    }
+    let declaration = target
+        .root
+        .descendants_of_type(&["function_declaration", "variable_declarator"])
+        .into_iter()
+        .find(|n| field(n, "name").as_deref() == Some(name))?;
+    handler(target, declaration.child_for_field_name("name")?, line)
+}
 pub(super) fn dispatch_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
     let project = std::path::PathBuf::from(ctx.get_project_root());
     let mut files = HashMap::new();
-    for file in ctx.get_all_files() {
-        let Some(source) = ctx.read_file(&file) else {
+    let paths = ctx.get_all_files();
+    let mut selected = HashSet::new();
+    for file in &paths {
+        let Some(source) = ctx.read_file(file) else {
             continue;
         };
         if !source.contains("socket.io") {
             continue;
         }
+        let lang = if file.ends_with(".ts") || file.ends_with(".tsx") {
+            Language::TypeScript
+        } else {
+            Language::JavaScript
+        };
+        selected.insert(file.clone());
+        for i in ctx.get_import_mappings(file, lang) {
+            if let Some(path) = i.resolved_path.or_else(|| {
+                crate::resolution::import_resolver::resolve_import_path(&i.source, file, lang, ctx)
+            }) {
+                selected.insert(path);
+            }
+        }
+    }
+    for file in paths.into_iter().filter(|f| selected.contains(f)) {
+        let Some(source) = ctx.read_file(&file) else {
+            continue;
+        };
         let Some(root) = parse(&file, &source) else {
             continue;
         };
@@ -317,6 +374,42 @@ pub(super) fn dispatch_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
             }
         }
         receivers.extend(connected);
+        let local_imports = imports
+            .into_iter()
+            .filter(|i| !i.is_namespace && !i.is_default)
+            .filter_map(|i| {
+                let path = i.resolved_path.or_else(|| {
+                    crate::resolution::import_resolver::resolve_import_path(
+                        &i.source, &file, lang, ctx,
+                    )
+                })?;
+                Some((i.local_name, i.exported_name, path))
+            })
+            .collect();
+        let mut exports = HashSet::new();
+        for e in root.named_children.iter().filter(|n| {
+            n.node_type() == "export_statement" && !n.text().starts_with("export default")
+        }) {
+            for child in &e.named_children {
+                if child.node_type() == "function_declaration" {
+                    if let Some(name) = field(child, "name") {
+                        exports.insert(name);
+                    }
+                } else if matches!(
+                    child.node_type(),
+                    "lexical_declaration" | "variable_declaration"
+                ) {
+                    for d in child.descendants_of_type(&["variable_declarator"]) {
+                        if let Some(name) = d
+                            .child_for_field_name("name")
+                            .filter(|n| n.node_type() == "identifier")
+                        {
+                            exports.insert(name.text());
+                        }
+                    }
+                }
+            }
+        }
         let mut dir = std::path::Path::new(&file).parent();
         let mut scope = String::new();
         while let Some(p) = dir {
@@ -333,6 +426,8 @@ pub(super) fn dispatch_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
                 receivers,
                 nodes: ctx.get_nodes_in_file(&file),
                 scope,
+                imports: local_imports,
+                exports,
             },
         );
     }
@@ -374,7 +469,9 @@ pub(super) fn dispatch_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
             let node = if method == "emit" {
                 enclosing_fn(&data.nodes, line)
             } else if matches!(method.as_str(), "on" | "once") {
-                arguments.get(1).and_then(|n| handler(data, n, line))
+                arguments
+                    .get(1)
+                    .and_then(|n| registered_handler(&files, file, n, line))
             } else {
                 None
             };
