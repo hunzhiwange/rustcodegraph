@@ -81,6 +81,7 @@ pub fn synthesize_callback_edges(
     all.extend(sidekiq::dispatch_edges(ctx));
     all.extend(mediatr::dispatch_edges(ctx));
     all.extend(spring_event::dispatch_edges(ctx));
+    all.extend(laravel_event::dispatch_edges(ctx));
     all.extend(react_render_edges(queries, ctx));
     all.extend(react_jsx_child_edges(ctx));
     all.extend(vue_template_edges(ctx));
