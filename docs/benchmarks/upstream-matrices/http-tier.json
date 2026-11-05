@@ -1,0 +1,75 @@
+{
+  "language_framework": "HTTP cross-tier / TypeScript clients and server routes",
+  "status": "用户取消验收",
+  "user_revision_date": "2026-11-03",
+  "scope": "Source inventory only; real-repository replay, A/B, performance and external platform acceptance were cancelled. No passing external result is claimed.",
+  "source": {
+    "commit": "15483713763f344ff30fb7df92bcf091c7bd9758",
+    "files": [
+      "src/resolution/tier-synthesizer.ts",
+      "__tests__/ui-steps-cross-tier.test.ts",
+      "__tests__/laravel-route-paths.test.ts"
+    ]
+  },
+  "prerequisite_implementations": [
+    {
+      "batch": 324,
+      "commit": "12148a5c5c713242d4947cbe6986f68f2c11ecbc",
+      "implementation": "src/resolution/callback_synthesizer/http_tier.rs",
+      "local_checks": "tests/upstream_324_test.rs",
+      "validation_note": "Commit is an ancestor of HEAD. Inspected case_324_http_dispatch: literal fetch and axios methods, mounted routes, negative controls, explore flow and removal on sync. Commit records 20 focused/framework tests passing with no ignored cases; tests were not rerun for this documentation task."
+    },
+    {
+      "batch": 3,
+      "commit": "191751fa44a5a7f665e5a5b50a6afd8560f63081",
+      "implementation": "scripts/agent-eval/run-matrix-case.py",
+      "local_checks": "tests/upstream_matrix_runner_test.rs",
+      "validation_note": "Commit is an ancestor of HEAD. Runner entry point and nine-case manifest contract inspected; runner and external experiments not executed."
+    }
+  ],
+  "cases": [],
+  "source_fixture_inventory": [
+    {
+      "source_file": "__tests__/ui-steps-cross-tier.test.ts",
+      "fixture_kind": "synthetic",
+      "flows": [
+        [
+          "handleSubmit",
+          "POST /api/users"
+        ],
+        [
+          "load",
+          "GET /api/users/:id"
+        ],
+        [
+          "load",
+          "GET /api/users/:id/orders"
+        ],
+        [
+          "loadOrders",
+          "GET /api/v1/orders"
+        ],
+        [
+          "Orders",
+          "GET /api/v1/orders"
+        ]
+      ],
+      "note": "Upstream assertions cover fetch POST, axios baseURL and template paths, composed Express mounts and useSWR. External URLs, variable URLs and test-suite calls are negative controls. Source inspection only; upstream assertions do not establish identical local Rust coverage."
+    },
+    {
+      "source_file": "__tests__/laravel-route-paths.test.ts",
+      "fixture_kind": "synthetic",
+      "flows": [
+        [
+          "loadPages",
+          "GET /api/pages"
+        ]
+      ],
+      "note": "Upstream synthetic fixture pairs a frontend fetch with an api.php route. This is source inventory, not a claim of local Laravel HTTP coverage."
+    }
+  ],
+  "case_inventory_note": "No pinned small/medium/large real-repository nine-flow matrix was identified in the inspected source tests. Repository revisions and size tiers are not invented; synthetic fixtures are not promoted to real-repository cases.",
+  "runner_compatible": false,
+  "runner_note": "This cancellation inventory is not the nine-case array required by run-matrix-case.py and must not be passed to that runner.",
+  "external_experiments_executed": false
+}
