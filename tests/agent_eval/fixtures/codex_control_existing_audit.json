@@ -1,0 +1,215 @@
+{
+  "runs": [
+    {
+      "run": "ab-wired-base-1",
+      "counts": {
+        "explore": 3,
+        "symbol_source_calls": 10,
+        "mcp_file_view_calls": 18,
+        "other_mcp": 0,
+        "shell": 1,
+        "total_tools": 32
+      },
+      "commands": [
+        {
+          "command": "/bin/zsh -lc 'cat /Users/xiangmin/.codex/skills/rustcodegraph/SKILL.md'",
+          "category": "skill_instructions"
+        }
+      ],
+      "unknown_items": [],
+      "turn_usage": [
+        {
+          "input_tokens": 598240,
+          "cached_input_tokens": 522112,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3870,
+          "reasoning_output_tokens": 566
+        }
+      ],
+      "exclusion_reasons": [],
+      "meta": {
+        "seconds": 179.282100542,
+        "exit_code": 0,
+        "model": "gpt-6.1-sol",
+        "effort": "high",
+        "engine": "base",
+        "iteration": 1
+      },
+      "usage_status": "available",
+      "source": {
+        "line_occurrences": 2758,
+        "unique_lines": 2659,
+        "repeated_lines": 99,
+        "unknown_blocks": 0
+      }
+    },
+    {
+      "run": "ab-wired-base-2",
+      "counts": {
+        "explore": 2,
+        "symbol_source_calls": 9,
+        "mcp_file_view_calls": 23,
+        "other_mcp": 1,
+        "shell": 2,
+        "total_tools": 37
+      },
+      "commands": [
+        {
+          "command": "/bin/zsh -lc 'cat /Users/xiangmin/.codex/skills/rustcodegraph/SKILL.md'",
+          "category": "skill_instructions"
+        },
+        {
+          "command": "/bin/zsh -lc 'if [ -d .rustcodegraph ]; then if [ -x \"$HOME/.rustcodegraph/bin/rustcodegraph\" ]; then \"$HOME/.rustcodegraph/bin/rustcodegraph\" status; elif command -v rustcodegraph >/dev/null; then rustcodegraph status; fi; fi'",
+          "category": "manual_audit"
+        }
+      ],
+      "unknown_items": [],
+      "turn_usage": [
+        {
+          "input_tokens": 407122,
+          "cached_input_tokens": 336128,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4122,
+          "reasoning_output_tokens": 658
+        }
+      ],
+      "exclusion_reasons": [],
+      "meta": {
+        "seconds": 140.79836291699996,
+        "exit_code": 0,
+        "model": "gpt-6.1-sol",
+        "effort": "high",
+        "engine": "base",
+        "iteration": 2
+      },
+      "usage_status": "available",
+      "source": {
+        "line_occurrences": 3059,
+        "unique_lines": 2961,
+        "repeated_lines": 98,
+        "unknown_blocks": 0
+      }
+    },
+    {
+      "run": "ab-wired-new-1",
+      "counts": {
+        "explore": 3,
+        "symbol_source_calls": 3,
+        "mcp_file_view_calls": 22,
+        "other_mcp": 1,
+        "shell": 1,
+        "total_tools": 30
+      },
+      "commands": [
+        {
+          "command": "/bin/zsh -lc 'cat /Users/xiangmin/.codex/skills/rustcodegraph/SKILL.md'",
+          "category": "skill_instructions"
+        }
+      ],
+      "unknown_items": [],
+      "turn_usage": [
+        {
+          "input_tokens": 338632,
+          "cached_input_tokens": 288256,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3584,
+          "reasoning_output_tokens": 521
+        }
+      ],
+      "exclusion_reasons": [],
+      "meta": {
+        "seconds": 114.86892520800001,
+        "exit_code": 0,
+        "model": "gpt-6.1-sol",
+        "effort": "high",
+        "engine": "new",
+        "iteration": 1
+      },
+      "usage_status": "available",
+      "source": {
+        "line_occurrences": 2842,
+        "unique_lines": 2542,
+        "repeated_lines": 300,
+        "unknown_blocks": 0
+      }
+    },
+    {
+      "run": "ab-wired-new-2",
+      "counts": {
+        "explore": 4,
+        "symbol_source_calls": 2,
+        "mcp_file_view_calls": 17,
+        "other_mcp": 1,
+        "shell": 1,
+        "total_tools": 25
+      },
+      "commands": [
+        {
+          "command": "/bin/zsh -lc 'cat /Users/xiangmin/.codex/skills/rustcodegraph/SKILL.md'",
+          "category": "skill_instructions"
+        }
+      ],
+      "unknown_items": [],
+      "turn_usage": [
+        {
+          "input_tokens": 366851,
+          "cached_input_tokens": 318464,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3473,
+          "reasoning_output_tokens": 311
+        }
+      ],
+      "exclusion_reasons": [],
+      "meta": {
+        "seconds": 123.240010041,
+        "exit_code": 0,
+        "model": "gpt-6.1-sol",
+        "effort": "high",
+        "engine": "new",
+        "iteration": 2
+      },
+      "usage_status": "available",
+      "source": {
+        "line_occurrences": 2683,
+        "unique_lines": 2426,
+        "repeated_lines": 257,
+        "unknown_blocks": 0
+      }
+    }
+  ],
+  "valid_ab_summary": {
+    "base": {
+      "samples": 2,
+      "tool_totals": {
+        "explore": 5,
+        "symbol_source_calls": 19,
+        "mcp_file_view_calls": 41,
+        "other_mcp": 1,
+        "shell": 3,
+        "total_tools": 69
+      }
+    },
+    "new": {
+      "samples": 2,
+      "tool_totals": {
+        "explore": 7,
+        "symbol_source_calls": 5,
+        "mcp_file_view_calls": 39,
+        "other_mcp": 2,
+        "shell": 2,
+        "total_tools": 55
+      }
+    }
+  },
+  "limitations": [
+    "Offline classification only; no sufficiency verdict.",
+    "Usage is raw whole-user-turn usage; cached input is a subset, never added again.",
+    "Source counts cover explicitly attributed numbered MCP text only; unknown blocks and shell commands require review."
+  ],
+  "audit": {
+    "source": "Existing /tmp/rcg-largeflow/ab-wired-{base,new}-{1,2}/run.jsonl and meta.json; offline only, no new agent runs.",
+    "cross_check": "Completed MCP totals 31/35/29/24 and total tools 32/37/30/25 match committed large-file-flow-2026-11-02-results.json. Independently enumerated node argument dictionaries: file-only 18/23/22/17; symbol 10/9/3/2. All four skill cat commands manually checked; base-2 conditional command is a status check, retained as manual_audit by conservative parser.",
+    "fixture": "codex_flow_source.jsonl is exactly the first completed explore event from existing new-1, not a complete run.",
+    "limits": "Line statistics cover explicitly numbered MCP text only, not unnumbered prose, source fetched by shell, or hidden/truncated response content. Unknown zero does not prove no missing source. No sufficiency or performance acceptance conclusion."
+  }
+}
