@@ -62,6 +62,14 @@ impl<'db> QueryBuilder<'db> {
         Ok(())
     }
 
+    /// Rebuild HTTP wiring globally: a removed mount can invalidate an edge
+    /// whose source and target files were both unchanged.
+    pub(crate) fn delete_http_dispatch_edges(&mut self) -> SqliteResult<()> {
+        let mut stmt = self.db.prepare("DELETE FROM edges WHERE provenance = 'heuristic' AND json_extract(metadata, '$.synthesizedBy') = 'http-client'")?;
+        stmt.run(SqliteParams::positional(vec![]))?;
+        Ok(())
+    }
+
     pub fn delete_edges_by_source(&mut self, source_id: &str) -> SqliteResult<()> {
         let stmt = Self::prepare_cached(
             self.db,

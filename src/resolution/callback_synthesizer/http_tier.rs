@@ -218,3 +218,179 @@ fn walk(
     }
     visiting.remove(file);
 }
+
+/// Conservative same-package, exact literal HTTP dispatch (upstream 15483713).
+pub(super) fn dispatch_edges(ctx: &mut dyn ResolutionContext) -> Vec<crate::types::Edge> {
+    use super::common::{edge, enclosing_fn};
+    use crate::types::EdgeKind;
+    use serde_json::json;
+    let project = std::path::PathBuf::from(ctx.get_project_root());
+    let scope = |file: &str| {
+        let mut dir = std::path::Path::new(file).parent();
+        while let Some(p) = dir {
+            if project.join(p).join("package.json").is_file() {
+                return p.to_string_lossy().into_owned();
+            }
+            dir = p.parent();
+        }
+        String::new()
+    };
+    let mut routes = ctx.get_nodes_by_kind(NodeKind::Route);
+    // normalize_routes updates persistence; this context still has original nodes.
+    let normalized = normalize_routes(ctx);
+    for r in &mut routes {
+        if let Some(n) = normalized.iter().find(|n| n.id == r.id) {
+            *r = n.clone();
+        }
+    }
+    let mut edges = Vec::new();
+    for file in ctx.get_all_files() {
+        let lang = if file.ends_with(".ts") || file.ends_with(".tsx") {
+            Language::TypeScript
+        } else if [".js", ".jsx", ".mjs", ".cjs"]
+            .iter()
+            .any(|e| file.ends_with(e))
+        {
+            Language::JavaScript
+        } else {
+            continue;
+        };
+        let Some(source) = ctx.read_file(&file) else {
+            continue;
+        };
+        let Ok(grammar) = Grammar::for_code_language(lang) else {
+            continue;
+        };
+        let mut parser = Parser::default();
+        parser.set_language(Some(grammar));
+        let Some(tree) = parser.parse(&source, None) else {
+            continue;
+        };
+        let nodes = ctx.get_nodes_in_file(&file);
+        let imports = ctx.get_import_mappings(&file, lang);
+        for call in tree.root_node.descendants_of_type(&["call_expression"]) {
+            if call.has_error {
+                continue;
+            }
+            let (Some(callee), Some(args)) = (
+                call.child_for_field_name("function"),
+                call.child_for_field_name("arguments"),
+            ) else {
+                continue;
+            };
+            let args: Vec<_> = args
+                .named_children
+                .iter()
+                .filter(|n| n.node_type() != "comment")
+                .collect();
+            let Some(path) = args
+                .first()
+                .and_then(|n| literal(n))
+                .filter(|p| p.starts_with('/') && !p.starts_with("//") && !p.contains(['?', '#']))
+            else {
+                continue;
+            };
+            let mut method = "GET".to_owned();
+            if callee.node_type() == "identifier" && callee.text() == "fetch" {
+                // Reject shadowed platform fetch; unknown options never imply GET.
+                if imports.iter().any(|i| i.local_name == "fetch")
+                    || tree
+                        .root_node
+                        .descendants_of_type(&[
+                            "formal_parameters",
+                            "variable_declarator",
+                            "function_declaration",
+                        ])
+                        .iter()
+                        .any(|n| {
+                            n.child_for_field_name("name")
+                                .is_some_and(|n| n.text() == "fetch")
+                                || (n.node_type() == "formal_parameters"
+                                    && n.named_children.iter().any(|n| n.text() == "fetch"))
+                        })
+                {
+                    continue;
+                }
+                if let Some(options) = args.get(1) {
+                    if options.node_type() != "object" {
+                        continue;
+                    }
+                    let mut valid = true;
+                    for p in &options.named_children {
+                        if p.node_type() != "pair" && p.node_type() != "comment" {
+                            valid = false;
+                        }
+                        if p.child_for_field_name("key")
+                            .is_some_and(|k| k.node_type() == "computed_property_name")
+                        {
+                            valid = false;
+                        }
+                        if p.child_for_field_name("key").is_some_and(|k| {
+                            k.text() == "method" || literal(k).as_deref() == Some("method")
+                        }) {
+                            match p.child_for_field_name("value").and_then(literal) {
+                                Some(m) => method = m.to_ascii_uppercase(),
+                                None => valid = false,
+                            }
+                        }
+                    }
+                    if !valid {
+                        continue;
+                    }
+                }
+            } else if callee.node_type() == "member_expression" {
+                let (Some(obj), Some(prop)) = (
+                    callee.child_for_field_name("object"),
+                    callee.child_for_field_name("property"),
+                ) else {
+                    continue;
+                };
+                if !imports.iter().any(|i| {
+                    i.local_name == obj.text()
+                        && i.source == "axios"
+                        && (i.is_default || i.is_namespace)
+                }) {
+                    continue;
+                }
+                method = prop.text().to_ascii_uppercase();
+            } else {
+                continue;
+            }
+            if !["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+                .contains(&method.as_str())
+            {
+                continue;
+            }
+            let name = format!("{method} {path}");
+            let matches: Vec<_> = routes
+                .iter()
+                .filter(|r| r.name == name && scope(&r.file_path) == scope(&file))
+                .collect();
+            if matches.len() != 1 {
+                continue;
+            }
+            let route = matches[0];
+            let line = call.start_position.row as u64 + 1;
+            let Some(owner) = enclosing_fn(&nodes, line) else {
+                continue;
+            };
+            edges.push(edge(
+                &owner.id,
+                &route.id,
+                EdgeKind::Calls,
+                Some(line),
+                "http-client",
+                [
+                    ("channel", json!("http")),
+                    ("method", json!(method)),
+                    ("href", json!(path)),
+                    (
+                        "registeredAt",
+                        json!(format!("{}:{}", route.file_path, route.start_line)),
+                    ),
+                ],
+            ));
+        }
+    }
+    edges
+}
