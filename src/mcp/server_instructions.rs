@@ -19,6 +19,7 @@ blast radius in view. More accurate context, in far fewer tokens and
 round-trips than reading files yourself.
 
 Flow prioritizes paths connecting the most queried symbols; heuristic links include their mechanism and wiring location.
+Queue flows connect literal add jobs on import-backed named Bull/BullMQ queues to unambiguous registered consumers within the same package; dynamic names and missing registrations are omitted.
 Vue store flows use registered Pinia action bindings and literal Vuex dispatch/commit keys with explicit store/module registration; dynamic keys and ambiguous bindings are omitted.
 
 Spring event flows connect literal publishEvent constructions to annotated listeners using package/import types within an application; dynamic arguments and unresolved wildcard imports are omitted.
