@@ -6,6 +6,7 @@
 mod dynamic;
 mod flow;
 mod render;
+mod snippets;
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -260,6 +261,7 @@ pub(super) fn format_explore_file_result(
             &cg.get_nodes_in_file(&file_path),
             mode,
             &source_tokens,
+            &flow_plan.anchors,
             &family,
             reservation.saturating_add(reclaimed).max(1),
         )

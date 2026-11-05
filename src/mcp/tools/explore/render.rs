@@ -130,11 +130,16 @@ pub(super) fn render_explore_file_section(
     nodes: &[crate::types::Node],
     mode: ExploreFileMode,
     query_tokens: &HashSet<String>,
+    anchors: &[super::flow::SourceAnchor],
     family: &ExploreFamilyContext,
     max_chars_per_file: usize,
 ) -> Vec<String> {
     let source = fs::read_to_string(project_file_path(project_root, file_path)).unwrap_or_default();
+    let use_snippets = matches!(mode, ExploreFileMode::Full)
+        && source.len() > max_chars_per_file
+        && anchors.iter().any(|a| a.file_path == file_path);
     let label = match mode {
+        ExploreFileMode::Full if use_snippets => "flow excerpts (partial source)",
         ExploreFileMode::Full => "full",
         ExploreFileMode::Skeleton => "skeleton (signatures only)",
         ExploreFileMode::Focused => "focused",
@@ -150,7 +155,11 @@ pub(super) fn render_explore_file_section(
     } else {
         match mode {
             ExploreFileMode::Full => {
-                render_symbol_ranges(&source, nodes, query_tokens, max_chars_per_file)
+                if use_snippets {
+                    super::snippets::render(&source, file_path, nodes, anchors, max_chars_per_file)
+                } else {
+                    render_symbol_ranges(&source, nodes, query_tokens, max_chars_per_file)
+                }
             }
             ExploreFileMode::Skeleton => render_signature_skeleton(&source),
             ExploreFileMode::Focused => {
@@ -174,7 +183,8 @@ pub(super) fn render_explore_file_section(
     } else {
         truncate_explore_file_body(&rendered, max_chars_per_file)
     };
-    let ranged = matches!(mode, ExploreFileMode::Full) && rendered.starts_with("... (source lines");
+    let ranged = matches!(mode, ExploreFileMode::Full)
+        && (rendered.starts_with("... (source lines") || rendered.starts_with("... (uncovered"));
     let rendered = if !ranged && explore_line_numbers_enabled() && !rendered.trim().is_empty() {
         number_source_lines(&rendered, 1)
     } else {
