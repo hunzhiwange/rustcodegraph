@@ -21,6 +21,7 @@ mod erlang;
 mod gin;
 mod go;
 mod go_grpc;
+mod http_tier;
 mod java_xml;
 mod laravel_event;
 mod mediatr;
@@ -54,6 +55,11 @@ pub fn synthesize_callback_edges(
     ctx: &mut dyn ResolutionContext,
 ) -> usize {
     let _line_cache_scope = common::LineCacheScope;
+    // Framework post-extract hooks are not run by the native pipeline. Finalize
+    // HTTP registration names here, after all files and routes are available.
+    for route in http_tier::normalize_routes(ctx) {
+        let _ = queries.update_node(&route);
+    }
     // 这两类 Go 边是结构修补：抽取器可能因为 receiver/type 分文件而漏 contains，
     // 或缺少显式 implements。它们先写入 DB，供后续启发式 pass 复用。
     let go_method_contains = go_cross_file_method_contains_edges(queries);
