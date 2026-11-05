@@ -71,12 +71,17 @@ build_ref() {
         SLOT_LOCK="$ENGINE/target/rust-slot-locks/slot-$n.lock"
         printf 'A/B task1 pid=%s ref=%s\n' "$$" "$ref" > "$SLOT_LOCK/owner"
         export CARGO_TARGET_DIR="$ENGINE/target/rust-slot-$n"
+        # Keep intermediate artifacts in the locked slot even when the archived
+        # ref configures a separate build.build-dir in .cargo/config.toml.
+        export CARGO_BUILD_BUILD_DIR="$CARGO_TARGET_DIR"
         break
       fi
     done
     [ -n "$SLOT_LOCK" ] || sleep 1
   done
-  (cd "$SNAPSHOT" && cargo build --release --bin rustcodegraph) > "$OUT/build-$label.log" 2>&1
+  # Archive timestamps can be older than the previous build in this slot.
+  # Invalidate this package so Cargo cannot reuse the other ref's binary.
+  (cd "$SNAPSHOT" && cargo clean --release -p rustcodegraph && cargo build --release --bin rustcodegraph) > "$OUT/build-$label.log" 2>&1
   cp "$CARGO_TARGET_DIR/release/rustcodegraph" "$OUT/rustcodegraph-$label"
   release_slot
   rm -rf "$SNAPSHOT"
