@@ -62,6 +62,8 @@ fn case_015_success_error_panic_and_reader() {
         42
     );
     drop(reopened);
+    // Windows cannot remove the database files while the reader is still open.
+    reader.close().unwrap();
     std::fs::remove_dir_all(dir).unwrap();
 }
 
