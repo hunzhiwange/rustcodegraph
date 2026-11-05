@@ -10,6 +10,8 @@
 
 ### New Features
 
+- Follow literal HTTP client requests into unambiguous Express routes and their static handler calls within the same package.
+
 - Follow inline Laravel event publication into statically registered PHP listeners and their helper calls.
 
 - Follow inline Spring event publication into statically registered Java listener methods and their helper calls.

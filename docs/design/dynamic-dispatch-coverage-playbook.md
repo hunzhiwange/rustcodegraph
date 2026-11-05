@@ -249,6 +249,7 @@ rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # tr
 | C# | MediatR | 调用方 → inline Send/Publish → Handle → helper | X+S | 静态注册派发已实现；[覆盖与验收限制](#mediatr-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Ruby | Sidekiq | 调用方 → literal worker dispatch → perform → helper | X+S | 静态注册派发已实现；[覆盖与验收限制](#sidekiq-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Python | Celery | 调用方 → delay/apply_async 注册任务 → helper | X+S | 静态绑定派发已实现；[覆盖与验收限制](#celery-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
+| TypeScript/JS | HTTP cross-tier | literal client → exact route → handler | X+S | 静态接线已实现；[范围与限制](#http-tier-static-coverage)。九项外部验收由用户取消，未作为通过项。 |
 | TypeScript/JS | Pinia / Vuex stores | 实例调用 → Options action → helper；literal dispatch → namespaced action → commit → mutation → helper | X+S | 静态注册与派发已实现；[覆盖与验收限制](#vue-store-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | Vue/Nuxt | 模板事件（@click→处理程序）；成分组成；反应→渲染 | S+X | ✅ 事件+组合（vitepress S / vben M / element-plus L）； 🔬 反应式 → 渲染（vue-core 代理运行时 — 前沿，延迟） |
 | TypeScript/JS | Svelte / SvelteKit | 模板调用/组合； SvelteKit 操作→api；存储→DOM | X | ✅ 已经很强大（现实世界S/骨架M/shadcn L）：模板`{fn()}`调用，`<Pascal/>`组合，`import * as api`命名空间，`load`→api所有开箱即用。 + 导出常量函数对象提取 (SvelteKit `actions`)。 🔬 `$lib`-来自操作的命名空间 + 存储/反应边界 |
@@ -1337,3 +1338,34 @@ union 类型，以及动态、未注册、无关调用和歧义映射负例。
 上游合成 fixture 不是固定版本的小中大九案例真实仓库矩阵；九项均未执行，
 没有案例 summary 或原始实验日志。真实仓库回放、重复 A/B、指定模型、
 性能指标及 VM/Docker 验证均未执行，不声明外部验收通过。
+
+
+<a id="http-tier-static-coverage"></a>
+### HTTP 跨层静态覆盖收口（2026-11-05）
+
+沿用 TypeScript/JavaScript 提取，不新增扩展名。识别函数体内平台 `fetch`
+及显式默认或 namespace 导入 axios 的 HTTP 方法调用；URL 必须是不含转义、
+query 或 fragment 的根相对字符串，fetch method 必须为静态字面量。
+按 HTTP 方法和完整路径精确匹配唯一 route，应用范围取最近 package.json。
+Express router 挂载通过 AST、显式 import 或 CommonJS require 解析文件，
+只组合唯一且无循环的字面量挂载；未解析和歧义挂载不提供前缀。
+普通 route → handler 和 helper 调用继续连接流程，合成边标记 heuristic、
+http-client、method、href 和路由位置 registeredAt；sync 重新计算接线。
+
+不承诺参数化 URL 匹配、template URL、axios.create/baseURL、useSWR、
+动态 method、运行时路由、跨 package 服务发现或实际网络交付。
+axios 以导入作语法证据；路由识别沿用现有框架启发式，不代表运行时证明。
+
+只读上游 HEAD 核对为 15483713763f344ff30fb7df92bcf091c7bd9758。
+注册与派发提交分别为 7adf808a、12148a5c；本次检查实现与派发测试相对后者
+无差异，复核 /tmp/rcg324-final.log：框架 18 项、挂载 1 项、派发 1 项通过，
+合计 20 passed、0 failed、0 ignored，测试入口为 target/rust-slot-1/debug/deps/。
+断言覆盖 fetch/axios、挂载、method、动态与缺失路径、重复路由、package 隔离、
+explore Flow 和删除路由后的 sync。本次是文档静态审查，未运行 Cargo。
+
+依赖批次 326–334（任务 95–103）的九项外部验收按用户 2026-11-03 修订
+以“用户取消验收”收尾，不再作为静态支持说明的完成门槛。
+[取消验收清单](../benchmarks/upstream-matrices/http-tier.json) 由 7665e8cb 归档，
+cases=[]、external_experiments_executed=false；上游合成 fixture 不替代真实仓库矩阵。
+九项均未执行，无案例 summary 或原始实验日志；真实仓库回放、重复 A/B、
+指定模型、性能指标与 VM/Docker 验证均未执行，不声明外部验收通过。
