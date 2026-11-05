@@ -4,6 +4,8 @@
 
 ### Fixes
 
+- Preserve main flow source evidence before related code and caller summaries in `rustcodegraph_explore`, while respecting file and response limits.
+
 - Keep key calls and wiring statements visible when `rustcodegraph_explore` shows excerpts from long methods, with original line numbers and explicit notices for omitted evidence.
 
 - Follow Java calls through fields such as `this.service` into their declared service methods and implementation chains.

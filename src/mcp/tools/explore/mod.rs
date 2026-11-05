@@ -40,7 +40,18 @@ pub(super) fn run(
         .and_then(Value::as_str)
         .unwrap_or_default();
     let file_count = cg.get_stats().file_count as usize;
-    let budget = get_explore_output_budget(file_count);
+    let mut budget = get_explore_output_budget(file_count);
+    let response_limit = budget.max_output_chars;
+    let budget_note = if budget.include_budget_note {
+        format!(
+            "\n\n> **Explore budget: {} calls for this project ({} files indexed).** If your question spans more than this response, spend remaining calls on another rustcodegraph_explore before falling back to other tools.",
+            get_explore_budget(file_count),
+            file_count
+        )
+    } else {
+        String::new()
+    };
+    budget.max_output_chars = budget.max_output_chars.saturating_sub(budget_note.len());
     // maxFiles 可由调用方收紧，但默认值随 repo size 变化；输出最终仍受
     // max_output_chars 保护。
     let max_files = args
@@ -77,14 +88,8 @@ pub(super) fn run(
             file_count,
             session,
         );
-        if budget.include_budget_note {
-            output.push_str(&format!(
-                "\n\n> **Explore budget: {} calls for this project ({} files indexed).** If your question spans more than this response, spend remaining calls on another rustcodegraph_explore before falling back to other tools.",
-                get_explore_budget(file_count),
-                file_count
-            ));
-        }
-        text_result(&truncate_output_to_limit(&output, budget.max_output_chars))
+        output.push_str(&budget_note);
+        text_result(&truncate_output_to_limit(&output, response_limit))
     };
     cg.close();
 
@@ -113,7 +118,8 @@ pub(super) fn format_explore_file_result(
     let named_nodes = flow::exact_named_query_nodes(&nodes, &query_tokens);
     let flow_plan = flow::FlowPlan::build(cg, &named_nodes);
     let protected = flow_plan.protected_nodes();
-    let protected_files: HashSet<_> = protected.iter().map(|n| n.file_path.clone()).collect();
+    let mut protected_files: HashSet<_> = protected.iter().map(|n| n.file_path.clone()).collect();
+    protected_files.extend(flow_plan.anchors.iter().map(|a| a.file_path.clone()));
     nodes.extend(
         protected
             .iter()
@@ -131,6 +137,11 @@ pub(super) fn format_explore_file_result(
     for node in &nodes {
         if seen_files.insert(node.file_path.clone()) {
             file_paths.push(node.file_path.clone());
+        }
+    }
+    for anchor in &flow_plan.anchors {
+        if seen_files.insert(anchor.file_path.clone()) {
+            file_paths.push(anchor.file_path.clone());
         }
     }
     // Rank by matched symbol mass; exact named flow endpoints receive extra weight.
@@ -162,6 +173,18 @@ pub(super) fn format_explore_file_result(
         protected_files
             .contains(b)
             .cmp(&protected_files.contains(a))
+            .then_with(|| {
+                // Anchor order comes from the selected paths, primary first.
+                // Fuzzy match mass must not reorder those evidence files.
+                let rank = |path: &str| {
+                    flow_plan
+                        .anchors
+                        .iter()
+                        .position(|a| a.file_path == path)
+                        .unwrap_or(usize::MAX)
+                };
+                rank(a).cmp(&rank(b))
+            })
             .then_with(|| weights[b].cmp(&weights[a]))
             .then_with(|| a.cmp(b))
     });
@@ -190,7 +213,7 @@ pub(super) fn format_explore_file_result(
         }
     });
     if max_files > 0 && file_paths.len() > max_files {
-        file_paths.truncate(max_files);
+        file_paths.truncate(max_files.max(protected_files.len()));
     }
 
     let mut lines = vec![
@@ -239,23 +262,84 @@ pub(super) fn format_explore_file_result(
     }
     lines.push("### Source Code".to_string());
 
-    let reservations = super::budget::allocate_explore_source_budget(
+    let guidance = "\nUncovered source anchors are gaps; use another rustcodegraph_explore or rustcodegraph_node with exact names for missing evidence. Treat returned source as already Read.\n";
+    // Exact byte costs include file headings, numbered lines and separators.
+    let prefix = lines.join("\n");
+    if prefix.len() + guidance.len() + 2 > budget.max_output_chars {
+        // A flow description itself may exceed an explicitly tiny envelope.
+        // Return gaps rather than a sliced path or falsely complete source.
+        let mut result = String::new();
+        for anchor in &flow_plan.anchors {
+            let gap = format!("Uncovered anchor: {}:{}\n", anchor.file_path, anchor.line);
+            if result.len() + gap.len() + guidance.len() <= budget.max_output_chars {
+                result.push_str(&gap);
+            }
+        }
+        if result.len() + guidance.len() <= budget.max_output_chars {
+            result.push_str(guidance);
+        }
+        if result.is_empty() {
+            for message in [
+                "Source omitted; use rustcodegraph_explore or rustcodegraph_node for uncovered anchors.",
+                "uncovered anchors",
+                "gap",
+            ] {
+                if message.len() <= budget.max_output_chars {
+                    return message.to_string();
+                }
+            }
+        }
+        return result;
+    }
+    let mut remaining = budget
+        .max_output_chars
+        .saturating_sub(prefix.len() + guidance.len() + 2);
+    let minima: Vec<_> = file_paths
+        .iter()
+        .map(|path| {
+            if protected_files.contains(path) {
+                render::minimum_flow_section(
+                    project_root,
+                    path,
+                    &cg.get_nodes_in_file(path),
+                    &flow_plan.anchors,
+                    budget.max_chars_per_file,
+                )
+            } else {
+                String::new()
+            }
+        })
+        .collect();
+    let mut reserved: usize = minima.iter().map(|m| m.len() + 1).sum();
+    let extras = super::budget::allocate_explore_source_budget(
         &file_paths.iter().map(|p| weights[p]).collect::<Vec<_>>(),
-        budget.max_output_chars / 2,
+        remaining.saturating_sub(reserved) / 2,
     );
     let mut reclaimed = 0usize;
     let mut fallback = None;
     let mut has_source = false;
-    for (file_path, reservation) in file_paths.into_iter().zip(reservations) {
-        let mode = render::explore_file_mode(
-            &file_path,
-            adaptive,
-            &query_tokens,
-            &unique_callable_files,
-            &family,
-        );
-        lines.push(String::new());
-        let original = render::render_explore_file_section(
+    for ((file_path, minimum), extra) in file_paths.into_iter().zip(minima).zip(extras) {
+        reserved = reserved.saturating_sub(minimum.len() + 1);
+        let allowance = minimum
+            .len()
+            .saturating_add(extra)
+            .saturating_add(reclaimed);
+        let cap = remaining
+            .saturating_sub(reserved + 1)
+            .min(budget.max_chars_per_file)
+            .min(allowance);
+        let mode = if protected_files.contains(&file_path) {
+            render::ExploreFileMode::Full
+        } else {
+            render::explore_file_mode(
+                &file_path,
+                adaptive,
+                &query_tokens,
+                &unique_callable_files,
+                &family,
+            )
+        };
+        let mut original = render::render_explore_file_section(
             project_root,
             &file_path,
             &cg.get_nodes_in_file(&file_path),
@@ -263,18 +347,55 @@ pub(super) fn format_explore_file_result(
             &source_tokens,
             &flow_plan.anchors,
             &family,
-            reservation.saturating_add(reclaimed).max(1),
+            cap,
         )
         .join("\n")
             + "\n";
+        // Greedy whole-owner expansion may cost a later anchor. Keep the compact
+        // reservation whenever it supplies evidence that expansion would omit.
+        if !minimum.is_empty()
+            && (original.len() > cap
+                || original.contains("(no source available)")
+                || (original.contains("uncovered anchor") && !minimum.contains("uncovered anchor")))
+        {
+            original = minimum;
+        }
+        if original.len() > cap {
+            original = format!(
+                "#### {file_path} · source omitted\n... (uncovered anchor lines: {}; source omitted)\n",
+                flow_plan
+                    .anchors
+                    .iter()
+                    .filter(|a| a.file_path == file_path)
+                    .map(|a| a.line.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
         let emitted = session
             .map(|s| s.deduplicate(project_root, &original))
             .unwrap_or_else(|| original.clone());
-        reclaimed = reservation
-            .saturating_add(reclaimed)
-            .saturating_sub(emitted.len());
+        if emitted.len() + 1 > remaining {
+            let missing = flow_plan
+                .anchors
+                .iter()
+                .filter(|a| a.file_path == file_path)
+                .map(|a| a.line.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let gap = format!(
+                "\n#### {file_path} · source omitted\n... (uncovered anchor lines: {missing}; source omitted)\n"
+            );
+            if gap.len() <= remaining {
+                remaining -= gap.len();
+                lines.push(gap);
+            }
+            continue;
+        }
+        remaining -= emitted.len() + 1;
+        reclaimed = allowance.saturating_sub(emitted.len());
         if emitted != original && fallback.is_none() {
-            fallback = Some((lines.len(), original));
+            fallback = Some((lines.len(), original, emitted.len()));
         }
         has_source |= emitted.lines().any(|line| {
             line.split_once('\t')
@@ -282,12 +403,77 @@ pub(super) fn format_explore_file_result(
         });
         lines.push(emitted);
     }
-
     if !has_source {
-        if let Some((index, source)) = fallback {
-            lines[index] = source;
+        if let Some((index, source, old_len)) = fallback {
+            if source.len() <= remaining + old_len {
+                remaining = remaining + old_len - source.len();
+                lines[index] = source;
+            }
         }
     }
-    lines.extend(footer);
+    lines.push(guidance.to_string());
+    // Summaries use only the actual remainder; never truncate source to fit them.
+    let summary_gap =
+        "... (additional callers/locations omitted; use rustcodegraph_explore with exact names)";
+    for line in footer {
+        if line.len() + 1 + summary_gap.len() + 1 > remaining {
+            if summary_gap.len() < remaining {
+                lines.push(summary_gap.to_string());
+            }
+            break;
+        }
+        remaining -= line.len() + 1;
+        lines.push(line);
+    }
+
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+    #[test]
+    fn tiny_envelopes_return_gaps_without_utf8_or_envelope_overflow() {
+        let root = std::env::temp_dir().join(format!("rcg-tiny-budget-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("flow.ts"),
+            "export function start() { end(); }\nexport function end() { return '中文🙂'; }\n",
+        )
+        .unwrap();
+        let mut cg = crate::CodeGraph::init_sync(&root).unwrap();
+        assert!(cg.index_all(crate::IndexOptions::default()).success);
+        let nodes = cg
+            .search_nodes("start", None)
+            .into_iter()
+            .chain(cg.search_nodes("end", None))
+            .map(|r| r.node)
+            .collect::<Vec<_>>();
+        for tier in [1, 150, 500, 5000, 20000, 40000] {
+            for cap in [0, 3, 100, 300, 700, 13000] {
+                let mut budget = get_explore_output_budget(tier);
+                budget.max_output_chars = cap;
+                let text = format_explore_file_result(
+                    &mut cg,
+                    &root,
+                    "start end",
+                    nodes.clone(),
+                    8,
+                    &budget,
+                    tier,
+                    None,
+                );
+                assert!(
+                    text.len() <= cap,
+                    "tier={tier} cap={cap} bytes={}\n{text}",
+                    text.len()
+                );
+                if cap >= 100 && cap < 300 {
+                    assert!(text.contains("uncovered"));
+                }
+            }
+        }
+        cg.close();
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

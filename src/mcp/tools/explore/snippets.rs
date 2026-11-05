@@ -146,6 +146,7 @@ fn select(
     nodes: &[Node],
     anchors: &[SourceAnchor],
     cap: usize,
+    compact: bool,
 ) -> Selection {
     let lines: Vec<_> = source.lines().collect();
     let anchors: Vec<_> = anchors.iter().filter(|a| a.file_path == file).collect();
@@ -169,7 +170,7 @@ fn select(
             continue;
         }
         let name = owner.map(|n| n.qualified_name.as_str()).unwrap_or("wiring");
-        let full = owner.and_then(|n| {
+        let full = owner.filter(|_| !compact).and_then(|n| {
             let span = Span {
                 start: n.start_line.saturating_sub(1) as usize,
                 end: (n.end_line as usize).min(lines.len()),
@@ -289,7 +290,7 @@ pub(super) fn render(
     anchors: &[SourceAnchor],
     cap: usize,
 ) -> String {
-    let selection = select(source, file, nodes, anchors, cap);
+    let selection = select(source, file, nodes, anchors, cap, false);
     let lines: Vec<_> = source.lines().collect();
     let rendered = render_selection(&selection, &lines);
     if rendered.len() <= cap {
@@ -302,6 +303,18 @@ pub(super) fn render(
             String::new()
         }
     }
+}
+
+/// Compact statement/signature evidence used to reserve the flow before extras.
+pub(super) fn minimum(
+    source: &str,
+    file: &str,
+    nodes: &[Node],
+    anchors: &[SourceAnchor],
+    cap: usize,
+) -> String {
+    let selection = select(source, file, nodes, anchors, cap, true);
+    render_selection(&selection, &source.lines().collect::<Vec<_>>())
 }
 
 #[cfg(test)]
@@ -326,6 +339,7 @@ mod tests {
             &[],
             &[anchor(2), anchor(5), anchor(6)],
             2000,
+            false,
         );
 
         assert_eq!(selected.parses, 1);
@@ -347,7 +361,7 @@ mod tests {
             "function render() {{\n if (\n   enabled && check('){{')\n ) {{\n{}  register(callback);\n }}\n}}\n",
             " // padding\n".repeat(100)
         );
-        let selected = select(&source, "app.tsx", &[], &[anchor(105)], 1200);
+        let selected = select(&source, "app.tsx", &[], &[anchor(105)], 1200, false);
         assert_eq!(selected.spans.len(), 2);
         assert_eq!((selected.spans[0].start, selected.spans[0].end), (1, 4));
         assert_eq!((selected.spans[1].start, selected.spans[1].end), (104, 105));

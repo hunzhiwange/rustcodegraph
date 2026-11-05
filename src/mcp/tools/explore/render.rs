@@ -134,9 +134,11 @@ pub(super) fn render_explore_file_section(
     family: &ExploreFamilyContext,
     max_chars_per_file: usize,
 ) -> Vec<String> {
+    let header_reserve = file_path.len() + 64;
+    let max_chars_per_file = max_chars_per_file.saturating_sub(header_reserve);
     let source = fs::read_to_string(project_file_path(project_root, file_path)).unwrap_or_default();
     let use_snippets = matches!(mode, ExploreFileMode::Full)
-        && source.len() > max_chars_per_file
+        && number_source_lines(&source, 1).len() > max_chars_per_file
         && anchors.iter().any(|a| a.file_path == file_path);
     let label = match mode {
         ExploreFileMode::Full if use_snippets => "flow excerpts (partial source)",
@@ -198,6 +200,26 @@ pub(super) fn render_explore_file_section(
     lines
 }
 
+/// Include the real header and gap guidance in the reservation cost.
+pub(super) fn minimum_flow_section(
+    root: &Path,
+    file: &str,
+    nodes: &[crate::types::Node],
+    anchors: &[super::flow::SourceAnchor],
+    cap: usize,
+) -> String {
+    let source = fs::read_to_string(project_file_path(root, file)).unwrap_or_default();
+    let header = format!("#### {file} · flow excerpts (partial source)\n");
+    let body = super::snippets::minimum(
+        &source,
+        file,
+        nodes,
+        anchors,
+        cap.saturating_sub(header.len() + 1),
+    );
+    format!("{header}{body}\n")
+}
+
 // Select AST members before spending the file reservation, rather than cutting
 // the file prefix and losing definitions near its end.
 fn render_symbol_ranges(
@@ -206,7 +228,7 @@ fn render_symbol_ranges(
     tokens: &HashSet<String>,
     cap: usize,
 ) -> String {
-    if cap == 0 || source.len() <= cap {
+    if number_source_lines(source, 1).len() <= cap {
         return source.to_string();
     }
     let source_lines: Vec<_> = source.lines().collect();
@@ -249,11 +271,19 @@ fn render_symbol_ranges(
                 .position(|line| line.contains('{'))
                 .map(|i| start + i + 1)
                 .unwrap_or(start + 1);
+            spent += 70;
             for line in &source_lines[start..end] {
-                if stop >= signature_end && spent + line.len() + 1 > cap {
+                let cost = line.len()
+                    + 1
+                    + if explore_line_numbers_enabled() {
+                        (stop + 1).to_string().len() + 1
+                    } else {
+                        0
+                    };
+                if stop >= signature_end && spent + cost > cap {
                     break;
                 }
-                spent += line.len() + 1;
+                spent += cost;
                 stop += 1;
             }
             selected.push((start, stop));

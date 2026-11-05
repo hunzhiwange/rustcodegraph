@@ -35,7 +35,7 @@ File symbol maps use names relative to the file header and group repeated names 
 Explore and node return indexed source and graph context in both CLI and MCP sessions.
 
 Unchanged source previously sent in this session may be replaced by explicit file and line pointers; treat it as already Read. Short ranges and changed files are resent. Freed source budget is used for subsequent files; an all-repeat response still includes a useful source block.
-Named flow paths prioritize endpoint and bridge source within the output budget.
+Named flow paths reserve endpoint, call and wiring evidence before related source and caller summaries, within both file and response byte limits. Explicit uncovered anchors need another rustcodegraph_explore or rustcodegraph_node with exact names.
 Polymorphic sibling files retain compact signatures when adaptive source rendering applies.
 Large files may show selected symbol ranges and flow-anchored statement excerpts with original source coordinates; omitted ranges are not complete file contents. Excerpts identify their owner and selection reason; uncovered anchors are explicit gaps, not complete methods.
 
