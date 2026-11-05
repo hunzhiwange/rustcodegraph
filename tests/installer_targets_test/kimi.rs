@@ -44,7 +44,7 @@ fn case_053_override() {
         );
         assert_eq!(
             PathBuf::from(&t.describe_paths(Location::Local)[0]),
-            f.cwd().canonicalize().unwrap().join(".kimi-code/mcp.json")
+            env::current_dir().unwrap().join(".kimi-code/mcp.json")
         );
     });
 }

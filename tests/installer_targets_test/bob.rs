@@ -47,7 +47,7 @@ fn case_041_missing_and_legacy_paths() {
         fs::write(dir.join("mcp_settings.json"), "{}").unwrap();
         assert!(t.describe_paths(Location::Global)[0].ends_with("mcp_settings.json"));
         fs::write(dir.join("mcp.json"), "{}").unwrap();
-        assert!(t.describe_paths(Location::Global)[0].ends_with("settings/mcp.json"));
+        assert!(Path::new(&t.describe_paths(Location::Global)[0]).ends_with("settings/mcp.json"));
     });
 }
 

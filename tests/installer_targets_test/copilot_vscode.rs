@@ -12,7 +12,7 @@ fn case_035_local_install_and_idempotency() {
         let v: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(
             v["servers"]["rustcodegraph"]["args"][3],
-            f.cwd().canonicalize().unwrap().to_string_lossy().as_ref()
+            env::current_dir().unwrap().to_string_lossy().as_ref()
         );
         assert!(t.detect(Location::Local).already_configured);
         assert_eq!(

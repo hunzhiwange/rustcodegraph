@@ -54,7 +54,7 @@ fn case_051_override_and_sibling() {
         );
         assert_eq!(
             PathBuf::from(&t.describe_paths(Location::Local)[0]),
-            f.cwd().canonicalize().unwrap().join(".grok/config.toml")
+            env::current_dir().unwrap().join(".grok/config.toml")
         );
     });
 }

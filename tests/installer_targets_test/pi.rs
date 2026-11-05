@@ -41,7 +41,7 @@ fn case_057_override() {
         );
         assert_eq!(
             PathBuf::from(&t.describe_paths(Location::Local)[0]),
-            f.cwd().canonicalize().unwrap().join(".pi/mcp.json")
+            env::current_dir().unwrap().join(".pi/mcp.json")
         );
     });
 }

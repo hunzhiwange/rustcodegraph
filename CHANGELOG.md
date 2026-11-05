@@ -4,6 +4,8 @@
 
 ### Fixes
 
+- Keep Windows workspace paths valid in VS Code MCP configuration so installation, reinstallation, and removal work correctly.
+
 - Restore clean Clippy checks for source builds, including installer code and regression tests.
 
 - Fix building from source on Windows with MSVC when compiling the COBOL parser.

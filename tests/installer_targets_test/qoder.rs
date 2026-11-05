@@ -44,8 +44,7 @@ fn case_055_override() {
         );
         assert_eq!(
             PathBuf::from(&t.describe_paths(Location::Local)[0]),
-            f.cwd()
-                .canonicalize()
+            env::current_dir()
                 .unwrap()
                 .join(".qoder/settings.local.json")
         );

@@ -35,16 +35,31 @@ pub fn upsert_mcp_server_under(
     replace: bool,
 ) -> Result<FileWrite, String> {
     use jsonc_parser::cst::{CstInputValue, CstRootNode};
+    // jsonc-parser 0.26 escapes quotes itself, but leaves backslashes and control
+    // characters raw. Escape those first, for both string values and object keys.
+    fn escape_input_string(value: &str) -> String {
+        let mut escaped = String::new();
+        for ch in value.chars() {
+            match ch {
+                '\\' => escaped.push_str("\\\\"),
+                '\u{0000}'..='\u{001f}' => escaped.push_str(&format!("\\u{:04x}", ch as u32)),
+                _ => escaped.push(ch),
+            }
+        }
+        escaped
+    }
     fn input(value: &Value) -> CstInputValue {
         match value {
             Value::Null => CstInputValue::Null,
             Value::Bool(v) => CstInputValue::Bool(*v),
             Value::Number(v) => CstInputValue::Number(v.to_string()),
-            Value::String(v) => CstInputValue::String(v.clone()),
+            Value::String(v) => CstInputValue::String(escape_input_string(v)),
             Value::Array(v) => CstInputValue::Array(v.iter().map(input).collect()),
-            Value::Object(v) => {
-                CstInputValue::Object(v.iter().map(|(k, v)| (k.clone(), input(v))).collect())
-            }
+            Value::Object(v) => CstInputValue::Object(
+                v.iter()
+                    .map(|(k, v)| (escape_input_string(k), input(v)))
+                    .collect(),
+            ),
         }
     }
     let entry = entry
@@ -93,7 +108,7 @@ pub fn upsert_mcp_server_under(
             existing.remove();
         }
         if server.get(key).is_none() {
-            server.append(key, input(value));
+            server.append(&escape_input_string(key), input(value));
         }
     }
     let after = root.to_string();
