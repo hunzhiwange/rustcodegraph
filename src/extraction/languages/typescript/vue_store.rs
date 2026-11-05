@@ -84,15 +84,15 @@ pub(crate) fn registrations(root: &SyntaxNode) -> Vec<(String, String, SyntaxNod
         }) {
             continue;
         }
-        if field(call, "function").is_some_and(|f| factories.contains(&f)) {
-            if let Some(args) = call.child_for_field_name("arguments") {
-                configs.extend(
-                    args.named_children
-                        .iter()
-                        .filter(|n| n.node_type() == "object")
-                        .cloned(),
-                );
-            }
+        if field(call, "function").is_some_and(|f| factories.contains(&f))
+            && let Some(args) = call.child_for_field_name("arguments")
+        {
+            configs.extend(
+                args.named_children
+                    .iter()
+                    .filter(|n| n.node_type() == "object")
+                    .cloned(),
+            );
         }
     }
     // Vuex modules register their collections in a literal default-export config.
@@ -105,13 +105,12 @@ pub(crate) fn registrations(root: &SyntaxNode) -> Vec<(String, String, SyntaxNod
             .named_children
             .iter()
             .find(|n| n.node_type() == "object")
-        {
-            if config.named_children.iter().any(|n| {
+            && config.named_children.iter().any(|n| {
                 key(n).as_deref() == Some("namespaced")
                     && field(n, "value").as_deref() == Some("true")
-            }) {
-                configs.push(config.clone());
-            }
+            })
+        {
+            configs.push(config.clone());
         }
     }
     let mut result = Vec::new();

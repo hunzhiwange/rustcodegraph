@@ -115,17 +115,17 @@ impl LanguageExtractor for SolidityExtractor {
         };
         if matches!(kind, NodeKind::Class | NodeKind::Interface) {
             for child in &node.named_children {
-                if child.node_type() == "inheritance_specifier" {
-                    if let Some(ancestor) = child.child_for_field_name("ancestor") {
-                        let name = get_node_text(ancestor, ctx.source());
-                        add_ref(
-                            ctx,
-                            created.id.clone(),
-                            name,
-                            ReferenceKind::Extends,
-                            ancestor,
-                        );
-                    }
+                if child.node_type() == "inheritance_specifier"
+                    && let Some(ancestor) = child.child_for_field_name("ancestor")
+                {
+                    let name = get_node_text(ancestor, ctx.source());
+                    add_ref(
+                        ctx,
+                        created.id.clone(),
+                        name,
+                        ReferenceKind::Extends,
+                        ancestor,
+                    );
                 }
             }
         }

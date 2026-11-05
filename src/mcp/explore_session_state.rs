@@ -58,7 +58,7 @@ impl ExploreSessionState {
                 let block = source
                     .lines()
                     .enumerate()
-                    .filter(|(i, _)| i + 1 >= start && i + 1 <= end)
+                    .filter(|(i, _)| i + 1 >= start && *i < end)
                     .map(|(i, line)| format!("{}\t{}\n", i + 1, line))
                     .collect::<String>();
                 // Scope replacement to this file section, never another file's equal lines.
@@ -149,11 +149,11 @@ impl ExploreSessionState {
                     files.len() - 1
                 });
             let ranges = &mut files[idx].ranges;
-            if let Some(last) = ranges.last_mut() {
-                if last.1.checked_add(1) == Some(number) {
-                    last.1 = number;
-                    continue;
-                }
+            if let Some(last) = ranges.last_mut()
+                && last.1.checked_add(1) == Some(number)
+            {
+                last.1 = number;
+                continue;
             }
             if ranges.len() < 24 {
                 ranges.push((number, number));

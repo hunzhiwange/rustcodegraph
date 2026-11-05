@@ -199,7 +199,7 @@ pub(super) fn dispatch_edges(
             "identifier" | "this_expression" => true,
             "member_access_expression" => node
                 .child_for_field_name("expression")
-                .is_some_and(|n| receiver_is_static(&n)),
+                .is_some_and(receiver_is_static),
             _ => false,
         }
     }
@@ -260,7 +260,7 @@ pub(super) fn dispatch_edges(
                 continue;
             };
             // A simple mediator-ish field/identifier, never a computed receiver.
-            if !receiver_is_static(&receiver) {
+            if !receiver_is_static(receiver) {
                 continue;
             }
             let receiver_text = receiver.text().to_ascii_lowercase();

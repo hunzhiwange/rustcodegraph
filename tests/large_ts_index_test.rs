@@ -6,10 +6,7 @@ fn large_tsx_uses_ast_members_and_preserves_multiline_arrow_bodies() {
     let root = std::env::temp_dir().join(format!("rcg-large-ts-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     let code = "class App {\n  state: number = 0;\n  public triggerRender = (\n    force?: boolean,\n  ) => {\n    if (force) {\n      const local = { nested: true };\n      return renderStaticScene(local);\n    }\n    renderStaticScene(null);\n  };\n}\nfunction renderStaticScene(value: unknown) { return value; }\n";
-    let source = format!(
-        "{code}{}",
-        format!("//{}\n{}", "x".repeat(131072), "\n".repeat(5001))
-    );
+    let source = format!("{code}//{}\n{}", "x".repeat(131072), "\n".repeat(5001));
     std::fs::write(root.join("App.tsx"), source).unwrap();
     let mut graph = CodeGraph::init_sync(&root).unwrap();
     assert!(graph.index_all(IndexOptions::default()).success);
@@ -36,8 +33,9 @@ fn large_javascript_keeps_arrow_fields_callable_and_data_fields_as_properties() 
     let root = std::env::temp_dir().join(format!("rcg-large-js-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     let source = format!(
-        "class Canvas {{\n state = 0;\n triggerRender = (\n force,\n ) => {{\n if (force) {{ return draw(); }}\n draw();\n }};\n}}\nfunction draw() {{}}\n{}",
-        format!("//{}\n{}", "x".repeat(131072), "\n".repeat(5001))
+        "class Canvas {{\n state = 0;\n triggerRender = (\n force,\n ) => {{\n if (force) {{ return draw(); }}\n draw();\n }};\n}}\nfunction draw() {{}}\n//{}\n{}",
+        "x".repeat(131072),
+        "\n".repeat(5001)
     );
     std::fs::write(root.join("canvas.js"), source).unwrap();
     let mut graph = CodeGraph::init_sync(&root).unwrap();
@@ -87,10 +85,7 @@ class App {
 "#;
     std::fs::write(
         root.join("App.tsx"),
-        format!(
-            "{code}{}",
-            format!("//{}\n{}", "x".repeat(131072), "\n".repeat(5001))
-        ),
+        format!("{code}//{}\n{}", "x".repeat(131072), "\n".repeat(5001)),
     )
     .unwrap();
     let mut graph = CodeGraph::init_sync(&root).unwrap();

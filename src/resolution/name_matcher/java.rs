@@ -10,10 +10,10 @@ thread_local! {
 fn parse(source: &str) -> Option<tree_sitter::Tree> {
     LAST_TREE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if let Some((old_source, tree)) = cache.as_ref() {
-            if old_source == source {
-                return Some(tree.clone());
-            }
+        if let Some((old_source, tree)) = cache.as_ref()
+            && old_source == source
+        {
+            return Some(tree.clone());
         }
         let mut parser = tree_sitter::Parser::new();
         parser
@@ -269,7 +269,8 @@ pub(super) fn refine(
         } else {
             None
         };
-        if let Some(class) = class {
+        {
+            let class = class?;
             let qualified = format!("{}::{name}", class.qualified_name);
             selected = context
                 .get_nodes_by_name(name)
@@ -300,8 +301,6 @@ pub(super) fn refine(
                     0,
                 );
             }
-        } else {
-            return None;
         }
     }
     // A lambda receiver is constrained only by a receiver-less, same-file call
@@ -342,25 +341,24 @@ pub(super) fn refine(
                             let functional = param.and_then(|p| p.trim().strip_prefix("Consumer<"));
                             if let Some(rest) = functional
                                 .filter(|_| source.contains("import java.util.function.Consumer;"))
+                                && let Some((ty, _)) = rest.split_once('>')
                             {
-                                if let Some((ty, _)) = rest.split_once('>') {
-                                    let targets = context
-                                        .get_nodes_by_name(name)
-                                        .into_iter()
-                                        .filter(|n| {
-                                            n.language == Language::Java
-                                                && n.qualified_name
-                                                    .ends_with(&format!("::{}::{name}", simple(ty)))
-                                        })
-                                        .collect::<Vec<_>>();
-                                    if targets.len() == 1 {
-                                        selected = Some(super::common::resolved(
-                                            reference,
-                                            &targets[0].id,
-                                            0.95,
-                                            crate::resolution::types::ResolvedBy::InstanceMethod,
-                                        ));
-                                    }
+                                let targets = context
+                                    .get_nodes_by_name(name)
+                                    .into_iter()
+                                    .filter(|n| {
+                                        n.language == Language::Java
+                                            && n.qualified_name
+                                                .ends_with(&format!("::{}::{name}", simple(ty)))
+                                    })
+                                    .collect::<Vec<_>>();
+                                if targets.len() == 1 {
+                                    selected = Some(super::common::resolved(
+                                        reference,
+                                        &targets[0].id,
+                                        0.95,
+                                        crate::resolution::types::ResolvedBy::InstanceMethod,
+                                    ));
                                 }
                             }
                         }
@@ -400,9 +398,7 @@ pub(super) fn refine(
         .named_children(&mut cursor)
         .map(|a| argument_type(a, &source))
         .collect::<Option<Vec<_>>>();
-    let Some(types) = types else {
-        return None;
-    };
+    let types = types?;
     let mut fitting = siblings
         .iter()
         .filter_map(|n| {

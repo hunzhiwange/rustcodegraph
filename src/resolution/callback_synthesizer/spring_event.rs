@@ -197,7 +197,7 @@ fn static_receiver(node: &SyntaxNode) -> bool {
         "identifier" | "this" => true,
         "field_access" => node
             .child_for_field_name("object")
-            .is_some_and(|n| static_receiver(&n)),
+            .is_some_and(static_receiver),
         _ => false,
     }
 }
@@ -269,7 +269,7 @@ pub(super) fn dispatch_edges(
             }
             if !call
                 .child_for_field_name("object")
-                .is_some_and(|n| static_receiver(&n))
+                .is_some_and(static_receiver)
             {
                 continue;
             }

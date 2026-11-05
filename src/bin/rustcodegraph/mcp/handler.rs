@@ -99,10 +99,11 @@ pub(crate) fn handle_mcp_message<R: BufRead, W: Write>(
                         "projectPath".to_owned(),
                         json!(tool_project_root.to_string_lossy()),
                     );
-                    if name == "rustcodegraph_node" && !args.contains_key("symbol") {
-                        if let Some(value) = args.get("name").cloned() {
-                            args.insert("symbol".to_owned(), value);
-                        }
+                    if name == "rustcodegraph_node"
+                        && !args.contains_key("symbol")
+                        && let Some(value) = args.get("name").cloned()
+                    {
+                        args.insert("symbol".to_owned(), value);
                     }
                     serde_json::to_value(session.tool_handler.execute(&name, &args))
                         .map_err(|error| error.to_string())?
@@ -115,12 +116,11 @@ pub(crate) fn handle_mcp_message<R: BufRead, W: Write>(
             };
             if name == "rustcodegraph_explore"
                 && result.get("isError").and_then(Value::as_bool) != Some(true)
+                && let Some(text) = result.pointer("/content/0/text").and_then(Value::as_str)
             {
-                if let Some(text) = result.pointer("/content/0/text").and_then(Value::as_str) {
-                    session
-                        .explore_state
-                        .record_response(&tool_project_root, text);
-                }
+                session
+                    .explore_state
+                    .record_response(&tool_project_root, text);
             }
             mcp_success(id, result)
         }

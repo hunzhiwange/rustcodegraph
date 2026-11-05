@@ -13,12 +13,11 @@ fn snapshot(root: &Path) -> Snapshot {
             .map(|row| {
                 let raw = row.unwrap();
                 let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
-                if let Some(items) = value.as_array_mut() {
-                    if items.len() == 11 {
-                        if let Some(meta) = items[10].as_str() {
-                            items[10] = serde_json::from_str(meta).unwrap();
-                        }
-                    }
+                if let Some(items) = value.as_array_mut()
+                    && items.len() == 11
+                    && let Some(meta) = items[10].as_str()
+                {
+                    items[10] = serde_json::from_str(meta).unwrap();
                 }
                 value.to_string()
             })

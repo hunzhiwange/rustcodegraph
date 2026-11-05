@@ -192,7 +192,7 @@ pub(super) fn command_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
                                     n.kind == NodeKind::Function
                                         && n.name == name
                                         && n.start_line <= f.start_position.row as u64 + 1
-                                        && n.end_line >= f.end_position.row as u64 + 1
+                                        && n.end_line > f.end_position.row as u64
                                 })
                                 .cloned(),
                         );
@@ -387,10 +387,8 @@ fn event_handler(
     }) {
         return None;
     }
-    if !rust {
-        if rebound_except(root, &name, Some(declaration.start_index)) {
-            return None;
-        }
+    if !rust && rebound_except(root, &name, Some(declaration.start_index)) {
+        return None;
     }
     let candidates: Vec<_> = nodes
         .iter()
@@ -398,7 +396,7 @@ fn event_handler(
             n.kind == NodeKind::Function
                 && n.name == name
                 && n.start_line <= declaration.start_position.row as u64 + 1
-                && n.end_line >= declaration.end_position.row as u64 + 1
+                && n.end_line > declaration.end_position.row as u64
         })
         .collect();
     (candidates.len() == 1).then(|| candidates[0].clone())

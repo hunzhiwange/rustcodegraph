@@ -341,10 +341,10 @@ fn collect_refs(
                     if let Some(output) = rest.first() {
                         names.push(format!("module.{name}:output.{output}"));
                     }
-                    if let [outputs, output, ..] = rest {
-                        if outputs == "outputs" {
-                            names.push(format!("module.{name}:remote-output.{output}"));
-                        }
+                    if let [outputs, output, ..] = rest
+                        && outputs == "outputs"
+                    {
+                        names.push(format!("module.{name}:remote-output.{output}"));
                     }
                 }
                 (_, [name, ..]) => names.push(format!("{head}.{name}")),

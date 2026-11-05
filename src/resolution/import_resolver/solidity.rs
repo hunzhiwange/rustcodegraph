@@ -35,21 +35,19 @@ pub fn resolve_solidity_reference(
         && candidates.is_empty()
     {
         let nodes = context.get_nodes_in_file(&reference.file_path);
-        if let Some(owner) = nodes.iter().find(|n| n.id == reference.from_node_id) {
-            if let Some((scope, _)) = owner.qualified_name.rsplit_once("::") {
-                if let Some(contract) = nodes.iter().find(|n| {
-                    n.qualified_name == scope
-                        && matches!(n.kind, NodeKind::Class | NodeKind::Interface)
-                }) {
-                    candidates.extend(inherited_members(
-                        contract,
-                        name,
-                        reference,
-                        context,
-                        &mut std::collections::HashSet::new(),
-                    ));
-                }
-            }
+        if let Some(owner) = nodes.iter().find(|n| n.id == reference.from_node_id)
+            && let Some((scope, _)) = owner.qualified_name.rsplit_once("::")
+            && let Some(contract) = nodes.iter().find(|n| {
+                n.qualified_name == scope && matches!(n.kind, NodeKind::Class | NodeKind::Interface)
+            })
+        {
+            candidates.extend(inherited_members(
+                contract,
+                name,
+                reference,
+                context,
+                &mut std::collections::HashSet::new(),
+            ));
         }
     }
     for directive in &tree.root_node.named_children {
@@ -188,27 +186,27 @@ fn inherited_members(
             // Private and external functions cannot be called through a bare
             // inherited identifier. Inspect AST visibility because these nodes
             // do not yet carry extracted visibility metadata.
-            if let Some(source) = context.read_file(&parent.file_path) {
-                if let Some(tree) = parser.parse(&source, None) {
-                    for member in members {
-                        let accessible = tree
-                            .root_node
-                            .named_children
-                            .iter()
-                            .filter_map(|n| n.child_for_field_name("body"))
-                            .flat_map(|body| &body.named_children)
-                            .find(|n| {
-                                (n.start_position.row + 1) as u64 == member.start_line
-                                    && n.start_position.column as u64 == member.start_column
-                            })
-                            .is_some_and(|n| {
-                                !n.children.iter().any(|child| {
-                                    matches!(child.text.as_str(), "private" | "external")
-                                })
-                            });
-                        if accessible {
-                            result.push(member);
-                        }
+            if let Some(source) = context.read_file(&parent.file_path)
+                && let Some(tree) = parser.parse(&source, None)
+            {
+                for member in members {
+                    let accessible = tree
+                        .root_node
+                        .named_children
+                        .iter()
+                        .filter_map(|n| n.child_for_field_name("body"))
+                        .flat_map(|body| &body.named_children)
+                        .find(|n| {
+                            (n.start_position.row + 1) as u64 == member.start_line
+                                && n.start_position.column as u64 == member.start_column
+                        })
+                        .is_some_and(|n| {
+                            !n.children
+                                .iter()
+                                .any(|child| matches!(child.text.as_str(), "private" | "external"))
+                        });
+                    if accessible {
+                        result.push(member);
                     }
                 }
             }

@@ -81,10 +81,10 @@ fn attribute(node: &SyntaxNode, key: &str) -> Option<String> {
                 }
                 return Some(value.text.trim_matches(['\'', '"']).to_owned());
             }
-        } else if child.node_type() == "cf_tag_attributes" {
-            if let Some(value) = attribute(child, key) {
-                return Some(value);
-            }
+        } else if child.node_type() == "cf_tag_attributes"
+            && let Some(value) = attribute(child, key)
+        {
+            return Some(value);
         }
     }
     None
@@ -128,12 +128,10 @@ fn declaration(
                         .named_children
                         .first()
                         .is_some_and(|n| n.text.eq_ignore_ascii_case("extends"))
+                    && let Some(name) = attr.named_children.last().and_then(literal)
+                    && component_path(&name)
                 {
-                    if let Some(name) = attr.named_children.last().and_then(literal) {
-                        if component_path(&name) {
-                            add_ref(attr, &name, ReferenceKind::Extends, ctx);
-                        }
-                    }
+                    add_ref(attr, &name, ReferenceKind::Extends, ctx);
                 }
             }
         }
@@ -227,10 +225,9 @@ fn walk(node: &SyntaxNode, ctx: &mut dyn ExtractorContext) {
                 .split(|c: char| c.is_whitespace() || c == '>')
                 .next()
                 .is_some_and(|n| n.eq_ignore_ascii_case("<cfinclude"))
+                && let Some(name) = attribute(node, "template")
             {
-                if let Some(name) = attribute(node, "template") {
-                    add_ref(node, &name, ReferenceKind::Imports, ctx);
-                }
+                add_ref(node, &name, ReferenceKind::Imports, ctx);
             }
         }
         "component" => {
@@ -312,10 +309,10 @@ fn walk(node: &SyntaxNode, ctx: &mut dyn ExtractorContext) {
                 },
             ) {
                 ctx.push_scope(created.id);
-                if let Some(name) = attribute(child, "extends") {
-                    if component_path(&name) {
-                        add_ref(child, &name, ReferenceKind::Extends, ctx);
-                    }
+                if let Some(name) = attribute(child, "extends")
+                    && component_path(&name)
+                {
+                    add_ref(child, &name, ReferenceKind::Extends, ctx);
                 }
                 for member in &children[i + 1..=end] {
                     walk(member, ctx);
@@ -379,10 +376,10 @@ fn component_path(name: &str) -> bool {
 }
 fn created_component(args: &[&SyntaxNode]) -> Option<String> {
     let name = if args.iter().any(|n| named_value(n, "component").is_some()) {
-        if let Some(value) = args.iter().find_map(|n| named_value(n, "type")) {
-            if !literal(value).is_some_and(|v| v.eq_ignore_ascii_case("component")) {
-                return None;
-            }
+        if let Some(value) = args.iter().find_map(|n| named_value(n, "type"))
+            && !literal(value).is_some_and(|v| v.eq_ignore_ascii_case("component"))
+        {
+            return None;
         }
         args.iter().find_map(|n| named_literal(n, "component"))
     } else if args.len() == 1 {

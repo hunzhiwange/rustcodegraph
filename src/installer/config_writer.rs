@@ -69,33 +69,28 @@ pub fn upsert_mcp_server_under(
     let servers = object
         .object_value_or_create(wrapper)
         .ok_or_else(|| format!("{wrapper} must be an object; nothing changed"))?;
-    if replace {
-        if let Some(existing) = servers.get(MCP_SERVER_KEY) {
-            let parsed =
-                jsonc_parser::parse_to_serde_value(&existing.to_string(), &Default::default())
-                    .ok()
-                    .flatten();
-            if parsed
-                .as_ref()
-                .and_then(Value::as_object)
-                .is_some_and(|before| {
-                    entry
-                        .iter()
-                        .all(|(key, value)| before.get(key) == Some(value))
-                })
-            {
-                return Ok(file_write(path_to_string(path), WriteAction::Unchanged));
-            }
+    if replace && let Some(existing) = servers.get(MCP_SERVER_KEY) {
+        let parsed = jsonc_parser::parse_to_serde_value(&existing.to_string(), &Default::default())
+            .ok()
+            .flatten();
+        if parsed
+            .as_ref()
+            .and_then(Value::as_object)
+            .is_some_and(|before| {
+                entry
+                    .iter()
+                    .all(|(key, value)| before.get(key) == Some(value))
+            })
+        {
+            return Ok(file_write(path_to_string(path), WriteAction::Unchanged));
         }
     }
     let server = servers
         .object_value_or_create(MCP_SERVER_KEY)
         .ok_or("managed server must be an object; nothing changed")?;
     for (key, value) in entry {
-        if replace {
-            if let Some(existing) = server.get(key) {
-                existing.remove();
-            }
+        if replace && let Some(existing) = server.get(key) {
+            existing.remove();
         }
         if server.get(key).is_none() {
             server.append(key, input(value));

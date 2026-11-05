@@ -38,7 +38,7 @@ impl AgentTarget for QoderTarget {
         DetectionResult {
             installed: path(loc).parent().unwrap().exists(),
             already_configured: jsonc_parser::parse_to_serde_value(
-                &read_text(&path(loc)),
+                &read_text(path(loc)),
                 &Default::default(),
             )
             .ok()

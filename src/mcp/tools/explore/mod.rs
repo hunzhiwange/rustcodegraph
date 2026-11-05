@@ -85,7 +85,6 @@ pub(super) fn run(
             nodes,
             max_files,
             &budget,
-            file_count,
             session,
         );
         output.push_str(&budget_note);
@@ -104,7 +103,6 @@ pub(super) fn format_explore_file_result(
     mut nodes: Vec<Node>,
     max_files: usize,
     budget: &ExploreOutputBudget,
-    _file_count: usize,
     session: Option<&crate::mcp::explore_session_state::ExploreSessionState>,
 ) -> String {
     nodes.sort_by(|a, b| {
@@ -343,11 +341,13 @@ pub(super) fn format_explore_file_result(
             project_root,
             &file_path,
             &cg.get_nodes_in_file(&file_path),
-            mode,
-            &source_tokens,
-            &flow_plan.anchors,
-            &family,
-            cap,
+            render::ExploreFileRenderOptions {
+                mode,
+                query_tokens: &source_tokens,
+                anchors: &flow_plan.anchors,
+                family: &family,
+                max_chars_per_file: cap,
+            },
         )
         .join("\n")
             + "\n";
@@ -403,13 +403,12 @@ pub(super) fn format_explore_file_result(
         });
         lines.push(emitted);
     }
-    if !has_source {
-        if let Some((index, source, old_len)) = fallback {
-            if source.len() <= remaining + old_len {
-                remaining = remaining + old_len - source.len();
-                lines[index] = source;
-            }
-        }
+    if !has_source
+        && let Some((index, source, old_len)) = fallback
+        && source.len() <= remaining + old_len
+    {
+        remaining = remaining + old_len - source.len();
+        lines[index] = source;
     }
     lines.push(guidance.to_string());
     // Summaries use only the actual remainder; never truncate source to fit them.
@@ -460,7 +459,6 @@ mod budget_tests {
                     nodes.clone(),
                     8,
                     &budget,
-                    tier,
                     None,
                 );
                 assert!(
@@ -468,7 +466,7 @@ mod budget_tests {
                     "tier={tier} cap={cap} bytes={}\n{text}",
                     text.len()
                 );
-                if cap >= 100 && cap < 300 {
+                if (100..300).contains(&cap) {
                     assert!(text.contains("uncovered"));
                 }
             }

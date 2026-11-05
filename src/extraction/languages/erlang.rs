@@ -62,14 +62,13 @@ fn walk_refs(node: &SyntaxNode, ctx: &mut dyn ExtractorContext, source: &str) {
             if let (Some(module), Some(call)) = (
                 get_child_by_field(node, "module").and_then(|n| get_child_by_field(n, "module")),
                 get_child_by_field(node, "fun"),
-            ) {
-                if call.node_type() == "call" {
-                    emit_call(call, node, module_prefix(module, source), ctx, source);
-                    if let Some(args) = get_child_by_field(call, "args") {
-                        walk_refs(args, ctx, source);
-                    }
-                    return;
+            ) && call.node_type() == "call"
+            {
+                emit_call(call, node, module_prefix(module, source), ctx, source);
+                if let Some(args) = get_child_by_field(call, "args") {
+                    walk_refs(args, ctx, source);
                 }
+                return;
             }
         }
         "call" => {
@@ -188,19 +187,18 @@ fn directive(form: &SyntaxNode, ctx: &mut dyn ExtractorContext, source: &str) {
         "pp_define" => {
             if let Some(name) =
                 get_child_by_field(form, "lhs").and_then(|n| get_child_by_field(n, "name"))
-            {
-                if let Some(n) = ctx.create_node(
+                && let Some(n) = ctx.create_node(
                     NodeKind::Constant,
                     &get_node_text(name, source),
                     form,
                     NodeExtra::default(),
-                ) {
-                    ctx.push_scope(n.id);
-                    if let Some(body) = get_child_by_field(form, "replacement") {
-                        walk_refs(body, ctx, source);
-                    }
-                    ctx.pop_scope();
+                )
+            {
+                ctx.push_scope(n.id);
+                if let Some(body) = get_child_by_field(form, "replacement") {
+                    walk_refs(body, ctx, source);
                 }
+                ctx.pop_scope();
             }
         }
         _ => {}
@@ -219,20 +217,20 @@ impl LanguageExtractor for ErlangExtractor {
         let mut exports = HashSet::new();
         let mut export_all = false;
         for form in &root.named_children {
-            if form.node_type() == "module_attribute" {
-                if let Some(name) = get_child_by_field(form, "name") {
-                    let name = atom(name, &source);
-                    if let Some(n) = ctx.create_node(
-                        NodeKind::Namespace,
-                        &name,
-                        form,
-                        NodeExtra {
-                            qualified_name: Some(name.clone()),
-                            ..Default::default()
-                        },
-                    ) {
-                        module = Some((name, n.id));
-                    }
+            if form.node_type() == "module_attribute"
+                && let Some(name) = get_child_by_field(form, "name")
+            {
+                let name = atom(name, &source);
+                if let Some(n) = ctx.create_node(
+                    NodeKind::Namespace,
+                    &name,
+                    form,
+                    NodeExtra {
+                        qualified_name: Some(name.clone()),
+                        ..Default::default()
+                    },
+                ) {
+                    module = Some((name, n.id));
                 }
             }
             if form.node_type() == "export_attribute" {
@@ -244,10 +242,9 @@ impl LanguageExtractor for ErlangExtractor {
                         get_child_by_field(fa, "fun"),
                         get_child_by_field(fa, "arity")
                             .and_then(|n| get_child_by_field(n, "value")),
-                    ) {
-                        if let Ok(arity) = get_node_text(arity, &source).parse::<usize>() {
-                            exports.insert((atom(name, &source), arity));
-                        }
+                    ) && let Ok(arity) = get_node_text(arity, &source).parse::<usize>()
+                    {
+                        exports.insert((atom(name, &source), arity));
                     }
                 }
             }

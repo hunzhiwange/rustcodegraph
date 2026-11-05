@@ -216,7 +216,7 @@ fn qualify(root: &SyntaxNode, line: u64, name: &str) -> Option<String> {
         .descendants_of_type(&["namespace_definition"])
         .into_iter()
         .filter(|n| {
-            n.start_position.row as u64 + 1 <= line
+            (n.start_position.row as u64) < line
                 && (n.child_for_field_name("body").is_none()
                     || n.end_position.row as u64 + 1 >= line)
         })
@@ -293,8 +293,8 @@ fn qualify(root: &SyntaxNode, line: u64, name: &str) -> Option<String> {
         } else {
             format!("{import}\\{rest}")
         }
-    } else if name.starts_with("namespace\\") {
-        format!("{ns}\\{}", &name[10..])
+    } else if let Some(relative) = name.strip_prefix("namespace\\") {
+        format!("{ns}\\{relative}")
     } else if ns.is_empty() {
         name.to_owned()
     } else {
@@ -375,13 +375,13 @@ pub(super) fn dispatch_edges(
         files.push((file, app, tree.root_node, nodes));
     }
     for (app, event, listener) in mappings {
-        if let Some(targets) = handles.get(&(app.clone(), listener)) {
-            if targets.len() == 1 {
-                listeners
-                    .entry((app, event))
-                    .or_default()
-                    .push(targets[0].clone());
-            }
+        if let Some(targets) = handles.get(&(app.clone(), listener))
+            && targets.len() == 1
+        {
+            listeners
+                .entry((app, event))
+                .or_default()
+                .push(targets[0].clone());
         }
     }
     for targets in listeners.values_mut() {

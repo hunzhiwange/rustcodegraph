@@ -34,7 +34,7 @@ impl AgentTarget for QwenTarget {
         DetectionResult {
             installed: path(loc).parent().unwrap().exists(),
             already_configured: jsonc_parser::parse_to_serde_value(
-                &read_text(&path(loc)),
+                &read_text(path(loc)),
                 &Default::default(),
             )
             .ok()
@@ -107,30 +107,30 @@ impl AgentTarget for QwenTarget {
             return unchanged();
         };
         let mut changed = false;
-        if let Some(servers) = object.get("mcpServers").and_then(|p| p.object_value()) {
-            if let Some(server) = servers.get("rustcodegraph") {
-                server.remove();
-                changed = true;
-                if servers.properties().is_empty() {
-                    object.get("mcpServers").unwrap().remove();
-                }
+        if let Some(servers) = object.get("mcpServers").and_then(|p| p.object_value())
+            && let Some(server) = servers.get("rustcodegraph")
+        {
+            server.remove();
+            changed = true;
+            if servers.properties().is_empty() {
+                object.get("mcpServers").unwrap().remove();
             }
         }
-        if let Some(permissions) = object.get("permissions").and_then(|p| p.object_value()) {
-            if let Some(allow) = permissions.array_value("allow") {
-                let mut removed_rule = false;
-                for rule in allow.elements() {
-                    if rule.to_string() == "\"mcp__rustcodegraph\"" {
-                        rule.remove();
-                        removed_rule = true;
-                        changed = true;
-                    }
+        if let Some(permissions) = object.get("permissions").and_then(|p| p.object_value())
+            && let Some(allow) = permissions.array_value("allow")
+        {
+            let mut removed_rule = false;
+            for rule in allow.elements() {
+                if rule.to_string() == "\"mcp__rustcodegraph\"" {
+                    rule.remove();
+                    removed_rule = true;
+                    changed = true;
                 }
-                if removed_rule && allow.elements().is_empty() {
-                    permissions.get("allow").unwrap().remove();
-                    if permissions.properties().is_empty() {
-                        object.get("permissions").unwrap().remove();
-                    }
+            }
+            if removed_rule && allow.elements().is_empty() {
+                permissions.get("allow").unwrap().remove();
+                if permissions.properties().is_empty() {
+                    object.get("permissions").unwrap().remove();
                 }
             }
         }

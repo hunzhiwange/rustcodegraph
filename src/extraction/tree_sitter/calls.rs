@@ -198,22 +198,19 @@ impl TreeSitterExtractor {
                 .chars()
                 .nth(2)
                 .is_some_and(|c| c.is_ascii_uppercase())
+            && let Some(args) = args
         {
-            if let Some(args) = args {
-                for arg in &args.named_children {
-                    if arg.node_type() == "member_expression"
-                        && get_child_by_field(arg, "object")
-                            .is_some_and(|n| n.node_type() == "this")
-                    {
-                        if let Some(property) = get_child_by_field(arg, "property") {
-                            self.push_unresolved_reference(
-                                caller,
-                                property.text.clone(),
-                                ReferenceKind::Calls,
-                                arg,
-                            );
-                        }
-                    }
+            for arg in &args.named_children {
+                if arg.node_type() == "member_expression"
+                    && get_child_by_field(arg, "object").is_some_and(|n| n.node_type() == "this")
+                    && let Some(property) = get_child_by_field(arg, "property")
+                {
+                    self.push_unresolved_reference(
+                        caller,
+                        property.text.clone(),
+                        ReferenceKind::Calls,
+                        arg,
+                    );
                 }
             }
         }

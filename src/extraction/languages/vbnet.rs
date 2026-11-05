@@ -47,19 +47,19 @@ impl LanguageExtractor for VbnetExtractor {
             _ => return false,
         };
         let name = node.child_for_field_name("name").map(|n| n.text.as_str());
-        if let Some(name) = name {
-            if let Some(created) = ctx.create_node(kind, name, node, NodeExtra::default()) {
-                if kind == NodeKind::Namespace {
-                    ctx.push_scope(created.id);
-                    for child in &node.named_children {
-                        ctx.visit_node(child);
-                    }
-                    ctx.pop_scope();
-                } else if kind == NodeKind::Property {
-                    ctx.push_scope(created.id.clone());
-                    ctx.visit_function_body(node, &created.id);
-                    ctx.pop_scope();
+        if let Some(name) = name
+            && let Some(created) = ctx.create_node(kind, name, node, NodeExtra::default())
+        {
+            if kind == NodeKind::Namespace {
+                ctx.push_scope(created.id);
+                for child in &node.named_children {
+                    ctx.visit_node(child);
                 }
+                ctx.pop_scope();
+            } else if kind == NodeKind::Property {
+                ctx.push_scope(created.id.clone());
+                ctx.visit_function_body(node, &created.id);
+                ctx.pop_scope();
             }
         }
         true

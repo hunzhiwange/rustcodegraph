@@ -541,8 +541,8 @@ fn blank_cuda_constructs(source: &str) -> Option<String> {
                     }
                     if bytes.get(end) == Some(&b'(') {
                         let mut depth = 0;
-                        for j in end..bytes.len().min(end + 400) {
-                            match bytes[j] {
+                        for (j, byte) in bytes.iter().enumerate().take(end + 400).skip(end) {
+                            match byte {
                                 b'(' => depth += 1,
                                 b')' => {
                                     depth -= 1;
@@ -585,10 +585,8 @@ fn blank_cuda_constructs(source: &str) -> Option<String> {
                     b'(' => stack.push(b')'),
                     b'[' => stack.push(b']'),
                     b'{' => stack.push(b'}'),
-                    b')' | b']' | b'}' => {
-                        if stack.pop() != Some(bytes[end]) {
-                            break;
-                        }
+                    b')' | b']' | b'}' if stack.pop() != Some(bytes[end]) => {
+                        break;
                     }
                     _ => {}
                 }

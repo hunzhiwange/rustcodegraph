@@ -147,31 +147,30 @@ fn members(
         .iter()
         .find(|n| key(n).as_deref() == Some("modules"))
         .and_then(|n| n.child_for_field_name("value"))
+        && let Some((mf, modules)) = object(files, file, modules, 0)
     {
-        if let Some((mf, modules)) = object(files, file, modules, 0) {
-            for member in &modules.named_children {
-                let Some(name) = key(member).or_else(|| {
-                    (member.node_type() == "shorthand_property_identifier").then(|| member.text())
-                }) else {
-                    continue;
+        for member in &modules.named_children {
+            let Some(name) = key(member).or_else(|| {
+                (member.node_type() == "shorthand_property_identifier").then(|| member.text())
+            }) else {
+                continue;
+            };
+            if let Some((f, c)) = object(
+                files,
+                &mf,
+                member.child_for_field_name("value").unwrap_or(member),
+                0,
+            ) {
+                let namespaced = c.named_children.iter().any(|n| {
+                    key(n).as_deref() == Some("namespaced")
+                        && field(n, "value").as_deref() == Some("true")
+                });
+                let ns = if namespaced {
+                    format!("{namespace}{name}/")
+                } else {
+                    namespace.to_owned()
                 };
-                if let Some((f, c)) = object(
-                    files,
-                    &mf,
-                    member.child_for_field_name("value").unwrap_or(member),
-                    0,
-                ) {
-                    let namespaced = c.named_children.iter().any(|n| {
-                        key(n).as_deref() == Some("namespaced")
-                            && field(n, "value").as_deref() == Some("true")
-                    });
-                    let ns = if namespaced {
-                        format!("{namespace}{name}/")
-                    } else {
-                        namespace.to_owned()
-                    };
-                    out.extend(members(files, &f, &c, &ns, depth + 1));
-                }
+                out.extend(members(files, &f, &c, &ns, depth + 1));
             }
         }
     }
@@ -372,7 +371,7 @@ pub(super) fn vue_store_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
                 let Some(method) = field(function, "property") else {
                     continue;
                 };
-                if !stable(&scope, &receiver) {
+                if !stable(scope, &receiver) {
                     continue;
                 }
                 for store in &stores {
@@ -393,8 +392,7 @@ pub(super) fn vue_store_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
                                 .iter()
                                 .any(|n| n.text() == receiver)
                             });
-                        if decls.len() != 1 || parameter_shadow || shadowed(&scope, &store.binding)
-                        {
+                        if decls.len() != 1 || parameter_shadow || shadowed(scope, &store.binding) {
                             continue;
                         }
                         let Some(value) = decls[0]
@@ -406,7 +404,7 @@ pub(super) fn vue_store_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
                         let Some(factory) = field(value, "function") else {
                             continue;
                         };
-                        if shadowed(&scope, &factory)
+                        if shadowed(scope, &factory)
                             || !binding_visible(&files, file, &factory, store)
                         {
                             continue;
@@ -417,24 +415,22 @@ pub(super) fn vue_store_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
                             }
                         }
                     } else if matches!(method.as_str(), "dispatch" | "commit")
-                        && !shadowed(&scope, &receiver)
+                        && !shadowed(scope, &receiver)
                         && binding_visible(&files, file, &receiver, store)
-                    {
-                        if let Some(arg) = call
+                        && let Some(arg) = call
                             .child_for_field_name("arguments")
                             .and_then(|a| a.named_children.first())
                             .filter(|n| n.node_type() == "string")
-                        {
-                            let name = arg.text().trim_matches(['\'', '"']).to_owned();
-                            let kind = if method == "dispatch" {
-                                "actions"
-                            } else {
-                                "mutations"
-                            };
-                            for (key, collection, target) in &store.members {
-                                if key == &name && collection == kind {
-                                    targets.push((target.clone(), "vuex-dispatch", name.clone()));
-                                }
+                    {
+                        let name = arg.text().trim_matches(['\'', '"']).to_owned();
+                        let kind = if method == "dispatch" {
+                            "actions"
+                        } else {
+                            "mutations"
+                        };
+                        for (key, collection, target) in &store.members {
+                            if key == &name && collection == kind {
+                                targets.push((target.clone(), "vuex-dispatch", name.clone()));
                             }
                         }
                     }
@@ -458,7 +454,7 @@ pub(super) fn vue_store_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
                         })
                     });
                 if !has_context
-                    || !stable(&scope, &method)
+                    || !stable(scope, &method)
                     || call
                         .child_for_field_name("arguments")
                         .is_some_and(|a| a.named_children.len() > 2)

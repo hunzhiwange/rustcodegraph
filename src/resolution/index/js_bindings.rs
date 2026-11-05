@@ -40,13 +40,12 @@ fn walk(
     scope: (usize, usize),
     sites: &mut Vec<(String, usize, usize, bool)>,
 ) {
-    if matches!(n.kind(), "function_declaration" | "class_declaration") {
-        if let Some(name) = n
+    if matches!(n.kind(), "function_declaration" | "class_declaration")
+        && let Some(name) = n
             .child_by_field_name("name")
             .and_then(|n| n.utf8_text(source).ok())
-        {
-            sites.push((name.to_owned(), scope.0, scope.1, false));
-        }
+    {
+        sites.push((name.to_owned(), scope.0, scope.1, false));
     }
     let scope = if matches!(
         n.kind(),
@@ -105,22 +104,22 @@ fn walk(
             sites.push((name, scope.0, scope.1, true));
         }
     }
-    if n.kind() == "arrow_function" {
-        if let Some(p) = n.child_by_field_name("parameter") {
-            let mut ns = Vec::new();
-            names(p, source, &mut ns);
-            for name in ns {
-                sites.push((name, scope.0, scope.1, true));
-            }
+    if n.kind() == "arrow_function"
+        && let Some(p) = n.child_by_field_name("parameter")
+    {
+        let mut ns = Vec::new();
+        names(p, source, &mut ns);
+        for name in ns {
+            sites.push((name, scope.0, scope.1, true));
         }
     }
-    if n.kind() == "catch_clause" {
-        if let Some(p) = n.child_by_field_name("parameter") {
-            let mut ns = Vec::new();
-            names(p, source, &mut ns);
-            for name in ns {
-                sites.push((name, scope.0, scope.1, true));
-            }
+    if n.kind() == "catch_clause"
+        && let Some(p) = n.child_by_field_name("parameter")
+    {
+        let mut ns = Vec::new();
+        names(p, source, &mut ns);
+        for name in ns {
+            sites.push((name, scope.0, scope.1, true));
         }
     }
     let mut c = n.walk();

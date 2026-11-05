@@ -27,20 +27,15 @@ fn dispatches(node: &SyntaxNode, output: &mut Vec<(String, u64)>) {
     }
     if node.node_type() == "call_expression"
         && field_text(node, "function").as_deref() == Some("dispatch")
-    {
-        if let Some(call) = node
+        && let Some(call) = node
             .child_for_field_name("arguments")
             .and_then(|a| a.named_children.first())
-        {
-            if call.node_type() == "call_expression" {
-                if let Some(name) = call
-                    .child_for_field_name("function")
-                    .filter(|n| n.node_type() == "identifier")
-                {
-                    output.push((name.text(), node.start_position.row as u64 + 1));
-                }
-            }
-        }
+        && call.node_type() == "call_expression"
+        && let Some(name) = call
+            .child_for_field_name("function")
+            .filter(|n| n.node_type() == "identifier")
+    {
+        output.push((name.text(), node.start_position.row as u64 + 1));
     }
     for child in &node.named_children {
         dispatches(child, output);
@@ -116,7 +111,7 @@ pub(super) fn redux_thunk_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
                     n.name == name
                         && matches!(n.kind, NodeKind::Constant | NodeKind::Variable)
                         && n.start_line <= decl.start_position.row as u64 + 1
-                        && n.end_line >= decl.end_position.row as u64 + 1
+                        && n.end_line > decl.end_position.row as u64
                 })
                 .collect();
             if candidates.len() != 1 {
@@ -241,7 +236,7 @@ pub(super) fn rtk_query_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
                 .filter(|n| {
                     n.name == registration.endpoint
                         && n.start_line <= registration.callback.start_position.row as u64 + 1
-                        && n.end_line >= registration.callback.end_position.row as u64 + 1
+                        && n.end_line > registration.callback.end_position.row as u64
                 })
                 .collect();
             if hooks.len() != 1 || targets.len() != 1 {

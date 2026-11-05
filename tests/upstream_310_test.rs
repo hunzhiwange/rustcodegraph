@@ -22,7 +22,7 @@ fn check(source: &str, run: impl FnOnce(&mut CodeGraph, &mut ListenerRegistry)) 
         }
     }
     let _cleanup = Cleanup(path.clone());
-    std::fs::write(&path.join("Listeners.php"), source).unwrap();
+    std::fs::write(path.join("Listeners.php"), source).unwrap();
     let mut graph = CodeGraph::init_sync(&path).unwrap();
     assert!(graph.index_all(Default::default()).success);
     let mut registry = ListenerRegistry::default();

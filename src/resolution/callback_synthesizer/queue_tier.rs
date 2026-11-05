@@ -398,16 +398,16 @@ fn consumers(files: &HashMap<String, File>) -> Vec<Consumer> {
                     _ => None,
                 }
             };
-            if let Some((queue, job, callback)) = found {
-                if let Some(node) = handler(files, file, callback) {
-                    out.push(Consumer {
-                        file: file.clone(),
-                        queue,
-                        job,
-                        node,
-                        line: call.start_position.row as u64 + 1,
-                    });
-                }
+            if let Some((queue, job, callback)) = found
+                && let Some(node) = handler(files, file, callback)
+            {
+                out.push(Consumer {
+                    file: file.clone(),
+                    queue,
+                    job,
+                    node,
+                    line: call.start_position.row as u64 + 1,
+                });
             }
         }
     }

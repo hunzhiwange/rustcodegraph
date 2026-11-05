@@ -1,10 +1,16 @@
 #[path = "../src/resolution/lru_cache.rs"]
 mod lru_cache;
 use lru_cache::LruCache;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 static COMPARISONS: AtomicUsize = AtomicUsize::new(0);
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug)]
 struct Key(usize);
+impl Hash for Key {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
 impl PartialEq for Key {
     fn eq(&self, other: &Self) -> bool {
         COMPARISONS.fetch_add(1, Ordering::Relaxed);

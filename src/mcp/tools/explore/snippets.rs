@@ -41,10 +41,9 @@ fn boundary(node: &SyntaxNode, line: usize, best: &mut Option<(usize, usize)>) {
             | "jsx_element"
             | "jsx_self_closing_element"
             | "jsx_opening_element"
-    ) {
-        if best.is_none_or(|(a, b)| end - start < b - a) {
-            *best = Some((start, end));
-        }
+    ) && best.is_none_or(|(a, b)| end - start < b - a)
+    {
+        *best = Some((start, end));
     }
     for child in &node.named_children {
         boundary(child, line, best);
@@ -61,15 +60,13 @@ fn branch_headers(node: &SyntaxNode, line: usize, out: &mut Vec<(usize, usize)>)
     if matches!(
         node.node_type.as_str(),
         "if_statement" | "for_statement" | "for_in_statement" | "while_statement"
-    ) {
-        if let Some(body) = node
-            .child_for_field_name("consequence")
-            .or_else(|| node.child_for_field_name("body"))
-        {
-            if body.node_type == "statement_block" && body.start_position.row < line {
-                out.push((start, body.start_position.row + 1));
-            }
-        }
+    ) && let Some(body) = node
+        .child_for_field_name("consequence")
+        .or_else(|| node.child_for_field_name("body"))
+        && body.node_type == "statement_block"
+        && body.start_position.row < line
+    {
+        out.push((start, body.start_position.row + 1));
     }
     for child in &node.named_children {
         branch_headers(child, line, out);

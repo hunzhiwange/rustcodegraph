@@ -313,12 +313,11 @@ pub(super) fn dispatch_edges(ctx: &mut dyn ResolutionContext) -> Vec<Edge> {
                 "new_expression" => field(value, "constructor"),
                 _ => None,
             };
-            if let Some(side) = factory.and_then(|n| factories.get(&n).copied()) {
-                if (side == Side::Client && value.node_type() == "call_expression")
-                    || (side == Side::Server && value.node_type() == "new_expression")
-                {
-                    receivers.insert(name.text(), (side, 0, source.len()));
-                }
+            if let Some(side) = factory.and_then(|n| factories.get(&n).copied())
+                && ((side == Side::Client && value.node_type() == "call_expression")
+                    || (side == Side::Server && value.node_type() == "new_expression"))
+            {
+                receivers.insert(name.text(), (side, 0, source.len()));
             }
         }
         // A connected server-side socket inherits its direction only inside the

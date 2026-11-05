@@ -194,15 +194,15 @@ fn collect_refs(node: &SyntaxNode, ctx: &mut dyn ExtractorContext) {
             }
         }
         "call_statement" => {
-            if let Some(target) = node.child_for_field_name("x") {
-                if target.node_type() == "string" {
-                    add_ref(
-                        target,
-                        target.text.trim_matches(['\'', '"']).trim(),
-                        ReferenceKind::Calls,
-                        ctx,
-                    );
-                }
+            if let Some(target) = node.child_for_field_name("x")
+                && target.node_type() == "string"
+            {
+                add_ref(
+                    target,
+                    target.text.trim_matches(['\'', '"']).trim(),
+                    ReferenceKind::Calls,
+                    ctx,
+                );
             }
             // Exception clauses can contain further statements.
             for child in &node.named_children {

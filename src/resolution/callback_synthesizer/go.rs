@@ -389,7 +389,7 @@ fn go_interface_vars(source: &str, file_path: &str) -> Vec<GoInterfaceVar> {
         .filter_map(|cap| {
             let name = cap.get(1)?.as_str().to_string();
             let interface_name = cap.get(2)?.as_str().to_string();
-            let line = super::common::prefix_line_count(&source, cap.get(0)?.start()) + 1;
+            let line = super::common::prefix_line_count(source, cap.get(0)?.start()) + 1;
             Some(GoInterfaceVar {
                 name,
                 interface_name,
@@ -408,7 +408,7 @@ fn go_interface_assignments(source: &str, file_path: &str) -> Vec<GoInterfaceAss
         .filter_map(|cap| {
             let variable_name = cap.get(1)?.as_str().to_string();
             let impl_name = cap.get(2)?.as_str().to_string();
-            let line = super::common::prefix_line_count(&source, cap.get(0)?.start()) + 1;
+            let line = super::common::prefix_line_count(source, cap.get(0)?.start()) + 1;
             Some(GoInterfaceAssignment {
                 variable_name,
                 impl_name,
@@ -483,6 +483,8 @@ fn go_signature(node: &Node, ctx: &mut dyn ResolutionContext) -> Option<String> 
             };
             written.push(ty);
         }
+        let alias_re = Regex::new(r"(?m)^\s*type\s+(\w+)\s*=\s*([\w.*\[\]]+)\s*$").ok()?;
+        let tokens = Regex::new(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?").ok()?;
         for ty in written.into_iter().rev() {
             if ty.contains(['(', ')', '{', '}']) {
                 return None;
@@ -496,7 +498,6 @@ fn go_signature(node: &Node, ctx: &mut dyn ResolutionContext) -> Option<String> 
                 CommentLang::Go,
             );
             // Only true aliases preserve identity; defined types remain distinct.
-            let alias_re = Regex::new(r"(?m)^\s*type\s+(\w+)\s*=\s*([\w.*\[\]]+)\s*$").ok()?;
             for _ in 0..8 {
                 let old = ty.clone();
                 for cap in alias_re.captures_iter(&source) {
@@ -518,7 +519,6 @@ fn go_signature(node: &Node, ctx: &mut dyn ResolutionContext) -> Option<String> 
                     .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path));
                 imports.insert(alias.to_string(), path.to_string());
             }
-            let tokens = Regex::new(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?").ok()?;
             let mut normalized = String::new();
             let mut previous = 0;
             for token in tokens.find_iter(&ty) {

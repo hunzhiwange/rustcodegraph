@@ -124,16 +124,27 @@ pub(super) fn explore_file_mode(
     ExploreFileMode::Full
 }
 
+pub(super) struct ExploreFileRenderOptions<'a> {
+    pub mode: ExploreFileMode,
+    pub query_tokens: &'a HashSet<String>,
+    pub anchors: &'a [super::flow::SourceAnchor],
+    pub family: &'a ExploreFamilyContext,
+    pub max_chars_per_file: usize,
+}
+
 pub(super) fn render_explore_file_section(
     project_root: &Path,
     file_path: &str,
     nodes: &[crate::types::Node],
-    mode: ExploreFileMode,
-    query_tokens: &HashSet<String>,
-    anchors: &[super::flow::SourceAnchor],
-    family: &ExploreFamilyContext,
-    max_chars_per_file: usize,
+    options: ExploreFileRenderOptions<'_>,
 ) -> Vec<String> {
+    let ExploreFileRenderOptions {
+        mode,
+        query_tokens,
+        anchors,
+        family,
+        max_chars_per_file,
+    } = options;
     let header_reserve = file_path.len() + 64;
     let max_chars_per_file = max_chars_per_file.saturating_sub(header_reserve);
     let source = fs::read_to_string(project_file_path(project_root, file_path)).unwrap_or_default();
