@@ -84,6 +84,13 @@ impl<'db> QueryBuilder<'db> {
         Ok(())
     }
 
+    /// Registration changes can invalidate IPC links between unchanged files.
+    pub(crate) fn delete_tauri_command_edges(&mut self) -> SqliteResult<()> {
+        let mut stmt = self.db.prepare("DELETE FROM edges WHERE provenance = 'heuristic' AND json_extract(metadata, '$.synthesizedBy') = 'tauri-command'")?;
+        stmt.run(SqliteParams::positional(vec![]))?;
+        Ok(())
+    }
+
     pub fn delete_edges_by_source(&mut self, source_id: &str) -> SqliteResult<()> {
         let stmt = Self::prepare_cached(
             self.db,

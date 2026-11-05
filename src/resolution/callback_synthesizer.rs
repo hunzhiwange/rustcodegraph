@@ -33,6 +33,7 @@ mod redux;
 mod sidekiq;
 mod socket_tier;
 mod spring_event;
+mod tauri;
 mod templates;
 mod terraform;
 mod vue_store;
@@ -96,6 +97,8 @@ pub fn synthesize_callback_edges(
     all.extend(queue_tier::dispatch_edges(ctx));
     let _ = queries.delete_socket_dispatch_edges();
     all.extend(socket_tier::dispatch_edges(ctx));
+    let _ = queries.delete_tauri_command_edges();
+    all.extend(tauri::command_edges(ctx));
     all.extend(react_render_edges(queries, ctx));
     all.extend(react_jsx_child_edges(ctx));
     all.extend(vue_template_edges(ctx));
