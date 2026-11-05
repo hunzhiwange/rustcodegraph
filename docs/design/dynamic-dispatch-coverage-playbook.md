@@ -1414,3 +1414,52 @@ process concurrency 重载、成员字段接收器、CommonJS require、namespac
 也不替代小中大九案例真实仓库矩阵。九项均未执行，无案例 summary 或原始实验日志；
 真实仓库回放、重复 A/B、指定模型、性能指标及 VM/Docker 验证均未执行，
 不声明外部验收通过。
+
+
+<a id="socket-tier-static-coverage"></a>
+### Socket 跨层静态覆盖收口（2026-11-05）
+
+沿用 TypeScript `.ts`/`.tsx` 和 JavaScript `.js`/`.jsx`/`.mjs`/`.cjs`
+提取，不新增扩展名。AST 要求显式导入 `socket.io-client` 默认导出或命名
+`io`/`connect` 后调用，或从 `socket.io` 命名导入 `Server` 后用 `new` 构造，
+实例须为唯一、未重绑定的模块级变量；支持导入别名，不按接收器名称猜测传输。
+服务端实例的 `on('connection', callback)` 中，callback 的首个参数仅在
+该内联 callback 词法范围内继承 server 方向，遮蔽或重绑定时保持无边。
+
+命名 callable 内的 `emit` 与相反方向的 `on`/`once` 按非空、无转义的事件
+字符串精确配对，排除 connect、disconnect、error 等通用传输事件。
+命名 listener 须为唯一模块级函数声明或函数表达式/箭头函数变量，可在本地定义，
+也可通过直接命名导入解析显式导出的声明（支持别名）；内联 listener 连接其
+外层命名 callable，不单独新增回调节点。普通静态调用继续连接 helper。
+应用范围取最近 `package.json` 所在目录，无标记时使用项目级空范围，
+导入和事件匹配均受此范围约束；每个事件同方向发送点或反方向监听点超过
+6 个时跳过该配对。范围内全部匹配 listener 均可连接，不证明端点实际相连。
+
+合成 calls 边带 heuristic、`event-bus`、`channel: socket`、event、callee、
+方向 tier 及 listener 注册位置 `registeredAt`；explore Flow 展示方向和接线位置，
+sync 重算接线，包括仅删除 listener 文件的情况。
+不承诺 NestJS WebSocketGateway/WebSocketServer/SubscribeMessage 装饰器、
+动态或 template 事件名、namespace/room/broadcast 链、成员字段接收器、
+CommonJS require、namespace 导入、listener 默认导入、导出列表或 re-export 链、
+跨 package 派发、运行时连接、投递顺序或交付保证。
+这是导入和注册语法启发式，不验证依赖安装或服务运行状态。
+
+只读上游 HEAD 核对为 `15483713763f344ff30fb7df92bcf091c7bd9758`。
+注册与派发提交分别为 `ca323aca`、`f664d2c9`，实现及两份聚焦测试相对后者无差异。
+复核既有 `/tmp/rcg350-test.log` 的派发 4 项，以及 `/tmp/rcg350-adjacent.log`
+的注册 7 项、队列 10 项、closure 1 项、explore 31 项通过，
+合计 53 passed、0 failed、0 ignored，测试入口为 `target/rust-slot-1/debug/deps/`。
+断言覆盖双向直接导入 listener、完整 `start → send → receive → finish` explore
+Flow 与方向/接线标注、重复索引节点稳定、注册变更和删除后的 sync，
+以及动态/缺失注册、假 import、同方向、package 隔离、遮蔽和重绑定负例。
+本次仅复核既有日志、源码和断言，执行文档清单检查及 `git diff --check`，
+未运行 Cargo，不声明新一轮行为测试或全套回归通过。
+
+依赖批次 352–360（任务 121–129）的九项外部验收按用户 2026-11-03 修订
+以“用户取消验收”收口，不再作为静态支持说明的完成门槛。
+[取消验收清单](../benchmarks/upstream-matrices/socket-tier.json) 由 `ae28c483`
+归档，`cases=[]`、`external_experiments_executed=false`。
+上游 NestJS 装饰器和 React 内联 listener 合成 fixture 不替代真实仓库矩阵，
+其中 NestJS 装饰器不代表本地 Rust 支持。九项均未执行，无案例 summary
+或原始实验日志；真实仓库回放、重复 A/B、指定模型、性能指标及 VM/Docker
+验证均未执行，不声明外部验收通过。
