@@ -10,6 +10,8 @@
 
 ### New Features
 
+- Follow inline Laravel event publication into statically registered PHP listeners and their helper calls.
+
 - Follow inline Spring event publication into statically registered Java listener methods and their helper calls.
 
 - Follow inline MediatR request and notification dispatch into statically registered C# handlers and their helper calls.

@@ -245,6 +245,7 @@ rustcodegraph agent-eval probe-node <repo> <break-symbol>                   # tr
 | Solidity | 静态调用 / 导入 / 继承 | 调用方 → 继承 modifier → 基类内部方法；导入别名 → 库函数 | X+R | 静态能力已实现；[覆盖与验收限制](#solidity-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Nix | 静态函数 / 模块加载 | 命名调用；相对 import / callPackage → 模块文件 → 声明 | X+R | 静态能力已实现；[九案例历史证据与验收范围](#nix-static-coverage)。外部验收已由用户取消，未作为通过项。 |
 | TypeScript/JS | React / 观察者 / EventEmitter / React Router | 状态→渲染；调度→回调；路线→组件 | S+X | ✅ 渲染+调度（excalidraw）； **React Router JSX 路由** `<Route path component={C}/>` (v5) + `element={<C/>}` (v6) → 组件 (react-realworld **0→10, 10/10**)。 + **对象数据路由器** `createBrowserRouter([{path, element/Component}])`（文字形式）； Next.js config/`nextjs-pages` 误报已修复。 🔬 惰性数据路由器（`path: paths.x.path, lazy: () => import()` — 变量路径 + 惰性模块） |
+| PHP | Laravel events | 调用方 → inline event(new Event) → handle → helper | X+S | 静态注册派发已实现；[覆盖与验收限制](#laravel-event-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | C# | MediatR | 调用方 → inline Send/Publish → Handle → helper | X+S | 静态注册派发已实现；[覆盖与验收限制](#mediatr-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Ruby | Sidekiq | 调用方 → literal worker dispatch → perform → helper | X+S | 静态注册派发已实现；[覆盖与验收限制](#sidekiq-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
 | Python | Celery | 调用方 → delay/apply_async 注册任务 → helper | X+S | 静态绑定派发已实现；[覆盖与验收限制](#celery-static-coverage)。九项外部验收已由用户取消，未作为通过项。 |
@@ -1293,3 +1294,46 @@ heuristic、`spring-event`、事件类型 `via` 和派发位置 `registeredAt`�
 等断言不代表本地 Rust 支持。九项均未执行，没有案例 summary 或原始实验日志；
 真实仓库回放、重复 A/B、指定模型、性能指标及 VM/Docker 验证均未执行，
 不声明外部验收通过。
+
+
+<a id="laravel-event-static-coverage"></a>
+### Laravel 事件静态覆盖收口（2026-11-05）
+
+沿用 PHP `.php` 提取，不新增语言或扩展名。AST 注册复用带方法体的
+`handle` 方法节点，以首个参数的命名类型、nullable 或 union 命名成员作为
+事件证据；也识别类属性 `$listen` 的字面量数组映射，事件和监听器可用
+`Type::class` 或只含类名字符的字符串。映射目标须唯一，可连接无类型参数的
+`handle`。这是语法启发式，不验证 Laravel 安装、provider 继承、容器注册或
+监听器实际启用情况；字符串也按类型引用解析，不模拟 PHP 字符串转义求值。
+
+派发只识别函数或方法体内 `event(new Event(...))` 与
+`\event(new Event(...))`，要求唯一实参和静态类名。按完整限定名、显式
+use 别名、当前 namespace 解析类型并忽略大小写；支持分号及花括号 namespace。
+分组 use 和冲突别名保持无边。应用范围取最近 `composer.json` 所在目录，
+无标记时回退到顶层目录，不读取 Composer autoload 或依赖关系。
+同一事件连接范围内全部匹配监听器，普通静态调用边继续连接 helper。
+每文件最多 80 个不同来源/目标对；合成边带 heuristic、`laravel-event`、
+事件类型 `via` 和派发位置 `registeredAt`，不新增节点。
+
+不承诺变量事件、动态类名、Event facade、静态 dispatch、运行时订阅、
+事件继承匹配、跨应用接线、队列投递或执行顺序。普通同名 `event` 函数和
+同名类属性也可能满足语法规则，不应将合成边理解为运行时注册证明。
+
+只读上游 HEAD 核对为 `15483713763f344ff30fb7df92bcf091c7bd9758`。
+注册与派发提交分别为 `5c9b3902`、`095f69cf`，派发实现及测试相对后者无差异。
+复核既有 `/tmp/rcg310-final.log` 的注册 4 项通过，以及
+`/tmp/rcg311-final.log` 的 Spring 回归 5 项、注册 4 项、派发 4 项通过，
+各组均为 0 failed、0 ignored；测试入口为 `target/rust-slot-1/debug/deps/`。
+派发断言包括完整 `entry → handle → finish` explore Flow 与接线标注、
+重复索引节点稳定、sync 删除过期边、provider 映射、应用和 namespace 隔离、
+union 类型，以及动态、未注册、无关调用和歧义映射负例。
+本次只复核既有日志、实现与断言，执行文档清单检查和 `git diff --check`，
+未运行 Cargo，不声明新一轮行为测试或全套回归通过。
+
+依赖批次 313–321（任务 82–90）的九项外部验收按用户 2026-11-03 修订
+以“用户取消验收”收口，不再作为静态支持说明的完成门槛。
+[取消验收清单](../benchmarks/upstream-matrices/laravel-event.json) 已由
+`c7c3cf24` 归档，`cases=[]`、`external_experiments_executed=false`。
+上游合成 fixture 不是固定版本的小中大九案例真实仓库矩阵；九项均未执行，
+没有案例 summary 或原始实验日志。真实仓库回放、重复 A/B、指定模型、
+性能指标及 VM/Docker 验证均未执行，不声明外部验收通过。
