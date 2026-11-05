@@ -48,9 +48,10 @@ fn case_034_paths() {
         common::set_env("QWEN_HOME", "   ");
         assert_eq!(config_dir_from_env("QWEN_HOME", &fallback), fallback);
         common::set_env("QWEN_HOME", "relative");
+        // Resolving against cwd does not canonicalize Windows short paths or add a verbatim prefix.
         assert_eq!(
             config_dir_from_env("QWEN_HOME", &fallback),
-            f.cwd().canonicalize().unwrap().join("relative")
+            std::env::current_dir().unwrap().join("relative")
         );
         common::set_env("QWEN_HOME", "~/config");
         assert_eq!(
