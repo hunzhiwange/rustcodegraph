@@ -1463,3 +1463,59 @@ Flow 与方向/接线标注、重复索引节点稳定、注册变更和删除�
 其中 NestJS 装饰器不代表本地 Rust 支持。九项均未执行，无案例 summary
 或原始实验日志；真实仓库回放、重复 A/B、指定模型、性能指标及 VM/Docker
 验证均未执行，不声明外部验收通过。
+
+<a id="tauri-static-coverage"></a>
+### Tauri 静态覆盖收口（2026-11-05）
+
+沿用 Rust `.rs`、TypeScript `.ts`/`.tsx` 和 JavaScript
+`.js`/`.jsx`/`.mjs`/`.cjs` 提取，不新增语言或扩展名。
+命令端要求 Rust 文件位于 `src-tauri` 下，文件级函数带 `#[tauri::command]`
+属性，并被 `tauri::generate_handler!` 明确列出；同文件裸名及可按文件路径
+定位的模块限定名可解析，目标必须唯一。宏注册本身是启发式证据，不证明
+builder 实际执行；inline module、重名遮蔽及不支持的路径保持无边。
+前端要求从 `@tauri-apps/api/core`、`@tauri-apps/api/tauri` 或
+`@tauri-apps/api` 显式命名导入 `invoke`（支持别名）或 namespace 导入后调用
+`.invoke`；首参须为非空、无转义字符串字面量，调用须属于已提取的命名 callable。
+
+事件端要求前端从 `@tauri-apps/api/event` 显式命名或 namespace 导入
+`emit`/`listen`/`once`，Rust 接收器则须是当前函数中显式标注为
+`tauri::AppHandle` 或 `tauri::App` 的参数，短类型名仅接受直接、无别名的
+Tauri 导入。遮蔽或重绑定时保守跳过。事件名精确匹配非空、无转义字符串，
+排除 `tauri://` 内置事件。命名 listener 仅解析同文件唯一的顶层函数声明；
+内联 closure/回调连接其外层命名 callable，不新增回调节点。
+普通静态调用继续连接 helper。
+
+应用范围由 Rust 路径的首个 `src-tauri` 段之前的目录确定；前端选择包含
+当前文件的最长应用前缀，嵌套应用即使没有命令注册也不会回退到外层。
+事件在同一应用内连接全部匹配 listener，支持 client→server、server→client
+及 same-side；同一事件超过 6 个不同发送或监听 callable 时跳过。
+合成 calls 边带 heuristic、`tauri-command` 或 `tauri-event`、命令/事件名、
+方向 tier 及 `registeredAt` 接线位置，explore Flow 内联展示接线信息。
+sync 会重算命令与事件接线。
+
+不承诺动态或转义名称、template 字面量、全局 `__TAURI__`、通用 invoke
+wrapper、tauri-specta typed clients/events、Rust Window/WebviewWindow
+接收器、`emit_to`/`emit_all`/`listen_any`、跨文件命名 listener、Rust re-export
+链、跨应用派发或运行时投递保证。只按静态语法推断，不验证依赖安装、
+Tauri 版本兼容性、窗口生命周期或应用运行状态；上游更宽的 fixture 不代表
+本地 Rust 实现支持。
+
+只读上游 HEAD 核对为 `15483713763f344ff30fb7df92bcf091c7bd9758`，
+来源为 `src/resolution/tauri-synthesizer.ts` 与 `__tests__/tauri-ipc.test.ts`。
+本地注册与事件派发提交分别为 `befec033`、`5aff63d7`，实现及两份聚焦测试
+相对后者无差异。本次复核既有 `/tmp/rcg132-final.log`：
+`upstream_362_test` 7 项、`upstream_363_test` 4 项、`explore_blast_radius_test`
+3 项通过，合计 14 passed、0 failed、0 ignored，入口为
+`target/rust-slot-1/debug/deps/`。断言覆盖命令及双向事件完整 explore Flow、
+方向与接线标注、重复索引节点稳定、注册删除后的 sync、应用隔离、动态名称、
+缺失或伪注册、歧义命令、遮蔽及非 Tauri 接收器负例。
+本次仅复核源码、断言和既有日志，执行文档清单检查及 `git diff --check`，
+未运行 Cargo，不声明新一轮行为测试或全套回归通过。
+
+依赖批次 365–373（任务 134–142）的九项外部验收按用户 2026-11-03
+修订以“用户取消验收”收口，不再作为静态支持说明的完成门槛。
+[取消验收清单](../benchmarks/upstream-matrices/tauri.json) 由 `05a7dc4f`
+归档，`cases=[]`、`external_experiments_executed=false`，不是矩阵运行器输入。
+上游合成 fixture 不替代小、中、大真实仓库的九案例矩阵；九项均未执行，
+无案例 summary 或原始实验日志。真实仓库回放、重复 A/B、指定模型、性能
+指标及 VM/Docker 验证均未执行，不声明外部验收通过。
