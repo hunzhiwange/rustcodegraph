@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixes
+
+- Keep GitHub releases tied to their existing version tags so publishing can succeed after newer workflow changes reach the default branch.
 
 ## [2.0.0] - 2026-11-06
 
