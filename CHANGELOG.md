@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### New Features
+
+- Resume release publishing from a previous GitHub Actions run without rebuilding platform artifacts or installer packages.
+
 ### Fixes
 
 - Keep GitHub releases tied to their existing version tags so publishing can succeed after newer workflow changes reach the default branch.

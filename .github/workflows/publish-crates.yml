@@ -20,6 +20,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v6
         with:
+          ref: ${{ fromJson(inputs.plan).announcement_tag }}
           submodules: true
       - uses: ./.github/actions/prepare-grammars
       - name: Authenticate with crates.io
